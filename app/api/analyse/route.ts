@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({
         success: false,
-        error: "Uploaded file not found"
+        error: "Uploaded file not found",
       });
     }
 
@@ -21,12 +21,13 @@ export async function POST(req: Request) {
 
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
-      input: [{
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: `Analyse this floor plan and return ONLY JSON in this format:
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: `Analyse this floor plan and return ONLY JSON in this format:
 
 {
   "bedrooms":0,
@@ -36,25 +37,26 @@ export async function POST(req: Request) {
   "stairs":false,
   "possibleHMOBedrooms":0,
   "confidence":"High"
-}`
-          },
-          {
-            type: "input_image",
-            image_url: `data:image/jpeg;base64,${base64}`detail: "high"
-                  }
-        ]
-      }]
+}`,
+            },
+            {
+              type: "input_image",
+              image_url: `data:image/jpeg;base64,${base64}`,
+              detail: "high",
+            },
+          ],
+        },
+      ],
     });
 
     return NextResponse.json({
       success: true,
-      result: response.output_text
+      result: response.output_text,
     });
-
   } catch (error: any) {
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 }
