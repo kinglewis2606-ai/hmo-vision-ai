@@ -40,8 +40,8 @@ export async function POST(req: Request) {
           },
           {
             type: "input_image",
-            image_url: `data:image/jpeg;base64,${base64}`
-          }
+            image_url: `data:image/jpeg;base64,${base64}`detail: "high"
+                  }
         ]
       }]
     });
