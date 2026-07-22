@@ -23,15 +23,16 @@ Return ONLY valid JSON.
   "stairs": false,
   "possibleHMOBedrooms": 0,
   "confidence": "High"
-}`
+}`,
           },
           {
             type: "input_image",
-            image_url: imageUrl
-          }
-        ]
-      }
-    ]
+            image_url: imageUrl,
+            detail: "high",
+          },
+        ],
+      },
+    ],
   });
 
   return response.output_text;
