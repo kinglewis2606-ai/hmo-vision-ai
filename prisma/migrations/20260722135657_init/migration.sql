@@ -1,0 +1,8 @@
+-- CreateTable
+CREATE TABLE "Project" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "address" TEXT NOT NULL,
+    "propertyType" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'New',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
