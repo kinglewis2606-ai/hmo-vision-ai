@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { useDropzone } from "react-dropzone";
 
-export default function UploadBox() {
+type UploadBoxProps = {
+  onUploaded?: (filename: string) => void;
+};
+
+export default function UploadBox({
+  onUploaded,
+}: UploadBoxProps) {
   const [message, setMessage] = useState("");
 
   const onDrop = async (acceptedFiles: File[]) => {
@@ -21,6 +27,7 @@ export default function UploadBox() {
 
     if (data.success) {
       setMessage(`✅ Uploaded: ${data.filename}`);
+      onUploaded?.(data.filename);
     } else {
       setMessage("❌ Upload failed");
     }
