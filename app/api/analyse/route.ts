@@ -3,14 +3,6 @@ import { openai } from "@/lib/openai";
 import fs from "fs";
 import path from "path";
 
-function cleanJson(text: string) {
-  return text
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/, "")
-    .trim();
-}
-
 export async function POST(req: Request) {
   try {
     const { filename, address, propertyType } = await req.json();
@@ -25,6 +17,13 @@ export async function POST(req: Request) {
     }
 
     const image = fs.readFileSync(filePath);
+    const ext = path.extname(filename).toLowerCase();
+
+    let mime = "image/jpeg";
+
+    if (ext === ".png") mime = "image/png";
+    if (ext === ".webp") mime = "image/webp";
+
     const base64 = image.toString("base64");
 
     const response = await openai.responses.create({
@@ -52,7 +51,7 @@ Only recommend HMOs with FOUR OR MORE BEDROOMS.
 
 If the property cannot realistically become a legal 4-bedroom HMO, clearly explain why.
 
-Return ONLY valid JSON.
+Return ONLY valid JSON in exactly this format:
 
 {
   "summary": {
@@ -63,49 +62,34 @@ Return ONLY valid JSON.
     "possibleHMOBedrooms": 0,
     "confidence": ""
   },
-
   "hmoScore": 0,
-
   "verdict": "",
-
   "highestPossibleHMO": {
     "bedrooms": 0,
     "score": 0,
     "reason": ""
   },
-
   "recommendedLayout": [],
-
   "conversionSteps": [],
-
   "recommendations": [],
-
   "compliance": [],
-
   "fireSafety": [],
-
   "planningRisk": "",
-
   "estimatedConversionCost": {
     "low": 0,
     "high": 0
   },
-
   "estimatedMonthlyRent": 0,
-
   "estimatedAnnualRent": 0,
-
   "estimatedYield": "",
-
   "estimatedROI": "",
-
   "investorSummary": ""
 }
 `,
             },
             {
               type: "input_image",
-              image_url: `data:image/jpeg;base64,${base64}`,
+              image_url: `data:${mime};base64,${base64}`,
               detail: "high",
             },
           ],
@@ -113,20 +97,20 @@ Return ONLY valid JSON.
       ],
     });
 
-    const raw =
-      response.output_text ??
-      JSON.stringify(response, null, 2);
+    const text = response.output_text ?? "";
 
-    console.log(raw);
+    const cleaned = text
+      .replace(/^```json/i, "")
+      .replace(/^```/i, "")
+      .replace(/```$/i, "")
+      .trim();
 
-    const cleaned = cleanJson(raw);
-
-    let parsed;
+    let result;
 
     try {
-      parsed = JSON.parse(cleaned);
-    } catch (err) {
-      console.error("OpenAI returned invalid JSON:");
+      result = JSON.parse(cleaned);
+    } catch {
+      console.error("AI returned invalid JSON:");
       console.error(cleaned);
 
       return NextResponse.json({
@@ -137,7 +121,7 @@ Return ONLY valid JSON.
 
     return NextResponse.json({
       success: true,
-      result: parsed,
+      result,
     });
 
   } catch (error: any) {
