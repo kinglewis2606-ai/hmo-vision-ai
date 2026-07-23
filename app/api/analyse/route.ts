@@ -54,9 +54,14 @@ export async function POST(req: Request) {
       result: response.output_text,
     });
   } catch (error: any) {
-    return NextResponse.json({
+  console.error("Analyse API error:", error);
+
+  return NextResponse.json(
+    {
       success: false,
-      error: error.message,
-    });
-  }
+      error: error?.message || "Unknown error",
+    },
+    { status: 500 }
+  );
+}
 }
