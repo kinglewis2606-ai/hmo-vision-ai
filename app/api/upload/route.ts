@@ -24,4 +24,4 @@ export async function POST(req: Request) {
   const cwd = process.cwd();
 
 const filePath = path.join(cwd, "uploads", filename);
-
+  }
