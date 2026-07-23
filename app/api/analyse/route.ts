@@ -3,23 +3,17 @@ import { openai } from "@/lib/openai";
 import fs from "fs";
 import path from "path";
 
-function extractJson(text: string) {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-
-  if (start === -1 || end === -1) {
-    throw new Error("No JSON found in AI response.");
-  }
-
-  return JSON.parse(text.substring(start, end + 1));
+function cleanJson(text: string) {
+  return text
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
 }
 
 export async function POST(req: Request) {
   try {
     const { filename, address, propertyType } = await req.json();
-
-    console.log("=== HMO ANALYSIS START ===");
-    console.log("Filename:", filename);
 
     const filePath = path.join(process.cwd(), "uploads", filename);
 
@@ -33,25 +27,18 @@ export async function POST(req: Request) {
     const image = fs.readFileSync(filePath);
     const base64 = image.toString("base64");
 
-    let parsedResult: any = null;
-    let lastError: any = null;
-
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      console.log(`Attempt ${attempt}`);
-
-      try {
-        const response = await openai.responses.create({
-          model: "gpt-4.1-mini",
-          input: [
+    const response = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      input: [
+        {
+          role: "user",
+          content: [
             {
-              role: "user",
-              content: [
-                {
-                  type: "input_text",
-                  text: `
-You are an experienced UK HMO consultant.
+              type: "input_text",
+              text: `
+You are an experienced UK HMO consultant, architect and property investor.
 
-Analyse this UK residential floor plan.
+Analyse this floor plan.
 
 Property Address:
 ${address || "Unknown"}
@@ -68,87 +55,79 @@ If the property cannot realistically become a legal 4-bedroom HMO, clearly expla
 Return ONLY valid JSON.
 
 {
-  "summary":{
-    "bedrooms":0,
-    "bathrooms":0,
-    "kitchen":false,
-    "livingRoom":false,
-    "possibleHMOBedrooms":0,
-    "confidence":""
+  "summary": {
+    "bedrooms": 0,
+    "bathrooms": 0,
+    "kitchen": false,
+    "livingRoom": false,
+    "possibleHMOBedrooms": 0,
+    "confidence": ""
   },
-  "hmoScore":0,
-  "verdict":"",
-  "highestPossibleHMO":{
-    "bedrooms":0,
-    "score":0,
-    "reason":""
+
+  "hmoScore": 0,
+
+  "verdict": "",
+
+  "highestPossibleHMO": {
+    "bedrooms": 0,
+    "score": 0,
+    "reason": ""
   },
-  "recommendedLayout":[],
-  "conversionSteps":[],
-  "recommendations":[],
-  "compliance":[],
-  "fireSafety":[],
-  "planningRisk":"",
-  "estimatedConversionCost":{
-    "low":0,
-    "high":0
+
+  "recommendedLayout": [],
+
+  "conversionSteps": [],
+
+  "recommendations": [],
+
+  "compliance": [],
+
+  "fireSafety": [],
+
+  "planningRisk": "",
+
+  "estimatedConversionCost": {
+    "low": 0,
+    "high": 0
   },
-  "estimatedMonthlyRent":0,
-  "estimatedAnnualRent":0,
-  "estimatedYield":"",
-  "estimatedROI":"",
-  "investorSummary":""
+
+  "estimatedMonthlyRent": 0,
+
+  "estimatedAnnualRent": 0,
+
+  "estimatedYield": "",
+
+  "estimatedROI": "",
+
+  "investorSummary": ""
 }
 `,
-                },
-                {
-                  type: "input_image",
-                  image_url: `data:image/jpeg;base64,${base64}`,
-                  detail: "high",
-                },
-              ],
+            },
+            {
+              type: "input_image",
+              image_url: `data:image/jpeg;base64,${base64}`,
+              detail: "high",
             },
           ],
-        });
+        },
+      ],
+    });
 
-        const text = response.output_text ?? "";
+    const raw = response.output_text || "";
 
-        console.log("AI Response Length:", text.length);
-
-        if (!text.trim()) {
-          throw new Error("OpenAI returned an empty response.");
-        }
-
-        parsedResult = extractJson(text);
-
-        console.log("JSON parsed successfully.");
-
-        break;
-      } catch (err: any) {
-        console.error(`Attempt ${attempt} failed:`, err);
-        lastError = err;
-      }
-    }
-
-    if (!parsedResult) {
-      return NextResponse.json({
-        success: false,
-        error: lastError?.message || "AI failed to produce valid JSON.",
-      });
-    }
-
-    console.log("=== HMO ANALYSIS COMPLETE ===");
+    const result = JSON.parse(cleanJson(raw));
 
     return NextResponse.json({
       success: true,
-      result: parsedResult,
+      result,
     });
+
   } catch (error: any) {
-    console.error("Analyse Route Error:", error);
+    console.error(error);
 
     return NextResponse.json({
       success: false,
-      error: error.message || "Unexpected server error.",
+      error: error.message || "Analysis failed.",
     });
   }
 }
