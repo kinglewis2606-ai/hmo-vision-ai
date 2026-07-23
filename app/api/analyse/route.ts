@@ -5,25 +5,19 @@ import path from "path";
 
 export async function POST(req: Request) {
   try {
-    const { filename } = await req.json();
+    const { filename, address, propertyType } = await req.json();
 
     const filePath = path.join(process.cwd(), "uploads", filename);
-
-    console.log("Filename received:", filename);
-    console.log("Looking for:", filePath);
-    console.log("Exists:", fs.existsSync(filePath));
 
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({
         success: false,
-        error: "Uploaded file not found",
+        error: "Uploaded floor plan not found.",
       });
     }
 
     const image = fs.readFileSync(filePath);
     const base64 = image.toString("base64");
-
-    console.log("Calling OpenAI...");
 
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
@@ -33,7 +27,24 @@ export async function POST(req: Request) {
           content: [
             {
               type: "input_text",
-              text: `Analyse this floor plan and return ONLY valid JSON with this exact structure:
+              text: `
+You are an experienced UK HMO consultant, architect and property investor.
+
+Analyse this floor plan.
+
+Property Address:
+${address || "Unknown"}
+
+Property Type:
+${propertyType || "Unknown"}
+
+IMPORTANT
+
+Only recommend HMOs with FOUR OR MORE BEDROOMS.
+
+If the property cannot realistically become a legal 4-bedroom HMO, clearly explain why.
+
+Return ONLY valid JSON.
 
 {
   "summary": {
@@ -42,18 +53,47 @@ export async function POST(req: Request) {
     "kitchen": false,
     "livingRoom": false,
     "possibleHMOBedrooms": 0,
-    "confidence": "High"
+    "confidence": ""
   },
+
   "hmoScore": 0,
+
   "verdict": "",
+
+  "highestPossibleHMO": {
+    "bedrooms": 0,
+    "score": 0,
+    "reason": ""
+  },
+
+  "recommendedLayout": [],
+
+  "conversionSteps": [],
+
   "recommendations": [],
+
   "compliance": [],
+
+  "fireSafety": [],
+
+  "planningRisk": "",
+
   "estimatedConversionCost": {
     "low": 0,
     "high": 0
   },
-  "estimatedMonthlyRent": 0
-}`,
+
+  "estimatedMonthlyRent": 0,
+
+  "estimatedAnnualRent": 0,
+
+  "estimatedYield": "",
+
+  "estimatedROI": "",
+
+  "investorSummary": ""
+}
+`,
             },
             {
               type: "input_image",
@@ -65,8 +105,6 @@ export async function POST(req: Request) {
       ],
     });
 
-    console.log("OpenAI finished");
-
     const result =
       response.output_text ||
       JSON.stringify(response, null, 2);
@@ -75,13 +113,12 @@ export async function POST(req: Request) {
       success: true,
       result,
     });
-
   } catch (error: any) {
     console.error(error);
 
     return NextResponse.json({
       success: false,
-      error: error.message || "Unknown error",
+      error: error.message || "Analysis failed.",
     });
   }
 }
