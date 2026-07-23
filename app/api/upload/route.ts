@@ -21,7 +21,13 @@ export async function POST(req: Request) {
   }
 
   const filename = `${uuid()}-${file.name}`;
-  const cwd = process.cwd();
+const filePath = path.join(uploadDir, filename);
 
-const filePath = path.join(cwd, "uploads", filename);
-  }
+fs.writeFileSync(filePath, buffer);
+
+return NextResponse.json({
+  success: true,
+  filename,
+  path: filePath,
+});
+}
