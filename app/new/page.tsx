@@ -45,28 +45,11 @@ export default function NewProjectPage() {
         return;
       }
 
-      try {
-        const parsed =
-          typeof data.result === "string"
-            ? JSON.parse(data.result)
-            : data.result;
-
-        setReport(parsed);
-      } catch (parseError: any) {
-        console.error("JSON Parse Error:", parseError);
-        console.log("Returned data:", data.result);
-
-        alert(
-          "The AI returned data that wasn't valid JSON.\n\nCheck the browser console."
-        );
-      }
+      setReport(data.result);
     } catch (err: any) {
       console.error("Request Error:", err);
 
-      alert(
-        err?.message ||
-          "Unable to analyse floor plan."
-      );
+      alert(err?.message || "Unable to analyse floor plan.");
     } finally {
       setLoading(false);
     }
@@ -75,9 +58,7 @@ export default function NewProjectPage() {
   return (
     <main className="min-h-screen bg-slate-900 p-8">
       <div className="max-w-5xl mx-auto">
-
         <div className="bg-zinc-900 rounded-xl p-8 shadow-xl">
-
           <h1 className="text-4xl font-bold text-white mb-6">
             New HMO Project
           </h1>
@@ -114,7 +95,6 @@ export default function NewProjectPage() {
 
         {report && (
           <div className="mt-8 bg-white rounded-xl shadow-xl p-8">
-
             <h2 className="text-3xl font-bold mb-6">
               HMO Assessment Report
             </h2>
@@ -122,10 +102,8 @@ export default function NewProjectPage() {
             <pre className="bg-slate-100 rounded-lg p-4 overflow-auto text-sm">
               {JSON.stringify(report, null, 2)}
             </pre>
-
           </div>
         )}
-
       </div>
     </main>
   );
