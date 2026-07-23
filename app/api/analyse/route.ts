@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { openai } from "@/lib/openai";
 import fs from "fs";
 import path from "path";
 
@@ -8,10 +7,6 @@ export async function POST(req: Request) {
     const { filename } = await req.json();
 
     const filePath = path.join(process.cwd(), "uploads", filename);
-
-    console.log("CWD:", process.cwd());
-    console.log("Looking for:", filePath);
-    console.log("Exists:", fs.existsSync(filePath));
 
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({
@@ -23,15 +18,23 @@ export async function POST(req: Request) {
     const image = fs.readFileSync(filePath);
     const base64 = image.toString("base64");
 
-    const response = await openai.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
-        {
-          role: "user",
-          content: [
+    const response = await fetch(
+      "https://api.openai.com/v1/responses",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          input: [
             {
-              type: "input_text",
-              text: `Analyse this floor plan.
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: `Analyse this floor plan.
 
 Return ONLY valid JSON.
 
@@ -44,30 +47,39 @@ Return ONLY valid JSON.
   "possibleHMOBedrooms": 0,
   "confidence": "High"
 }`,
-            },
-            {
-              type: "input_image",
-              image_url: `data:image/jpeg;base64,${base64}`,
-              detail: "high",
+                },
+                {
+                  type: "input_image",
+                  image_url: `data:image/jpeg;base64,${base64}`,
+                },
+              ],
             },
           ],
-        },
-      ],
-    });
+        }),
+      }
+    );
 
-    console.log("OpenAI response:");
-    console.log(response);
+    const data = await response.json();
+
+    console.log(data);
+
+    if (!response.ok) {
+      return NextResponse.json({
+        success: false,
+        error: JSON.stringify(data),
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      result: response.output_text,
+      result: data.output_text,
     });
   } catch (error: any) {
-    console.error("Analyse error:", error);
+    console.error(error);
 
     return NextResponse.json({
       success: false,
-      error: error.message ?? "Unknown error",
+      error: error.message,
     });
   }
 }
