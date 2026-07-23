@@ -7,13 +7,11 @@ export async function POST(req: Request) {
   try {
     const { filename } = await req.json();
 
-    const cwd = process.cwd();
+    const filePath = path.join(process.cwd(), "uploads", filename);
 
-const filePath = path.join(cwd, "uploads", filename);
-
-console.log("CWD:", cwd);
-console.log("Looking for:", filePath);
-console.log("Exists:", fs.existsSync(filePath));
+    console.log("CWD:", process.cwd());
+    console.log("Looking for:", filePath);
+    console.log("Exists:", fs.existsSync(filePath));
 
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({
@@ -33,16 +31,18 @@ console.log("Exists:", fs.existsSync(filePath));
           content: [
             {
               type: "input_text",
-              text: `Analyse this floor plan and return ONLY JSON in this format:
+              text: `Analyse this floor plan.
+
+Return ONLY valid JSON.
 
 {
-  "bedrooms":0,
-  "bathrooms":0,
-  "kitchen":false,
-  "livingRoom":false,
-  "stairs":false,
-  "possibleHMOBedrooms":0,
-  "confidence":"High"
+  "bedrooms": 0,
+  "bathrooms": 0,
+  "kitchen": false,
+  "livingRoom": false,
+  "stairs": false,
+  "possibleHMOBedrooms": 0,
+  "confidence": "High"
 }`,
             },
             {
@@ -55,19 +55,19 @@ console.log("Exists:", fs.existsSync(filePath));
       ],
     });
 
+    console.log("OpenAI response:");
+    console.log(response);
+
     return NextResponse.json({
       success: true,
       result: response.output_text,
     });
   } catch (error: any) {
-  console.error("Analyse API error:", error);
+    console.error("Analyse error:", error);
 
-  return NextResponse.json(
-    {
+    return NextResponse.json({
       success: false,
-      error: error?.message || "Unknown error",
-    },
-    { status: 500 }
-  );
-}
+      error: error.message ?? "Unknown error",
+    });
+  }
 }
