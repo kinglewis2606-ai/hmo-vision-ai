@@ -113,13 +113,31 @@ Return ONLY valid JSON.
       ],
     });
 
-    const raw = response.output_text || "";
+    const raw =
+      response.output_text ??
+      JSON.stringify(response, null, 2);
 
-    const result = JSON.parse(cleanJson(raw));
+    console.log(raw);
+
+    const cleaned = cleanJson(raw);
+
+    let parsed;
+
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (err) {
+      console.error("OpenAI returned invalid JSON:");
+      console.error(cleaned);
+
+      return NextResponse.json({
+        success: false,
+        error: "OpenAI returned invalid JSON.",
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      result,
+      result: parsed,
     });
 
   } catch (error: any) {
