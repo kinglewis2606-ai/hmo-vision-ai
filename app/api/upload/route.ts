@@ -21,13 +21,10 @@ export async function POST(req: Request) {
   }
 
   const filename = `${uuid()}-${file.name}`;
-  const filepath = path.join(uploadDir, filename);
+  const cwd = process.cwd();
 
-  fs.writeFileSync(filepath, buffer);
+const filePath = path.join(cwd, "uploads", filename);
 
-  return NextResponse.json({
-    success: true,
-    filename,
-    path: filepath,
-  });
-}
+console.log("CWD:", cwd);
+console.log("Looking for:", filePath);
+console.log("Exists:", fs.existsSync(filePath));
