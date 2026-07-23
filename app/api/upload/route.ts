@@ -25,6 +25,3 @@ export async function POST(req: Request) {
 
 const filePath = path.join(cwd, "uploads", filename);
 
-console.log("CWD:", cwd);
-console.log("Looking for:", filePath);
-console.log("Exists:", fs.existsSync(filePath));
