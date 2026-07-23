@@ -18,6 +18,9 @@ export async function POST(req: Request) {
   try {
     const { filename, address, propertyType } = await req.json();
 
+    console.log("=== HMO ANALYSIS START ===");
+    console.log("Filename:", filename);
+
     const filePath = path.join(process.cwd(), "uploads", filename);
 
     if (!fs.existsSync(filePath)) {
@@ -34,6 +37,8 @@ export async function POST(req: Request) {
     let lastError: any = null;
 
     for (let attempt = 1; attempt <= 2; attempt++) {
+      console.log(`Attempt ${attempt}`);
+
       try {
         const response = await openai.responses.create({
           model: "gpt-4.1-mini",
@@ -108,14 +113,21 @@ Return exactly this structure:
           ],
         });
 
-        const text =
-          response.output_text ||
-          JSON.stringify(response, null, 2);
+        const text = response.output_text ?? "";
+
+        console.log("AI Response Length:", text.length);
+
+        if (!text.trim()) {
+          throw new Error("OpenAI returned an empty response.");
+        }
 
         parsedResult = extractJson(text);
 
+        console.log("JSON parsed successfully.");
+
         break;
-      } catch (err) {
+      } catch (err: any) {
+        console.error(`Attempt ${attempt} failed:`, err);
         lastError = err;
       }
     }
@@ -127,12 +139,14 @@ Return exactly this structure:
       });
     }
 
+    console.log("=== HMO ANALYSIS COMPLETE ===");
+
     return NextResponse.json({
       success: true,
-      result: JSON.stringify(parsedResult),
+      result: parsedResult,
     });
   } catch (error: any) {
-    console.error(error);
+    console.error("Analyse Route Error:", error);
 
     return NextResponse.json({
       success: false,
