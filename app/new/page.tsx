@@ -45,6 +45,7 @@ export default function NewProjectPage() {
         return;
       }
 
+      // Backend already returns parsed JSON
       setReport(data.result);
     } catch (err: any) {
       console.error("Request Error:", err);
@@ -58,7 +59,9 @@ export default function NewProjectPage() {
   return (
     <main className="min-h-screen bg-slate-900 p-8">
       <div className="max-w-5xl mx-auto">
+
         <div className="bg-zinc-900 rounded-xl p-8 shadow-xl">
+
           <h1 className="text-4xl font-bold text-white mb-6">
             New HMO Project
           </h1>
@@ -95,6 +98,7 @@ export default function NewProjectPage() {
 
         {report && (
           <div className="mt-8 bg-white rounded-xl shadow-xl p-8">
+
             <h2 className="text-3xl font-bold mb-6">
               HMO Assessment Report
             </h2>
@@ -102,6 +106,7 @@ export default function NewProjectPage() {
             <pre className="bg-slate-100 rounded-lg p-4 overflow-auto text-sm">
               {JSON.stringify(report, null, 2)}
             </pre>
+
           </div>
         )}
       </div>
