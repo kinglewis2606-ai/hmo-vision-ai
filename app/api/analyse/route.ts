@@ -33,16 +33,26 @@ export async function POST(req: Request) {
           content: [
             {
               type: "input_text",
-              text: `Analyse this floor plan and return ONLY JSON in this format:
+              text: `Analyse this floor plan and return ONLY valid JSON with this exact structure:
 
 {
-  "bedrooms":0,
-  "bathrooms":0,
-  "kitchen":false,
-  "livingRoom":false,
-  "stairs":false,
-  "possibleHMOBedrooms":0,
-  "confidence":"High"
+  "summary": {
+    "bedrooms": 0,
+    "bathrooms": 0,
+    "kitchen": false,
+    "livingRoom": false,
+    "possibleHMOBedrooms": 0,
+    "confidence": "High"
+  },
+  "hmoScore": 0,
+  "verdict": "",
+  "recommendations": [],
+  "compliance": [],
+  "estimatedConversionCost": {
+    "low": 0,
+    "high": 0
+  },
+  "estimatedMonthlyRent": 0
 }`,
             },
             {
@@ -56,18 +66,22 @@ export async function POST(req: Request) {
     });
 
     console.log("OpenAI finished");
-    console.log(response);
+
+    const result =
+      response.output_text ||
+      JSON.stringify(response, null, 2);
 
     return NextResponse.json({
       success: true,
-      result: response.output_text,
+      result,
     });
+
   } catch (error: any) {
-    console.error("OPENAI ERROR:", error);
+    console.error(error);
 
     return NextResponse.json({
       success: false,
-      error: error.message,
+      error: error.message || "Unknown error",
     });
   }
 }
