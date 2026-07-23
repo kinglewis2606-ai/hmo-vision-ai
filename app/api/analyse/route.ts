@@ -59,15 +59,13 @@ ${address || "Unknown"}
 Property Type:
 ${propertyType || "Unknown"}
 
-IMPORTANT:
+IMPORTANT
 
-- Only recommend HMOs with FOUR OR MORE bedrooms.
-- Never invent rooms that do not reasonably fit.
-- Return ONLY valid JSON.
-- Do not include markdown.
-- Do not include explanations outside the JSON.
+Only recommend HMOs with FOUR OR MORE BEDROOMS.
 
-Return exactly this structure:
+If the property cannot realistically become a legal 4-bedroom HMO, clearly explain why.
+
+Return ONLY valid JSON.
 
 {
   "summary":{
