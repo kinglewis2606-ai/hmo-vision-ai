@@ -38,7 +38,16 @@ export default function NewProjectPage() {
         return;
       }
 
-      setReport(JSON.parse(data.result));
+      const parsedReport =
+  typeof data.result === "string"
+    ? JSON.parse(
+        data.result
+          .replace(/^```json\s*/, "")
+          .replace(/\s*```$/, "")
+      )
+    : data.result;
+
+setReport(parsedReport);
     } catch (err) {
       console.error(err);
       alert("Unable to analyse floor plan.");
