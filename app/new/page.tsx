@@ -105,18 +105,59 @@ setReport(parsedReport);
 
             <div className="grid md:grid-cols-2 gap-6">
 
-              <div className="border rounded-lg p-4">
-                <h3 className="font-bold text-xl mb-3">
-                  Property Summary
-                </h3>
+              <div className="border rounded-lg p-6 bg-slate-50">
+  <h3 className="font-bold text-2xl mb-5">
+    📊 Investor Snapshot
+  </h3>
 
-                <p>Bedrooms: {report.summary.bedrooms}</p>
-                <p>Bathrooms: {report.summary.bathrooms}</p>
-                <p>Kitchen: {report.summary.kitchen ? "Yes" : "No"}</p>
-                <p>Living Room: {report.summary.livingRoom ? "Yes" : "No"}</p>
-                <p>Possible HMO Bedrooms: {report.summary.possibleHMOBedrooms}</p>
-                <p>Confidence: {report.summary.confidence}</p>
-              </div>
+  <div className="space-y-3">
+
+    <div className="flex justify-between">
+      <span>Current Bedrooms</span>
+      <strong>{report.summary.bedrooms}</strong>
+    </div>
+
+    <div className="flex justify-between">
+      <span>Bathrooms</span>
+      <strong>{report.summary.bathrooms}</strong>
+    </div>
+
+    <div className="flex justify-between">
+      <span>Potential HMO Rooms</span>
+      <strong>{report.summary.possibleHMOBedrooms}</strong>
+    </div>
+
+    <hr />
+
+    <div className="flex justify-between">
+      <span>Monthly Rent</span>
+      <strong>
+        £{report.estimatedMonthlyRent.toLocaleString()}
+      </strong>
+    </div>
+
+    <div className="flex justify-between">
+      <span>Annual Rent</span>
+      <strong>
+        £{(report.estimatedMonthlyRent * 12).toLocaleString()}
+      </strong>
+    </div>
+
+    <div className="flex justify-between">
+      <span>Conversion Cost</span>
+      <strong>
+        £{report.estimatedConversionCost.low.toLocaleString()} -
+        £{report.estimatedConversionCost.high.toLocaleString()}
+      </strong>
+    </div>
+
+    <div className="flex justify-between">
+      <span>Confidence</span>
+      <strong>{report.summary.confidence}</strong>
+    </div>
+
+  </div>
+</div>
 
               <div className="border rounded-lg p-4">
                 <h3 className="font-bold text-xl mb-3">
