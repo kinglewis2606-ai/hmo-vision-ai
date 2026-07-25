@@ -1,9 +1,9 @@
 import Link from "next/link";
 export default function Home() {
   return (
-    <main className="min-h-screen bg-slate-100 flex">
+    <main className="min-h-screen bg-slate-100 flex flex-col md:flex-row">
 
-      <aside className="w-20 md:w-64 bg-slate-900 text-white p-4 md:p-6">
+      <aside className="w-full md:w-64 bg-slate-900 text-white p-4 md:p-6">
         <h1 className="text-2xl font-bold mb-8">🏠 HMO Vision AI</h1>
 
         <nav className="space-y-4">
