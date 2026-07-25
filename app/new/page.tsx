@@ -61,10 +61,48 @@ setReport(parsedReport);
       <div className="max-w-5xl mx-auto">
 
         <div className="bg-zinc-900 rounded-xl p-8 shadow-xl">
+<div className="grid gap-4 md:grid-cols-4 mb-8">
 
-          <h1 className="text-4xl font-bold text-white mb-6">
-            New HMO Project
-          </h1>
+  <div className="rounded-xl bg-slate-800 p-5">
+    <div className="text-sm text-slate-400">AI Analysis</div>
+    <div className="mt-2 text-2xl font-bold text-white">60 sec</div>
+  </div>
+</div>
+  <div className="rounded-xl bg-slate-800 p-5">
+    <div className="text-sm text-slate-400">Supported Files</div>
+    <div className="mt-2 text-2xl font-bold text-white">
+      PDF • JPG
+    </div>
+  </div>
+
+  <div className="rounded-xl bg-slate-800 p-5">
+    <div className="text-sm text-slate-400">Outputs</div>
+    <div className="mt-2 text-2xl font-bold text-white">
+      Report + ROI
+    </div>
+  </div>
+  <div className="rounded-xl bg-slate-800 p-5">
+    <div className="text-sm text-slate-400">Purpose</div>
+    <div className="mt-2 text-2xl font-bold text-white">
+      HMO Ready
+    </div>
+  </div>
+
+</div>
+          <div className="mb-8">
+  <span className="inline-block rounded-full bg-blue-600/20 px-3 py-1 text-sm font-semibold text-blue-300">
+    HMO Vision AI
+  </span>
+
+  <h1 className="mt-4 text-5xl font-bold text-white">
+    Analyse a Property in Under 60 Seconds
+  </h1>
+
+  <p className="mt-4 max-w-2xl text-lg text-slate-300">
+    Upload a floor plan and instantly receive an AI-powered HMO assessment,
+    investor snapshot, compliance review and estimated rental potential.
+  </p>
+</div>
 
           <input
             className="w-full rounded-lg p-3 mb-4 text-black"
@@ -85,8 +123,23 @@ setReport(parsedReport);
             <option>Bungalow</option>
           </select>
 
-          <UploadBox onUploaded={setFilename} />
+         <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-6">
+  <h3 className="mb-2 text-xl font-bold">
+    📐 Upload Floor Plan
+  </h3>
 
+  <p className="mb-4 text-sm text-slate-600">
+    Upload a PDF, JPG or PNG floor plan to begin the AI analysis.
+  </p>
+
+  <UploadBox onUploaded={setFilename} />
+
+  {filename && (
+    <div className="mt-4 rounded-lg bg-green-50 p-3 text-green-700">
+      ✅ Uploaded: {filename}
+    </div>
+  )}
+</div>
           <button
             onClick={analyseFloorPlan}
             disabled={loading}
