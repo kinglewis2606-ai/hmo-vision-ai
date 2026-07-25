@@ -48,7 +48,29 @@ export default function Home() {
 
 </div>
 
-<div className="mt-8 bg-white rounded-xl shadow p-8 border">
+<div className="mt-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+
+  <div className="bg-white rounded-xl shadow p-6 border">
+    <p className="text-gray-500">Properties Analysed</p>
+    <h2 className="text-4xl font-bold mt-2">0</h2>
+  </div>
+
+  <div className="bg-white rounded-xl shadow p-6 border">
+    <p className="text-gray-500">Potential Bedrooms</p>
+    <h2 className="text-4xl font-bold mt-2">0</h2>
+  </div>
+
+  <div className="bg-white rounded-xl shadow p-6 border">
+    <p className="text-gray-500">Estimated ROI</p>
+    <h2 className="text-4xl font-bold mt-2">--</h2>
+  </div>
+
+  <div className="bg-white rounded-xl shadow p-6 border">
+    <p className="text-gray-500">Compliance Score</p>
+    <h2 className="text-4xl font-bold mt-2">--</h2>
+  </div>
+
+</div>
           <h3 className="text-2xl font-semibold mb-4">
             Recent Projects
           </h3>
