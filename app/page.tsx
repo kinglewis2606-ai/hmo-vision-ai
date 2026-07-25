@@ -71,14 +71,7 @@ export default function Home() {
   </div>
 
 </div>
-          <h3 className="text-2xl font-semibold mb-4">
-            Recent Projects
-          </h3>
-
-          <p className="text-gray-500">
-            No projects yet.
-          </p>
-        </div>
+          
       </section>
 
     </main>
