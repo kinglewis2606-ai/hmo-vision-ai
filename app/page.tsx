@@ -3,7 +3,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-100 flex">
 
-      <aside className="w-64 bg-slate-900 text-white p-6">
+      <aside className="w-20 md:w-64 bg-slate-900 text-white p-4 md:p-6">
         <h1 className="text-2xl font-bold mb-8">🏠 HMO Vision AI</h1>
 
         <nav className="space-y-4">
@@ -18,7 +18,7 @@ export default function Home() {
       </aside>
 
       <section className="flex-1 p-10">
-        <h2 className="text-4xl font-bold mb-6">
+        <h2 className="text-2xl md:text-4xl font-bold mb-6">
           Welcome to HMO Vision AI
         </h2>
 
@@ -39,7 +39,7 @@ export default function Home() {
 
   <Link
     href="/new"
-    className="inline-block rounded-xl bg-blue-600 px-8 py-4 text-white font-bold hover:bg-blue-700"
+    className="block w-full md:w-auto rounded-xl bg-blue-600 px-8 py-4 text-center text-white font-bold hover:bg-blue-700"
   >
     🚀 Start New Analysis
     </Link>
