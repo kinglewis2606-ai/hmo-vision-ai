@@ -42,11 +42,13 @@ export default function Home() {
     className="inline-block rounded-xl bg-blue-600 px-8 py-4 text-white font-bold hover:bg-blue-700"
   >
     🚀 Start New Analysis
-  </Link>
+    </Link>
 
 </div>
 
-        <div className="mt-8 bg-white rounded-xl shadow p-8 border">
+</div>
+
+<div className="mt-8 bg-white rounded-xl shadow p-8 border">
           <h3 className="text-2xl font-semibold mb-4">
             Recent Projects
           </h3>
