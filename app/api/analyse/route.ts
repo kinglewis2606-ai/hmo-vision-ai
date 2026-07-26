@@ -169,11 +169,12 @@ Return ONLY valid JSON using EXACTLY this structure.
       result,
     });
   } catch (error: any) {
-    console.error(error);
+  console.error("FULL ERROR:");
+  console.dir(error, { depth: null });
 
-    return NextResponse.json({
-      success: false,
-      error: error.message || "Analysis failed.",
-    });
-  }
+  return NextResponse.json({
+    success: false,
+    error: error.message || "Analysis failed.",
+  });
+}
 }
