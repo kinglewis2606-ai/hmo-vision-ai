@@ -18,7 +18,16 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
 
     const image = fs.readFileSync(filePath);
     const base64 = image.toString("base64");
+const ext = path.extname(filename).toLowerCase();
 
+const mimeType =
+  ext === ".png"
+    ? "image/png"
+    : ext === ".webp"
+    ? "image/webp"
+    : ext === ".pdf"
+    ? "application/pdf"
+    : "image/jpeg";
     const response = await openai.responses.create({
       model: "gpt-5",
       input: [
@@ -152,7 +161,7 @@ Return ONLY valid JSON using EXACTLY this structure.
             },
             {
               type: "input_image",
-              image_url: `data:image/jpeg;base64,${base64}`,
+              image_url: `data:${mimeType};base64,${base64}`,
               detail: "high",
             },
           ],
@@ -160,14 +169,28 @@ Return ONLY valid JSON using EXACTLY this structure.
       ],
     });
 
-    const result =
-      response.output_text ||
-      JSON.stringify(response, null, 2);
+    const output = response.output_text ?? "";
 
-    return NextResponse.json({
-      success: true,
-      result,
-    });
+const cleaned = output
+  .replace(/^```json\s*/i, "")
+  .replace(/^```\s*/i, "")
+  .replace(/\s*```$/, "")
+  .trim();
+
+try {
+  const result = JSON.parse(cleaned);
+
+  return NextResponse.json({
+    success: true,
+    result,
+  });
+} catch {
+  return NextResponse.json({
+    success: false,
+    error: "The AI did not return valid JSON.",
+    raw: output,
+  });
+}
   } catch (error: any) {
   console.error("FULL ERROR:");
   console.dir(error, { depth: null });
