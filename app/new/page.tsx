@@ -67,7 +67,7 @@ setReport(parsedReport);
     <div className="text-sm text-slate-400">AI Analysis</div>
     <div className="mt-2 text-2xl font-bold text-white">60 sec</div>
   </div>
-</div>
+
   <div className="rounded-xl bg-slate-800 p-5">
     <div className="text-sm text-slate-400">Supported Files</div>
     <div className="mt-2 text-2xl font-bold text-white">
@@ -152,9 +152,33 @@ setReport(parsedReport);
         {report && (
           <div className="mt-8 bg-white rounded-xl shadow-xl p-8">
 
-            <h2 className="text-3xl font-bold mb-6">
-              HMO Assessment Report
-            </h2>
+            <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+
+  <div>
+    <span className="inline-block rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">
+      ✓ Analysis Complete
+    </span>
+
+    <h2 className="mt-3 text-4xl font-bold">
+      HMO Assessment Report
+    </h2>
+
+    <p className="mt-2 text-slate-600">
+      AI-generated investment summary based on your uploaded floor plan.
+    </p>
+  </div>
+
+  <div className="rounded-xl bg-blue-600 px-6 py-5 text-center text-white shadow-lg">
+    <div className="text-sm opacity-80">
+      HMO Score
+    </div>
+
+    <div className="text-5xl font-bold">
+      {report.hmoScore}/100
+    </div>
+  </div>
+
+</div>
 
             <div className="grid md:grid-cols-2 gap-6">
 
@@ -212,19 +236,7 @@ setReport(parsedReport);
   </div>
 </div>
 
-              <div className="border rounded-lg p-4">
-                <h3 className="font-bold text-xl mb-3">
-                  Overall Score
-                </h3>
-
-                <div className="text-6xl font-bold text-blue-600">
-                  {report.hmoScore}/100
-                </div>
-
-                <p className="mt-4">
-                  {report.verdict}
-                </p>
-              </div>
+              
 
               <div className="border rounded-lg p-4">
                 <h3 className="font-bold text-xl mb-3">
@@ -250,26 +262,7 @@ setReport(parsedReport);
                 </ul>
               </div>
 
-              <div className="border rounded-lg p-4">
-                <h3 className="font-bold text-xl mb-3">
-                  Estimated Conversion Cost
-                </h3>
-
-                <p>
-                  £{report.estimatedConversionCost.low.toLocaleString()} -
-                  £{report.estimatedConversionCost.high.toLocaleString()}
-                </p>
-              </div>
-
-              <div className="border rounded-lg p-4">
-                <h3 className="font-bold text-xl mb-3">
-                  Estimated Monthly Rent
-                </h3>
-
-                <p>
-                  £{report.estimatedMonthlyRent.toLocaleString()}
-                </p>
-              </div>
+              
 
             </div>
 
