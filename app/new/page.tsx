@@ -46,7 +46,7 @@ console.log("RAW AI RESULT:", data.result);
           .replace(/\s*```$/, "")
       )
     : data.result;
-alert(JSON.stringify(parsedReport, null, 2));
+
 setReport(parsedReport);
     } catch (err) {
       console.error(err);
