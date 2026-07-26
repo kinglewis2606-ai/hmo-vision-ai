@@ -192,9 +192,13 @@ try {
   });
 }
   } catch (error: any) {
-  console.error("FULL ERROR:");
+  console.error("========== FULL ERROR ==========");
   console.dir(error, { depth: null });
 
+  if (error instanceof Error) {
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
+  }
   return NextResponse.json({
     success: false,
     error: error.message || "Analysis failed.",
