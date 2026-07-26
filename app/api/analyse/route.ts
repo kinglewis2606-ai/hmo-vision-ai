@@ -3,7 +3,7 @@ import { openai } from "@/lib/openai";
 import fs from "fs";
 import path from "path";
 
-export async function POST(req: Request) {
+export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
     const { filename, address, propertyType } = await req.json();
 
