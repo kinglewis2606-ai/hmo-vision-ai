@@ -197,6 +197,9 @@ Return ONLY valid JSON using EXACTLY this structure.
 
     const output = response.output_text ?? "";
 
+    console.log("RAW AI OUTPUT:");
+console.log(output);
+
 const cleaned = output
   .replace(/^```json\s*/i, "")
   .replace(/^```\s*/i, "")
