@@ -174,18 +174,24 @@ setReport(data.result);
     </div>
   </div>
 
-              <div className="mt-6 rounded-xl border-2 border-green-200 bg-green-50 p-6 text-center">
-  <div className="text-sm font-semibold uppercase tracking-wide text-green-700">
-    Investment Verdict
+              <div className="mt-6 rounded-xl border-2 border-green-200 bg-green-50 p-6">
+
+  <div className="text-center">
+
+    <div className="text-sm font-semibold uppercase tracking-widest text-green-700">
+      Investment Verdict
+    </div>
+
+    <div className="mt-3 inline-block rounded-full bg-green-600 px-6 py-3 text-3xl font-bold text-white shadow-lg">
+      {report.verdict}
+    </div>
+
   </div>
 
-  <div className="mt-2 text-3xl font-bold text-green-800">
-    {report.verdict}
-  </div>
-
-  <p className="mt-3 text-slate-700">
+  <p className="mt-6 text-lg leading-8 text-slate-800">
     {report.investorSummary}
   </p>
+
 </div>
 </div>
 
