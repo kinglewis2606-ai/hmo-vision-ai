@@ -1,5 +1,6 @@
 "use client";
 
+import FloorPlanOverlay from "@/components/FloorPlanOverlay";
 import { useState } from "react";
 import UploadBox from "@/components/UploadBox";
 
@@ -9,7 +10,23 @@ export default function NewProjectPage() {
   const [filename, setFilename] = useState("");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
-
+const testBoxes = [
+  {
+    label: "Bedroom 1",
+    x: 140,
+    y: 120,
+    width: 180,
+    height: 120,
+  },
+  {
+    label: "Kitchen",
+    x: 380,
+    y: 300,
+    width: 220,
+    height: 160,
+    colour: "rgba(34,197,94,0.35)",
+  },
+];
   async function analyseFloorPlan() {
     if (!filename) {
       alert("Please upload a floor plan first.");
