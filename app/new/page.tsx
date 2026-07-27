@@ -178,6 +178,19 @@ setReport(parsedReport);
     </div>
   </div>
 
+              <div className="mt-6 rounded-xl border-2 border-green-200 bg-green-50 p-6 text-center">
+  <div className="text-sm font-semibold uppercase tracking-wide text-green-700">
+    Investment Verdict
+  </div>
+
+  <div className="mt-2 text-3xl font-bold text-green-800">
+    {report.verdict}
+  </div>
+
+  <p className="mt-3 text-slate-700">
+    {report.investorSummary}
+  </p>
+</div>
 </div>
 
             <div className="grid md:grid-cols-2 gap-6">
