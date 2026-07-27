@@ -108,6 +108,32 @@ Before returning your answer ask yourself:
 
 If the answer is no, reassess the floor plan.
 
+HMO SCORING RULES
+
+The HMO score must represent the overall investment quality.
+
+Score using these criteria:
+
+• Maximum achievable HMO size (35 points)
+• Layout efficiency (20 points)
+• Planning/licensing feasibility (15 points)
+• Rental income potential (15 points)
+• Estimated conversion cost (15 points)
+
+Score guide:
+
+90–100 = Exceptional investment
+75–89 = Strong Buy
+60–74 = Good Investment
+40–59 = Average
+0–39 = Poor
+
+A realistic 7-bedroom HMO should rarely score below 75 unless there are major planning or layout problems.
+
+The HMO score, verdict and investor summary must all agree with each other.
+
+Never return contradictory results.
+
 Return ONLY valid JSON using EXACTLY this structure.
 
 {
