@@ -208,6 +208,10 @@ const cleaned = output
 
 try {
   const result = JSON.parse(cleaned);
+  console.log(
+    
+  JSON.stringify(result.recommendedLayout?.[0], null, 2)
+);
 
   return NextResponse.json({
     success: true,
