@@ -1,6 +1,6 @@
 "use client";
 
-import FloorPlanOverLay from "@/components/FloorPlanOverlay";
+import floorPlanOverLay from "@/components/FloorPlanOverlay";
 import { useState } from "react";
 import UploadBox from "@/components/UploadBox";
 
