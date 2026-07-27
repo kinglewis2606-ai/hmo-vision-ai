@@ -36,9 +36,7 @@ console.log(text);
 alert(text);
 return;
 
-      if (!data.success) {
-      
-    } catch (err) {
+      } catch (err) {
   console.error("Analyse error:", err);
 
   if (err instanceof Error) {
