@@ -251,7 +251,7 @@ setReport(data.result);
   </div>
 </div>
 
-          <div className="border rounded-lg p-6 bg-slate-50">
+         <div className="border rounded-lg p-6 bg-slate-50">
   <h3 className="font-bold text-2xl mb-5">
     🏠 Proposed Room Layout
   </h3>
@@ -259,21 +259,20 @@ setReport(data.result);
   <div className="space-y-4">
     {report.recommendedLayout.map((room: string, i: number) => (
       <div
-      <div
-  key={i}
-  className="rounded-lg border border-slate-700 bg-slate-800 p-4"
->
-  <div className="font-semibold text-blue-400 mb-2">
-    Step {i + 1}
-  </div>
+        key={i}
+        className="rounded-lg border border-slate-700 bg-slate-800 p-4"
+      >
+        <div className="font-semibold text-blue-400 mb-2">
+          Step {i + 1}
+        </div>
 
-  <p className="text-slate-200 leading-7 whitespace-pre-wrap">
-    {room}
-  </p>
-</div>
+        <p className="text-slate-200 leading-7 whitespace-pre-wrap">
+          {room}
+        </p>
+      </div>
     ))}
   </div>
-</div>    
+</div>
 
               <div className="border rounded-lg p-4">
                 <h3 className="font-bold text-xl mb-3">
