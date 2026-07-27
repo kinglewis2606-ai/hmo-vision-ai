@@ -31,10 +31,14 @@ export default function NewProjectPage() {
         }),
       });
 
-      const text = await res.text();
-console.log(text);
-alert(text);
-return;
+      const data = await res.json();
+
+if (!data.success) {
+  alert(data.error || "Analysis failed");
+  return;
+}
+
+setReport(data.result);
 
       } catch (err) {
   console.error("Analyse error:", err);
