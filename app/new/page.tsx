@@ -49,12 +49,14 @@ console.log("RAW AI RESULT:", data.result);
 
 setReport(parsedReport);
     } catch (err) {
-      console.error(err);
-      alert("Unable to analyse floor plan.");
-    } finally {
-      setLoading(false);
-    }
+  console.error("Analyse error:", err);
+
+  if (err instanceof Error) {
+    alert(err.message);
+  } else {
+    alert(JSON.stringify(err));
   }
+    }
 
   return (
     <main className="min-h-screen bg-slate-900 p-8">
