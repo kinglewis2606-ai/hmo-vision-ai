@@ -56,7 +56,9 @@ setReport(parsedReport);
   } else {
     alert(JSON.stringify(err));
   }
-    }
+    } finally {
+  setLoading(false);
+}
 
   return (
     <main className="min-h-screen bg-slate-900 p-8">
