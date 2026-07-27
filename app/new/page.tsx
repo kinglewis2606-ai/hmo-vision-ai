@@ -31,7 +31,10 @@ export default function NewProjectPage() {
         }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+console.log(text);
+alert(text);
+return;
 console.log("RAW AI RESULT:", data.result);
       if (!data.success) {
         alert(data.error || "Analysis failed");
