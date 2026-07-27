@@ -8,6 +8,7 @@ export default function NewProjectPage() {
   const [address, setAddress] = useState("");
   const [propertyType, setPropertyType] = useState("Semi Detached");
   const [filename, setFilename] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
 const testBoxes = [
@@ -145,13 +146,26 @@ setReport(data.result);
     Upload a PDF, JPG or PNG floor plan to begin the AI analysis.
   </p>
 
-  <UploadBox onUploaded={setFilename} />
+  <UploadBox
+  onUploaded={(filename, imageUrl) => {
+    setFilename(filename);
+    setImageUrl(imageUrl);
+  }}
+/>
 
   {filename && (
     <div className="mt-4 rounded-lg bg-green-50 p-3 text-green-700">
       ✅ Uploaded: {filename}
     </div>
   )}
+           {imageUrl && (
+  <div className="mt-6">
+    <FloorPlanOverlay
+      imageUrl={imageUrl}
+      boxes={testBoxes}
+    />
+  </div>
+)}
 </div>
           <button
             onClick={analyseFloorPlan}
