@@ -251,7 +251,36 @@ setReport(data.result);
   </div>
 </div>
 
-              
+          <div className="border rounded-lg p-6 bg-slate-50">
+  <h3 className="font-bold text-2xl mb-5">
+    🏠 Proposed Room Layout
+  </h3>
+
+  <div className="space-y-4">
+    {report.recommendedLayout?.map((room: any, i: number) => (
+      <div
+        key={i}
+        className="rounded-lg border p-4 bg-white"
+      >
+        <div className="flex justify-between">
+          <strong>{room.name}</strong>
+          <span>{room.floor}</span>
+        </div>
+
+        <div className="mt-2">
+          <div><strong>Use:</strong> {room.use}</div>
+          <div><strong>Size:</strong> {room.approxSizeSqM} m²</div>
+          <div><strong>Occupancy:</strong> {room.occupancy}</div>
+          <div><strong>Ensuite:</strong> {room.ensuite ? "Yes" : "No"}</div>
+
+          <p className="mt-2 text-sm text-slate-600">
+            {room.notes}
+          </p>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>    
 
               <div className="border rounded-lg p-4">
                 <h3 className="font-bold text-xl mb-3">
