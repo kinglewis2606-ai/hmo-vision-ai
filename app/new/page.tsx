@@ -35,7 +35,7 @@ export default function NewProjectPage() {
 console.log(text);
 alert(text);
 return;
-console.log("RAW AI RESULT:", data.result);
+
       if (!data.success) {
         alert(data.error || "Analysis failed");
         return;
