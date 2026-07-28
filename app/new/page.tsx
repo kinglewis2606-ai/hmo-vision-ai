@@ -160,6 +160,7 @@ setReport(data.result);
   onUploaded={(filename, imageUrl) => {
     setFilename(filename);
     setImageUrl(imageUrl);
+console.log(imageUrl);
   }}
 />
 
