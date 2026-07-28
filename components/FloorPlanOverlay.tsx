@@ -1,53 +1,53 @@
 "use client";
 
-import Image from "next/image";
-
-type OverlayBox = {
-  label: string;
+type Box = {
   x: number;
   y: number;
   width: number;
   height: number;
-  colour?: string;
-};
-
-type Props = {
-  imageUrl: string;
-  boxes: OverlayBox[];
+  label: string;
+  type?: "bedroom" | "kitchen" | "bathroom" | "communal";
 };
 
 export default function FloorPlanOverlay({
   imageUrl,
   boxes,
-}: Props) {
+}: {
+  imageUrl: string;
+  boxes: Box[];
+}) {
+  const colours = {
+    bedroom: "rgba(37,99,235,0.55)",
+    kitchen: "rgba(22,163,74,0.55)",
+    bathroom: "rgba(168,85,247,0.55)",
+    communal: "rgba(245,158,11,0.55)",
+  };
+
   return (
-    <div className="relative w-full overflow-auto rounded-xl border bg-white">
-      <Image
+    <div className="relative w-full overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
+
+      <img
         src={imageUrl}
         alt="Floor Plan"
-        width={1200}
-        height={1600}
-        className="w-full h-auto"
+        className="w-full h-auto block"
       />
 
-      <div className="absolute inset-0">
-        {boxes.map((box, index) => (
-          <div
-            key={index}
-            className="absolute border-2 rounded-md flex items-center justify-center text-xs font-bold text-white"
-            style={{
-              left: box.x,
-              top: box.y,
-              width: box.width,
-              height: box.height,
-              backgroundColor: box.colour ?? "rgba(59,130,246,0.35)",
-              borderColor: "#2563eb",
-            }}
-          >
-            {box.label}
-          </div>
-        ))}
-      </div>
+      {boxes.map((box, i) => (
+        <div
+          key={i}
+          className="absolute border-2 border-blue-400 rounded-lg flex items-center justify-center text-white font-semibold text-sm text-center shadow-lg"
+          style={{
+            left: `${box.x}%`,
+            top: `${box.y}%`,
+            width: `${box.width}%`,
+            height: `${box.height}%`,
+            backgroundColor:
+              colours[box.type || "bedroom"],
+          }}
+        >
+          {box.label}
+        </div>
+      ))}
     </div>
   );
 }
