@@ -13,21 +13,31 @@ export default function NewProjectPage() {
   const [report, setReport] = useState<any>(null);
 const testBoxes = [
   {
+    x: 18,
+    y: 15,
+    width: 20,
+    height: 12,
     label: "Bedroom 1",
-    x: 140,
-    y: 120,
-    width: 180,
-    height: 120,
+    type: "bedroom",
   },
   {
-    label: "Kitchen",
-    x: 380,
-    y: 300,
-    width: 220,
-    height: 160,
-    colour: "rgba(34,197,94,0.35)",
+    x: 50,
+    y: 45,
+    width: 28,
+    height: 14,
+    label: "Kitchen-Diner",
+    type: "kitchen",
+  },
+  {
+    x: 72,
+    y: 18,
+    width: 12,
+    height: 10,
+    label: "Shower",
+    type: "bathroom",
   },
 ];
+  
   async function analyseFloorPlan() {
     if (!filename) {
       alert("Please upload a floor plan first.");
