@@ -1,6 +1,6 @@
 "use client";
 
-import FloorPlanOverlay from "@/components/FloorPlanOverlay";
+import FloorPlanOverlay, { type Box } from "@/components/FloorPlanOverlay";
 import { useState } from "react";
 import UploadBox from "@/components/UploadBox";
 
@@ -11,7 +11,7 @@ export default function NewProjectPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
-const testBoxes = [
+const testBoxes: Box[] = [
   {
     x: 18,
     y: 15,
