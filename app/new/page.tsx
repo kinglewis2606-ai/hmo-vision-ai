@@ -158,10 +158,11 @@ setReport(data.result);
 
   <UploadBox
   onUploaded={(filename, imageUrl) => {
-    setFilename(filename);
-    setImageUrl(imageUrl);
-console.log(imageUrl);
-  }}
+  console.log("IMAGE URL:", imageUrl);
+
+  setFilename(filename);
+  setImageUrl(imageUrl);
+}}
 />
 
   {filename && (
