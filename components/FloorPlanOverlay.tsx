@@ -1,6 +1,6 @@
 "use client";
 
-type Box = {
+export type Box = {
   x: number;
   y: number;
   width: number;
