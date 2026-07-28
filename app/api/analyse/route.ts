@@ -7,8 +7,7 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
   try {
     const { filename, address, propertyType } = await req.json();
 
-    const filePath = path.join(process.cwd(), "uploads", filename);
-
+    const filePath = path.join(process.cwd(), "public", "uploads", filename);
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({
         success: false,
