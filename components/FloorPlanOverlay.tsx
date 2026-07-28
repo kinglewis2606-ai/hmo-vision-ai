@@ -27,10 +27,17 @@ export default function FloorPlanOverlay({
     <div className="relative w-full overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
 
       <img
-        src={imageUrl}
-        alt="Floor Plan"
-        className="w-full h-auto block"
-      />
+  src={imageUrl}
+  alt="Floor Plan"
+  className="w-full"
+  onLoad={(e) => {
+    console.log(
+      "Loaded:",
+      e.currentTarget.naturalWidth,
+      e.currentTarget.naturalHeight
+    );
+  }}
+/>
 
       {boxes.map((box, i) => (
         <div
