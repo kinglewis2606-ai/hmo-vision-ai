@@ -23,12 +23,16 @@ export default function UploadBox({
 
     const data = await res.json();
 
-      if (onUploaded) {
-        onUploaded(
-  data.filename,
-  `/uploads/${data.filename}`
-);
-      }
+if (data.success) {
+  if (onUploaded) {
+    onUploaded(
+      data.filename,
+      `/uploads/${data.filename}`
+    );
+  }
+} else {
+  setMessage("❌ Upload failed");
+}
     } else {
       setMessage("❌ Upload failed");
     }
