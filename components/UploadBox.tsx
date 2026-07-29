@@ -23,17 +23,17 @@ export default function UploadBox({
 
     const data = await res.json();
 
-if (data.success) {
-  if (onUploaded) {
-    onUploaded(
-      data.filename,
-      `/uploads/${data.filename}`
-    );
-  }
-}  {
-  setMessage("❌ Upload failed");
-}
-    
+    if (data.success) {
+      if (onUploaded) {
+        onUploaded(
+          data.filename,
+          `/uploads/${data.filename}`
+        );
+      }
+      setMessage("✅ Upload successful");
+    } else {
+      setMessage("❌ Upload failed");
+    }
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -54,13 +54,4 @@ if (data.success) {
         <>
           <h2 className="text-2xl font-bold mb-2">
             Upload Floor Plan
-          </h2>
-
-          <p>PDF, JPG or PNG</p>
-
-          <p className="mt-4">{message}</p>
-        </>
-      )}
-    </div>
-  );
-}
+         
