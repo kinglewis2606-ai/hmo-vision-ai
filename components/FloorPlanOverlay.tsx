@@ -26,11 +26,16 @@ export default function FloorPlanOverlay({
   return (
     <div className="relative w-full aspect-[4/3] overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
       <img
-        src={imageUrl}
-        alt="Floor Plan"
-        className="absolute inset-0 h-full w-full object-contain"
-        draggable={false}
-      />
+  src={imageUrl}
+  alt="Floor Plan"
+  className="absolute inset-0 h-full w-full object-contain"
+  draggable={false}
+  onLoad={() => console.log("Loaded:", imageUrl)}
+  onError={(e) => {
+    console.log("Failed:", imageUrl);
+    console.log(e);
+  }}
+/>
 
       {boxes.map((box, i) => (
         <div
