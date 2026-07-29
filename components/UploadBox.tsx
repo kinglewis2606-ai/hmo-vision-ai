@@ -23,13 +23,6 @@ export default function UploadBox({
 
     const data = await res.json();
 
-    if (data.success) {
-  onUploaded(
-    data.filename,
-    `/api/uploads/${data.filename}`
-  );
-    }
-
       if (onUploaded) {
         onUploaded(
   data.filename,
