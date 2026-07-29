@@ -33,9 +33,7 @@ if (data.success) {
 } else {
   setMessage("❌ Upload failed");
 }
-    } else {
-      setMessage("❌ Upload failed");
-    }
+    
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
