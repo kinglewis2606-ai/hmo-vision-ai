@@ -11,32 +11,7 @@ export default function NewProjectPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
-const testBoxes: Box[] = [
-  {
-    x: 18,
-    y: 15,
-    width: 20,
-    height: 12,
-    label: "Bedroom 1",
-    type: "bedroom",
-  },
-  {
-    x: 50,
-    y: 45,
-    width: 28,
-    height: 14,
-    label: "Kitchen-Diner",
-    type: "kitchen",
-  },
-  {
-    x: 72,
-    y: 18,
-    width: 12,
-    height: 10,
-    label: "Shower",
-    type: "bathroom",
-  },
-];
+const [boxes, setBoxes] = useState<Box[]>([]);
   
   async function analyseFloorPlan() {
     if (!filename) {
@@ -162,6 +137,7 @@ setReport(data.result);
 
   setFilename(filename);
   setImageUrl(imageUrl);
+    setBoxes([]);
 }}
 />
 
@@ -174,7 +150,7 @@ setReport(data.result);
   <div className="mt-6">
     <FloorPlanOverlay
       imageUrl={imageUrl}
-      boxes={testBoxes}
+      boxes={boxes}
     />
   </div>
 )}
