@@ -136,7 +136,9 @@ setReport(data.result);
   console.log("IMAGE URL:", imageUrl);
 console.log("Full URL:", window.location.origin + imageUrl);
   setFilename(filename);
+  setTimeout(() => {
   setImageUrl(imageUrl);
+}, 500);
     setBoxes([]);
 }}
 />
