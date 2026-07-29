@@ -194,8 +194,10 @@ Return ONLY valid JSON using EXACTLY this structure.
       ],
     });
 
-    const output = response.output_text ?? "";
+    console.log("FULL OPENAI RESPONSE:");
+console.dir(response, { depth: null });
 
+const output = response.output_text ?? "";
     console.log("RAW AI OUTPUT:");
 console.log(output);
 
