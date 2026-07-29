@@ -30,7 +30,7 @@ if (data.success) {
       `/uploads/${data.filename}`
     );
   }
-} else {
+}  {
   setMessage("❌ Upload failed");
 }
     
