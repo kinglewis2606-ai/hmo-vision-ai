@@ -24,18 +24,18 @@ export default function FloorPlanOverlay({
   };
 
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
+    <div className="relative w-full aspect-[4/3] overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
       <img
         src={imageUrl}
         alt="Floor Plan"
-        className="block h-auto w-full"
+        className="absolute inset-0 h-full w-full object-contain"
         draggable={false}
       />
 
       {boxes.map((box, i) => (
         <div
           key={i}
-          className="absolute border-2 border-blue-400 rounded-lg flex items-center justify-center text-white font-semibold text-sm text-center shadow-lg"
+          className="absolute flex items-center justify-center rounded-lg border-2 border-blue-400 text-center text-sm font-semibold text-white shadow-lg"
           style={{
             left: `${box.x}%`,
             top: `${box.y}%`,
