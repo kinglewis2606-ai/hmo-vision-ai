@@ -134,7 +134,7 @@ setReport(data.result);
   <UploadBox
   onUploaded={(filename, imageUrl) => {
   console.log("IMAGE URL:", imageUrl);
-
+console.log("Full URL:", window.location.origin + imageUrl);
   setFilename(filename);
   setImageUrl(imageUrl);
     setBoxes([]);
