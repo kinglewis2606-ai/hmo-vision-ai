@@ -24,13 +24,14 @@ export default function UploadBox({
     const data = await res.json();
 
     if (data.success) {
+      setMessage("✅ Upload successful");
+
       if (onUploaded) {
         onUploaded(
           data.filename,
-          `/uploads/${data.filename}`
+          `/api/uploads/${data.filename}`
         );
       }
-      setMessage("✅ Upload successful");
     } else {
       setMessage("❌ Upload failed");
     }
@@ -54,4 +55,13 @@ export default function UploadBox({
         <>
           <h2 className="text-2xl font-bold mb-2">
             Upload Floor Plan
-         
+          </h2>
+
+          <p>PDF, JPG or PNG</p>
+
+          <p className="mt-4">{message}</p>
+        </>
+      )}
+    </div>
+  );
+}
