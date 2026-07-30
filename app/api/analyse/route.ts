@@ -24,16 +24,8 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
     if (ext === ".webp") mime = "image/webp";
 
     const base64 = image.toString("base64");
-const ext = path.extname(filename).toLowerCase();
 
-const mimeType =
-  ext === ".png"
-    ? "image/png"
-    : ext === ".webp"
-    ? "image/webp"
-    : ext === ".pdf"
-    ? "application/pdf"
-    : "image/jpeg";
+
     const response = await openai.responses.create({
       model: "gpt-5",
       input: [
@@ -178,7 +170,7 @@ Return ONLY valid JSON using EXACTLY this structure.
             },
             {
               type: "input_image",
-              image_url: `data:${mimeType};base64,${base64}`,
+              image_url: `data:${mime};base64,${base64}`,
               detail: "high",
             },
           ],
