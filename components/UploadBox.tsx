@@ -6,7 +6,7 @@ import { useDropzone } from "react-dropzone";
 export default function UploadBox({
   onUploaded,
 }: {
-  onUploaded?: (filename: string) => void;
+  onUploaded?: (filename: string, imageUrl: string) => void;
 }) {
   const [message, setMessage] = useState("");
 
@@ -24,10 +24,13 @@ export default function UploadBox({
     const data = await res.json();
 
     if (data.success) {
-      setMessage(`✅ Uploaded: ${data.filename}`);
+      setMessage("✅ Upload successful");
 
       if (onUploaded) {
-        onUploaded(data.filename);
+        onUploaded(
+          data.filename,
+          `/api/uploads/${data.filename}`
+        );
       }
     } else {
       setMessage("❌ Upload failed");

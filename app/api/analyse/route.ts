@@ -3,12 +3,11 @@ import { openai } from "@/lib/openai";
 import fs from "fs";
 import path from "path";
 
-export async function POST(req: Request) {
+export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
     const { filename, address, propertyType } = await req.json();
 
-    const filePath = path.join(process.cwd(), "uploads", filename);
-
+    const filePath = path.join(process.cwd(), "public", "uploads", filename);
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({
         success: false,
@@ -25,9 +24,18 @@ export async function POST(req: Request) {
     if (ext === ".webp") mime = "image/webp";
 
     const base64 = image.toString("base64");
+const ext = path.extname(filename).toLowerCase();
 
+const mimeType =
+  ext === ".png"
+    ? "image/png"
+    : ext === ".webp"
+    ? "image/webp"
+    : ext === ".pdf"
+    ? "application/pdf"
+    : "image/jpeg";
     const response = await openai.responses.create({
-      model: "gpt-4.1-mini",
+      model: "gpt-5",
       input: [
         {
           role: "user",
@@ -35,9 +43,15 @@ export async function POST(req: Request) {
             {
               type: "input_text",
               text: `
-You are an experienced UK HMO consultant, architect and property investor.
+You are HMO Vision AI.
 
-Analyse this floor plan.
+You are an experienced UK HMO consultant, architect, planning specialist and professional property investor.
+
+Your job is NOT simply to describe the floor plan.
+
+Your job is to determine the MAXIMUM REALISTIC HMO this property could become.
+
+Always think like an experienced HMO developer looking to maximise the property's value.
 
 Property Address:
 ${address || "Unknown"}
@@ -45,13 +59,88 @@ ${address || "Unknown"}
 Property Type:
 ${propertyType || "Unknown"}
 
-IMPORTANT
+IMPORTANT RULES
 
-Only recommend HMOs with FOUR OR MORE BEDROOMS.
+• Only recommend legal and realistic HMO layouts.
+• Never invent rooms that clearly cannot exist.
+• Consider converting lounges, dining rooms, studies and oversized bedrooms where appropriate.
+• Consider relocating kitchens or bathrooms if realistic.
+• Always search for the maximum achievable bedroom count.
+• If a higher bedroom count creates an impractical layout, recommend the best balanced option instead.
+• Explain WHY every additional bedroom is possible.
 
-If the property cannot realistically become a legal 4-bedroom HMO, clearly explain why.
+Analyse the property in this order.
 
-Return ONLY valid JSON in exactly this format:
+STEP 1
+
+Identify:
+
+• Existing bedrooms
+• Bathrooms
+• Reception rooms
+• Kitchen
+• Utility rooms
+• Hallways
+• Stairs
+
+STEP 2
+
+Estimate which existing rooms could become additional bedrooms.
+
+STEP 3
+
+Work through every realistic HMO option.
+
+Consider:
+
+• 4 Bedroom HMO
+• 5 Bedroom HMO
+• 6 Bedroom HMO
+• 7 Bedroom HMO
+
+Stop only when no further realistic bedrooms can be achieved.
+
+STEP 4
+
+Choose the best investment option.
+
+STEP 5
+
+Explain your reasoning.
+
+Before returning your answer ask yourself:
+
+"Have I found every realistic opportunity to create another bedroom?"
+
+If the answer is no, reassess the floor plan.
+
+HMO SCORING RULES
+
+The HMO score must represent the overall investment quality.
+
+Score using these criteria:
+
+• Maximum achievable HMO size (35 points)
+• Layout efficiency (20 points)
+• Planning/licensing feasibility (15 points)
+• Rental income potential (15 points)
+• Estimated conversion cost (15 points)
+
+Score guide:
+
+90–100 = Exceptional investment
+75–89 = Strong Buy
+60–74 = Good Investment
+40–59 = Average
+0–39 = Poor
+
+A realistic 7-bedroom HMO should rarely score below 75 unless there are major planning or layout problems.
+
+The HMO score, verdict and investor summary must all agree with each other.
+
+Never return contradictory results.
+
+Return ONLY valid JSON using EXACTLY this structure.
 
 {
   "summary": {
@@ -89,7 +178,7 @@ Return ONLY valid JSON in exactly this format:
             },
             {
               type: "input_image",
-              image_url: `data:${mime};base64,${base64}`,
+              image_url: `data:${mimeType};base64,${base64}`,
               detail: "high",
             },
           ],
@@ -125,11 +214,16 @@ Return ONLY valid JSON in exactly this format:
     });
 
   } catch (error: any) {
-    console.error(error);
+  console.error("========== FULL ERROR ==========");
+  console.dir(error, { depth: null });
 
-    return NextResponse.json({
-      success: false,
-      error: error.message || "Analysis failed.",
-    });
+  if (error instanceof Error) {
+    console.error("Message:", error.message);
+    console.error("Stack:", error.stack);
   }
+  return NextResponse.json({
+    success: false,
+    error: error.message || "Analysis failed.",
+  });
+}
 }
