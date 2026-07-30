@@ -1,13 +1,20 @@
 import fs from "fs";
 import path from "path";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(req: Request, { params }: { params: { filename: string } }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ filename: string }> }
+) {
   try {
-    const { filename } = params;
+    const { filename } = await params;
 
-    // Basic safety: disallow path traversal and weird input
-    if (!filename || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+    if (
+      !filename ||
+      filename.includes("..") ||
+      filename.includes("/") ||
+      filename.includes("\\")
+    ) {
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
@@ -35,7 +42,7 @@ export async function GET(req: Request, { params }: { params: { filename: string
         "Cache-Control": "no-store",
       },
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
