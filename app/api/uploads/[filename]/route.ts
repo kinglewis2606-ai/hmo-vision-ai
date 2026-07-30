@@ -1,39 +1,42 @@
-import { NextRequest } from "next/server";
-import fs from "fs/promises";
+import fs from "fs";
 import path from "path";
+import { NextResponse } from "next/server";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ filename: string }> }
-) {
+export async function GET(req: Request, { params }: { params: { filename: string } }) {
   try {
-    const { filename } = await params;
+    const { filename } = params;
 
-    const filePath = path.join(
-      process.cwd(),
-      "public",
-      "uploads",
-      filename
-    );
+    // Basic safety: disallow path traversal and weird input
+    if (!filename || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
+    }
 
-    const file = await fs.readFile(filePath);
+    const uploadsDir = path.join(process.cwd(), "uploads");
+    const filePath = path.join(uploadsDir, filename);
 
-    const ext = path.extname(filename).toLowerCase();
+    if (!fs.existsSync(filePath)) {
+      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    }
 
-    const type =
-      ext === ".png"
-        ? "image/png"
-        : ext === ".webp"
-        ? "image/webp"
-        : "image/jpeg";
+    const ext = path.extname(filePath).toLowerCase();
 
-    return new Response(file, {
+    let mime = "image/jpeg";
+    if (ext === ".png") mime = "image/png";
+    if (ext === ".webp") mime = "image/webp";
+    if (ext === ".pdf") mime = "application/pdf";
+
+    const fileBuffer = fs.readFileSync(filePath);
+
+    return new Response(fileBuffer, {
+      status: 200,
       headers: {
-        "Content-Type": type,
+        "Content-Type": mime,
+        "Content-Length": String(fileBuffer.length),
         "Cache-Control": "no-store",
       },
     });
-  } catch {
-    return new Response("Not found", { status: 404 });
+  } catch (err: any) {
+    console.error(err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

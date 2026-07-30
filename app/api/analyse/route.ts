@@ -16,6 +16,13 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
     }
 
     const image = fs.readFileSync(filePath);
+    const ext = path.extname(filename).toLowerCase();
+
+    let mime = "image/jpeg";
+
+    if (ext === ".png") mime = "image/png";
+    if (ext === ".webp") mime = "image/webp";
+
     const base64 = image.toString("base64");
 const ext = path.extname(filename).toLowerCase();
 
@@ -144,42 +151,27 @@ Return ONLY valid JSON using EXACTLY this structure.
     "possibleHMOBedrooms": 0,
     "confidence": ""
   },
-
   "hmoScore": 0,
-
   "verdict": "",
-
   "highestPossibleHMO": {
     "bedrooms": 0,
     "score": 0,
     "reason": ""
   },
-
   "recommendedLayout": [],
-
   "conversionSteps": [],
-
   "recommendations": [],
-
   "compliance": [],
-
   "fireSafety": [],
-
   "planningRisk": "",
-
   "estimatedConversionCost": {
     "low": 0,
     "high": 0
   },
-
   "estimatedMonthlyRent": 0,
-
   "estimatedAnnualRent": 0,
-
   "estimatedYield": "",
-
   "estimatedROI": "",
-
   "investorSummary": ""
 }
 `,
@@ -194,37 +186,33 @@ Return ONLY valid JSON using EXACTLY this structure.
       ],
     });
 
-    console.log("FULL OPENAI RESPONSE:");
-console.dir(response, { depth: null });
+    const text = response.output_text ?? "";
 
-const output = response.output_text ?? "";
-    console.log("RAW AI OUTPUT:");
-console.log(output);
+    const cleaned = text
+      .replace(/^```json/i, "")
+      .replace(/^```/i, "")
+      .replace(/```$/i, "")
+      .trim();
 
-const cleaned = output
-  .replace(/^```json\s*/i, "")
-  .replace(/^```\s*/i, "")
-  .replace(/\s*```$/, "")
-  .trim();
+    let result;
 
-try {
-  const result = JSON.parse(cleaned);
-  console.log(
-    
-  JSON.stringify(result.recommendedLayout?.[0], null, 2)
-);
+    try {
+      result = JSON.parse(cleaned);
+    } catch {
+      console.error("AI returned invalid JSON:");
+      console.error(cleaned);
 
-  return NextResponse.json({
-    success: true,
-    result,
-  });
-} catch {
-  return NextResponse.json({
-    success: false,
-    error: "The AI did not return valid JSON.",
-    raw: output,
-  });
-}
+      return NextResponse.json({
+        success: false,
+        error: "OpenAI returned invalid JSON.",
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      result,
+    });
+
   } catch (error: any) {
   console.error("========== FULL ERROR ==========");
   console.dir(error, { depth: null });
