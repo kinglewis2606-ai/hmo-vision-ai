@@ -56,7 +56,16 @@ if (!data.success) {
   return;
 }
 
-setReport(data.result);
+const parsedReport =
+  typeof data.result === "string"
+    ? JSON.parse(
+        data.result
+          .replace(/^```json\s*/, "")
+          .replace(/\s*```$/, "")
+      )
+    : data.result;
+
+setReport(parsedReport);
 
       } catch (err) {
   console.error("Analyse error:", err);
