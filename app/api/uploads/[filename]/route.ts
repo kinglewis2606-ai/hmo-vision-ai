@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
-    const uploadsDir = path.join(process.cwd(), "uploads");
+    const uploadsDir = path.join(process.cwd(), "public", "uploads");
     const filePath = path.join(uploadsDir, filename);
 
     if (!fs.existsSync(filePath)) {
