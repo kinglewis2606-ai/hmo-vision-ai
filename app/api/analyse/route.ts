@@ -132,17 +132,53 @@ The HMO score, verdict and investor summary must all agree with each other.
 
 Never return contradictory results.
 
-Return ONLY valid JSON using EXACTLY this structure.
+You must also build a structured digital model of the property.
 
+For every floor identify every room.
+
+For every room include:
+
+- room name
+- room type
+- approximate size in square metres
+- neighbouring rooms
+- whether it could legally become a bedroom
+- short reasoning
+
+This structured data will later be used to generate a completely new HMO floor plan.
+
+Do not invent rooms.
+
+If unsure, state your confidence in the notes.
+
+Return ONLY valid JSON using EXACTLY this structure.
 {
   "summary": {
-    "bedrooms": 0,
-    "bathrooms": 0,
-    "kitchen": false,
-    "livingRoom": false,
-    "possibleHMOBedrooms": 0,
-    "confidence": ""
-  },
+  "bedrooms": 0,
+  "bathrooms": 0,
+  "kitchen": false,
+  "livingRoom": false,
+  "possibleHMOBedrooms": 0,
+  "confidence": ""
+},
+
+"floorPlan": {
+  "floors": [
+    {
+      "name": "",
+      "rooms": [
+        {
+          "name": "",
+          "type": "",
+          "approxAreaSqm": 0,
+          "adjacentRooms": [],
+          "canBecomeBedroom": false,
+          "notes": ""
+        }
+      ]
+    }
+  ]
+},
   "hmoScore": 0,
   "verdict": "",
   "highestPossibleHMO": {
