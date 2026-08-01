@@ -157,6 +157,30 @@ For every room include:
 • Unique room id
 • Room name
 • Room type
+
+• x position
+• y position
+• width
+• height
+
+These coordinates represent the room's position within the floor plan.
+
+They do NOT need to be perfectly accurate measurements.
+
+They should preserve the layout of the uploaded property.
+
+Adjacent rooms should have adjacent coordinates.
+
+The relative positioning of rooms is more important than exact dimensions.
+
+Keep the same coordinate system in originalFloorPlan and proposedFloorPlan.
+
+If a room is unchanged, its x, y, width and height should remain the same.
+
+Only modify coordinates when walls are genuinely moved during the HMO conversion.
+
+Also include:
+
 • Approximate width (metres)
 • Approximate depth (metres)
 • Approximate floor area (sqm)
@@ -205,30 +229,49 @@ Do not leave the changes array empty unless the room is completely unchanged.
         "name": "",
         "level": 0,
         "rooms": [
+
           {
-            "id": "",
-            "name": "",
-            "type": "",
-            "approxAreaSqm": 0,
-            "approxWidthM": 0,
-            "approxDepthM": 0,
-            "shape": "",
-            "adjacentRooms": [],
-            "doors": [
-              {
-                "connectsTo": "",
-                "wall": ""
-              }
-            ],
-            "windows": [
-              {
-                "wall": ""
-              }
-            ],
-            "canBecomeBedroom": false,
-            "notes": "",
-            "confidence": ""
-          }
+  "id": "",
+
+  "name": "",
+
+  "type": "",
+
+  "x": 0,
+
+  "y": 0,
+
+  "width": 0,
+
+  "height": 0,
+
+  "approxAreaSqm": 0,
+
+  "approxWidthM": 0,
+
+  "approxDepthM": 0,
+
+  "shape": "",
+
+  "adjacentRooms": [],
+
+  "doors": [
+    {
+      "connectsTo": "",
+      "wall": ""
+    }
+  ],
+
+  "windows": [
+    {
+      "wall": ""
+    }
+  ],
+
+  "notes": "",
+
+  "confidence": ""
+}
         ]
       }
     ]
@@ -241,30 +284,48 @@ Do not leave the changes array empty unless the room is completely unchanged.
         "level": 0,
         "rooms": [
           {
-          {
+          
   "id": "",
-  "originalName": "",
-  "originalType": "",
-  "proposedName": "",
-  "proposedType": "",
+
+  "name": "",
+
+  "type": "",
+
+  "x": 0,
+
+  "y": 0,
+
+  "width": 0,
+
+  "height": 0,
+
   "approxAreaSqm": 0,
+
   "approxWidthM": 0,
+
   "approxDepthM": 0,
+
   "shape": "",
+
   "adjacentRooms": [],
+
   "doors": [
     {
       "connectsTo": "",
       "wall": ""
     }
   ],
+
   "windows": [
     {
       "wall": ""
     }
   ],
-  "changes": [],
+
+"changes": [],
+
   "notes": "",
+
   "confidence": ""
 }
         ]
