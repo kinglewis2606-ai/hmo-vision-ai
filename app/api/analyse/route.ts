@@ -224,12 +224,12 @@ Requirements:
   size: "1024x1024",
 });
 
-const image = layoutImage.data?.[0];
+const generatedImage = layoutImage.data?.[0];
 
-if (image?.b64_json) {
-  result.generatedLayoutImage = `data:image/png;base64,${image.b64_json}`;
-} else if (image?.url) {
-  result.generatedLayoutImage = image.url;
+if (generatedImage?.b64_json) {
+  result.generatedLayoutImage = `data:image/png;base64,${generatedImage.b64_json}`;
+} else if (generatedImage?.url) {
+  result.generatedLayoutImage = generatedImage.url;
 } else {
   result.generatedLayoutImage = "";
 }
