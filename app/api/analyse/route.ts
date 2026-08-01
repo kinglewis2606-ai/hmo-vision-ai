@@ -200,10 +200,39 @@ Return ONLY valid JSON using EXACTLY this structure.
       });
     }
 
-    return NextResponse.json({
-      success: true,
-      result,
-    });
+    // Generate an AI floor plan from the recommended layout
+const layoutImage = await openai.images.generate({
+  model: "gpt-image-1",
+  prompt: `
+Create a professional black-and-white architectural floor plan showing this proposed HMO layout.
+
+${result.recommendedLayout.join("\n")}
+
+Requirements:
+
+- Top-down architectural floor plan
+- Show internal walls
+- Show doors
+- Label every bedroom
+- Label kitchen
+- Label bathrooms
+- Estate-agent style
+- Clean blueprint appearance
+- Do NOT overlay on an existing image
+- Produce a completely new floor plan
+`,
+  size: "1024x1024",
+});
+
+result.generatedLayoutImage =
+  layoutImage.data?.[0]?.b64_json ??
+  layoutImage.data?.[0]?.url ??
+  "";
+
+return NextResponse.json({
+  success: true,
+  result,
+});
 
   } catch (error: any) {
   console.error("========== FULL ERROR ==========");
