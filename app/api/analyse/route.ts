@@ -196,7 +196,24 @@ Every room in proposedFloorPlan must correspond to a room in originalFloorPlan.
 
 If a room has not changed, keep the same name and dimensions.
 
-If a room has changed, record exactly what changed.
+If a room has changed:
+
+• keep the original room name in originalName
+• keep the original room type in originalType
+• set the new room name in proposedName
+• set the new room type in proposedType
+• populate the changes array with every architectural modification required
+
+Example:
+
+originalName = Living Room
+proposedName = Bedroom 4
+
+changes =
+
+- Convert Living Room to Bedroom
+- Add en-suite
+- Relocate doorway
 
 Populate the "changes" array using clear architectural actions such as:
 
@@ -285,24 +302,22 @@ Do not leave the changes array empty unless the room is completely unchanged.
         "rooms": [
           {
           
+  {
   "id": "",
 
-  "name": "",
+  "originalName": "",
+  "originalType": "",
 
-  "type": "",
+  "proposedName": "",
+  "proposedType": "",
 
   "x": 0,
-
   "y": 0,
-
   "width": 0,
-
   "height": 0,
 
   "approxAreaSqm": 0,
-
   "approxWidthM": 0,
-
   "approxDepthM": 0,
 
   "shape": "",
@@ -322,7 +337,7 @@ Do not leave the changes array empty unless the room is completely unchanged.
     }
   ],
 
-"changes": [],
+  "changes": [],
 
   "notes": "",
 
