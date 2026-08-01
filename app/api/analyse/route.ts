@@ -132,53 +132,122 @@ The HMO score, verdict and investor summary must all agree with each other.
 
 Never return contradictory results.
 
-You must also build a structured digital model of the property.
+You must build TWO complete digital floor plan models.
 
-For every floor identify every room.
+Model 1: originalFloorPlan
+
+This must represent the property exactly as uploaded.
+
+Model 2: proposedFloorPlan
+
+This must represent the recommended HMO conversion.
+
+Rules:
+
+• Preserve the same building footprint.
+• Preserve the same number of floors.
+• Preserve stair locations wherever possible.
+• Preserve the general room arrangement wherever practical.
+• Only modify rooms that are realistically changed during the HMO conversion.
+• Never invent extra floors.
+• Never invent rooms that cannot physically fit.
 
 For every room include:
 
-- room name
-- room type
-- approximate size in square metres
-- neighbouring rooms
-- whether it could legally become a bedroom
-- short reasoning
+• Unique room id
+• Room name
+• Room type
+• Approximate width (metres)
+• Approximate depth (metres)
+• Approximate floor area (sqm)
+• Adjacent rooms
+• Door locations
+• Window locations
+• Notes
+• Confidence
 
-This structured data will later be used to generate a completely new HMO floor plan.
-
-Do not invent rooms.
-
-If unsure, state your confidence in the notes.
-
+The proposedFloorPlan must contain the converted version of the property after all recommended HMO alterations have been completed.
 Return ONLY valid JSON using EXACTLY this structure.
+
 {
   "summary": {
-  "bedrooms": 0,
-  "bathrooms": 0,
-  "kitchen": false,
-  "livingRoom": false,
-  "possibleHMOBedrooms": 0,
-  "confidence": ""
-},
+    "bedrooms": 0,
+    "bathrooms": 0,
+    "kitchen": false,
+    "livingRoom": false,
+    "possibleHMOBedrooms": 0,
+    "confidence": ""
+  },
 
-"floorPlan": {
-  "floors": [
-    {
-      "name": "",
-      "rooms": [
-        {
-          "name": "",
-          "type": "",
-          "approxAreaSqm": 0,
-          "adjacentRooms": [],
-          "canBecomeBedroom": false,
-          "notes": ""
-        }
-      ]
-    }
-  ]
-},
+  "originalFloorPlan": {
+    "floors": [
+      {
+        "name": "",
+        "level": 0,
+        "rooms": [
+          {
+            "id": "",
+            "name": "",
+            "type": "",
+            "approxAreaSqm": 0,
+            "approxWidthM": 0,
+            "approxDepthM": 0,
+            "shape": "",
+            "adjacentRooms": [],
+            "doors": [
+              {
+                "connectsTo": "",
+                "wall": ""
+              }
+            ],
+            "windows": [
+              {
+                "wall": ""
+              }
+            ],
+            "canBecomeBedroom": false,
+            "notes": "",
+            "confidence": ""
+          }
+        ]
+      }
+    ]
+  },
+
+  "proposedFloorPlan": {
+    "floors": [
+      {
+        "name": "",
+        "level": 0,
+        "rooms": [
+          {
+            "id": "",
+            "name": "",
+            "type": "",
+            "approxAreaSqm": 0,
+            "approxWidthM": 0,
+            "approxDepthM": 0,
+            "shape": "",
+            "adjacentRooms": [],
+            "doors": [
+              {
+                "connectsTo": "",
+                "wall": ""
+              }
+            ],
+            "windows": [
+              {
+                "wall": ""
+              }
+            ],
+            "convertedFrom": "",
+            "notes": ""
+          }
+        ]
+      }
+    ]
+  },
+
   "hmoScore": 0,
   "verdict": "",
   "highestPossibleHMO": {
