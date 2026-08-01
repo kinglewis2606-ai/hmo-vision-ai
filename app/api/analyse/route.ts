@@ -240,22 +240,47 @@ Return ONLY valid JSON using EXACTLY this structure.
 const layoutImage = await openai.images.generate({
   model: "gpt-image-1",
   prompt: `
-Create a professional black-and-white architectural floor plan showing this proposed HMO layout.
+prompt: `
+You are an architectural floor plan designer.
+
+Your task is NOT to invent a new property.
+
+Your task is to redesign the EXISTING uploaded property into its recommended HMO layout.
+
+Original property structure:
+
+${JSON.stringify(result.floorPlan, null, 2)}
+
+Recommended HMO conversion:
 
 ${result.recommendedLayout.join("\n")}
 
 Requirements:
 
-- Top-down architectural floor plan
-- Show internal walls
-- Show doors
-- Label every bedroom
-- Label kitchen
-- Label bathrooms
-- Estate-agent style
-- Clean blueprint appearance
-- Do NOT overlay on an existing image
-- Produce a completely new floor plan
+• Preserve the external walls and overall building footprint wherever possible.
+• Preserve the number of floors.
+• Preserve staircase locations and orientation unless absolutely necessary.
+• Preserve window positions wherever practical.
+• Maintain the same overall proportions as the original building.
+
+You MAY:
+
+• Convert rooms into bedrooms.
+• Split oversized rooms into compliant bedrooms.
+• Add or remove internal partition walls.
+• Relocate kitchens and bathrooms where practical.
+• Add en-suites.
+• Improve circulation routes.
+
+Do NOT invent a different building.
+
+The final drawing should look like an architect has taken the ORIGINAL floor plan and redrawn it as a proposed HMO conversion.
+
+Render each floor separately.
+
+Label every room.
+
+Produce a clean black-and-white estate-agent style architectural floor plan.
 `,
   size: "1024x1024",
 });
