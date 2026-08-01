@@ -11,7 +11,8 @@ export default function NewProjectPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
-const testBoxes = [
+  const [generatedLayout, setGeneratedLayout] = useState("");
+  const testBoxes = [
   {
     label: "Bedroom 1",
     x: 140,
@@ -66,6 +67,7 @@ const parsedReport =
     : data.result;
 
 setReport(parsedReport);
+setGeneratedLayout(parsedReport.generatedLayoutImage || "");
 
       } catch (err) {
   console.error("Analyse error:", err);
@@ -235,6 +237,35 @@ setReport(parsedReport);
 </div>
 </div>
 
+            {generatedLayout && (
+  <div className="grid md:grid-cols-2 gap-6 mb-8">
+
+    <div>
+      <h3 className="mb-3 text-xl font-bold">
+        Original Floor Plan
+      </h3>
+
+      <img
+        src={`/api/uploads/${filename}`}
+        className="w-full rounded-xl border"
+        alt="Original"
+      />
+    </div>
+
+    <div>
+      <h3 className="mb-3 text-xl font-bold">
+        AI Proposed HMO Layout
+      </h3>
+
+      <img
+        src={generatedLayout}
+        className="w-full rounded-xl border"
+        alt="Generated"
+      />
+    </div>
+
+  </div>
+)}
             <div className="grid md:grid-cols-2 gap-6">
 
               <div className="border rounded-lg p-6 bg-slate-50">
