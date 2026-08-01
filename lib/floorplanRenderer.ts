@@ -66,13 +66,30 @@ ${floor.name}
 </text>
 `;
 
-    for (const room of floor.rooms) {
+for (const [index, room] of floor.rooms.entries()) {    
 
-      const x = room.x * roomScale + 40;
-      const y = room.y * roomScale + offsetY;
+      const fallbackWidth = 140;
+const fallbackHeight = 100;
 
-      const w = room.width * roomScale;
-      const h = room.height * roomScale;
+const hasCoords =
+  room.width > 0 &&
+  room.height > 0;
+
+const x = hasCoords
+  ? room.x * roomScale + 40
+  : 40 + (index % 4) * 180;
+
+const y = hasCoords
+  ? room.y * roomScale + offsetY
+  : offsetY + Math.floor(index / 4) * 140;
+  
+const w = hasCoords
+  ? room.width * roomScale
+  : fallbackWidth;
+
+const h = hasCoords
+  ? room.height * roomScale
+  : fallbackHeight;
 
       svg += `
 <rect
