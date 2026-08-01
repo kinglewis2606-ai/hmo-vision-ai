@@ -199,22 +199,19 @@ If a room has not changed, keep the same name and dimensions.
 
 If a room has changed:
 
-• keep the original room name in originalName
-• keep the original room type in originalType
-• set the new room name in proposedName
-• set the new room type in proposedType
-• populate the changes array with every architectural modification required
+• Update the room's name and type to reflect the proposed HMO layout.
+• Record every modification in the "changes" array.
 
 Example:
 
-originalName = Living Room
-proposedName = Bedroom 4
+Room name = Bedroom 4
 
 changes =
 
 - Convert Living Room to Bedroom
 - Add en-suite
 - Relocate doorway
+
 
 Populate the "changes" array using clear architectural actions such as:
 
@@ -302,23 +299,24 @@ Do not leave the changes array empty unless the room is completely unchanged.
         "level": 0,
         "rooms": [
           {
-          
-  {
   "id": "",
 
-  "originalName": "",
-  "originalType": "",
+  "name": "",
 
-  "proposedName": "",
-  "proposedType": "",
+  "type": "",
 
   "x": 0,
+
   "y": 0,
+
   "width": 0,
+
   "height": 0,
 
   "approxAreaSqm": 0,
+
   "approxWidthM": 0,
+
   "approxDepthM": 0,
 
   "shape": "",
@@ -344,6 +342,8 @@ Do not leave the changes array empty unless the room is completely unchanged.
 
   "confidence": ""
 }
+
+
         ]
       }
     ]
@@ -407,100 +407,11 @@ Do not leave the changes array empty unless the room is completely unchanged.
     }
 
     // Generate an AI floor plan from the recommended layout
-const layoutImage = await openai.images.generate({
-  model: "gpt-image-1",
-
-  prompt: `
-You are a professional architectural floor plan illustrator.
-
-Your task is NOT to design a new property.
-
-Your task is to redraw the uploaded property after the proposed HMO conversion.
-
-ORIGINAL PROPERTY
-
-${JSON.stringify(result.originalFloorPlan, null, 2)}
-
-PROPOSED HMO CONVERSION
-
-${JSON.stringify(result.proposedFloorPlan, null, 2)}
-
-CRITICAL RULES
-
-The proposed drawing MUST clearly be the SAME BUILDING.
-
-Keep exactly the same:
-
-• number of floors
-• building footprint
-• external walls
-• stair locations
-• hallway positions wherever practical
-• room locations unless altered by the conversion
-
-Only modify rooms that changed.
-
-If a room has not changed,
-draw it in exactly the same position.
-
-Never redesign the building.
-
-Never invent extra rooms.
-
-Never invent extra floors.
-
-Never merge floors together.
-
-Never rotate the building.
-
-Never mirror the building.
-
-Never move the staircase unless explicitly required.
-
-Only apply the alterations described in proposedFloorPlan.
-
-Examples of acceptable changes:
-
-• Living Room → Bedroom
-• Dining Room → Bedroom
-• Bedroom → Bedroom with En-suite
-• Kitchen + Dining → Kitchen/Diner
-• Add partition walls
-• Add en-suites
-• Add doors
-
-Examples of unacceptable changes:
-
-• Moving unrelated rooms
-• Changing the external footprint
-• Reordering floors
-• Inventing corridors
-• Inventing staircases
-
-Draw EACH floor separately.
-
-Keep the same floor order supplied in the JSON.
-
-Produce a clean estate-agent style black-and-white floor plan.
-
-Label every room clearly.
-
-The final drawing should look like the uploaded property after conversion, NOT a different property.
-`,
-
-  size: "1024x1024",
-});
-
-const generatedImage = layoutImage.data?.[0];
-
-if (generatedImage?.b64_json) {
-  result.generatedLayoutImage = `data:image/png;base64,${generatedImage.b64_json}`;
-} else if (generatedImage?.url) {
-  result.generatedLayoutImage = generatedImage.url;
-} else {
-  result.generatedLayoutImage = "";
-}
-
+result.generatedLayoutImage = renderFloorPlan(
+  result.originalFloorPlan,
+  result.proposedFloorPlan
+);
+  
 return NextResponse.json({
   success: true,
   result,
