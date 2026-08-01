@@ -239,7 +239,7 @@ Return ONLY valid JSON using EXACTLY this structure.
     // Generate an AI floor plan from the recommended layout
 const layoutImage = await openai.images.generate({
   model: "gpt-image-1",
-  prompt: `
+  
 prompt: `
 You are an architectural floor plan designer.
 
