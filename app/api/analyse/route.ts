@@ -168,6 +168,26 @@ For every room include:
 
 The proposedFloorPlan must contain the converted version of the property after all recommended HMO alterations have been completed.
 Return ONLY valid JSON using EXACTLY this structure.
+Every room in proposedFloorPlan must correspond to a room in originalFloorPlan.
+
+If a room has not changed, keep the same name and dimensions.
+
+If a room has changed, record exactly what changed.
+
+Populate the "changes" array using clear architectural actions such as:
+
+- Convert Living Room to Bedroom
+- Add En-suite
+- Remove internal wall
+- Add partition wall
+- Relocate doorway
+- Widen opening
+- Combine with adjacent room
+- Split room into two
+- Extend bathroom
+- Convert cupboard into shower room
+
+Do not leave the changes array empty unless the room is completely unchanged.
 
 {
   "summary": {
@@ -221,28 +241,32 @@ Return ONLY valid JSON using EXACTLY this structure.
         "level": 0,
         "rooms": [
           {
-            "id": "",
-            "name": "",
-            "type": "",
-            "approxAreaSqm": 0,
-            "approxWidthM": 0,
-            "approxDepthM": 0,
-            "shape": "",
-            "adjacentRooms": [],
-            "doors": [
-              {
-                "connectsTo": "",
-                "wall": ""
-              }
-            ],
-            "windows": [
-              {
-                "wall": ""
-              }
-            ],
-            "convertedFrom": "",
-            "notes": ""
-          }
+          {
+  "id": "",
+  "originalName": "",
+  "originalType": "",
+  "proposedName": "",
+  "proposedType": "",
+  "approxAreaSqm": 0,
+  "approxWidthM": 0,
+  "approxDepthM": 0,
+  "shape": "",
+  "adjacentRooms": [],
+  "doors": [
+    {
+      "connectsTo": "",
+      "wall": ""
+    }
+  ],
+  "windows": [
+    {
+      "wall": ""
+    }
+  ],
+  "changes": [],
+  "notes": "",
+  "confidence": ""
+}
         ]
       }
     ]
@@ -308,49 +332,85 @@ Return ONLY valid JSON using EXACTLY this structure.
     // Generate an AI floor plan from the recommended layout
 const layoutImage = await openai.images.generate({
   model: "gpt-image-1",
-  
-prompt: `
-You are an architectural floor plan designer.
 
-Your task is NOT to invent a new property.
+  prompt: `
+You are a professional architectural floor plan illustrator.
 
-Your task is to redesign the EXISTING uploaded property into its recommended HMO layout.
+Your task is NOT to design a new property.
 
-Original property structure:
+Your task is to redraw the uploaded property after the proposed HMO conversion.
 
-${JSON.stringify(result.floorPlan, null, 2)}
+ORIGINAL PROPERTY
 
-Recommended HMO conversion:
+${JSON.stringify(result.originalFloorPlan, null, 2)}
 
-${result.recommendedLayout.join("\n")}
+PROPOSED HMO CONVERSION
 
-Requirements:
+${JSON.stringify(result.proposedFloorPlan, null, 2)}
 
-• Preserve the external walls and overall building footprint wherever possible.
-• Preserve the number of floors.
-• Preserve staircase locations and orientation unless absolutely necessary.
-• Preserve window positions wherever practical.
-• Maintain the same overall proportions as the original building.
+CRITICAL RULES
 
-You MAY:
+The proposed drawing MUST clearly be the SAME BUILDING.
 
-• Convert rooms into bedrooms.
-• Split oversized rooms into compliant bedrooms.
-• Add or remove internal partition walls.
-• Relocate kitchens and bathrooms where practical.
-• Add en-suites.
-• Improve circulation routes.
+Keep exactly the same:
 
-Do NOT invent a different building.
+• number of floors
+• building footprint
+• external walls
+• stair locations
+• hallway positions wherever practical
+• room locations unless altered by the conversion
 
-The final drawing should look like an architect has taken the ORIGINAL floor plan and redrawn it as a proposed HMO conversion.
+Only modify rooms that changed.
 
-Render each floor separately.
+If a room has not changed,
+draw it in exactly the same position.
 
-Label every room.
+Never redesign the building.
 
-Produce a clean black-and-white estate-agent style architectural floor plan.
+Never invent extra rooms.
+
+Never invent extra floors.
+
+Never merge floors together.
+
+Never rotate the building.
+
+Never mirror the building.
+
+Never move the staircase unless explicitly required.
+
+Only apply the alterations described in proposedFloorPlan.
+
+Examples of acceptable changes:
+
+• Living Room → Bedroom
+• Dining Room → Bedroom
+• Bedroom → Bedroom with En-suite
+• Kitchen + Dining → Kitchen/Diner
+• Add partition walls
+• Add en-suites
+• Add doors
+
+Examples of unacceptable changes:
+
+• Moving unrelated rooms
+• Changing the external footprint
+• Reordering floors
+• Inventing corridors
+• Inventing staircases
+
+Draw EACH floor separately.
+
+Keep the same floor order supplied in the JSON.
+
+Produce a clean estate-agent style black-and-white floor plan.
+
+Label every room clearly.
+
+The final drawing should look like the uploaded property after conversion, NOT a different property.
 `,
+
   size: "1024x1024",
 });
 
