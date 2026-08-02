@@ -1,5 +1,6 @@
 import { loadImage } from "./loadImage";
 import { DetectedFloor } from "./detectFloors";
+import { filterWalls } from "./filterWalls";
 
 export interface WallLine {
   x1: number;
@@ -168,14 +169,7 @@ for (const floor of floors) {
     `Detected ${walls.length} raw wall segments`
   );
 
-  const filteredWalls = walls.filter((wall) => {
-    const length = Math.max(
-      Math.abs(wall.x2 - wall.x1),
-      Math.abs(wall.y2 - wall.y1)
-    );
-
-    return length >= MIN_WALL_LENGTH;
-  });
+  const filteredWalls = filterWalls(walls);
 
   console.log(
     `Returning ${filteredWalls.length} wall segments`
