@@ -1,5 +1,5 @@
 import { loadImage } from "./loadImage";
-import { detectRooms } from "./detectRooms";
+
 
 export interface WallLine {
   x1: number;
@@ -26,7 +26,6 @@ export async function detectWalls(
   },
 ];
 
-const rooms = await detectRooms(walls);
 
 console.log("Detected rooms:", rooms);
 
