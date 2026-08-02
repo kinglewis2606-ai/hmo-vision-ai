@@ -8,23 +8,27 @@ export interface WallLine {
   y2: number;
 }
 
+import { DetectedFloor } from "./detectFloors";
+
 export async function detectWalls(
-  imagePath: string
+  imagePath: string,
+  floors: DetectedFloor[]
 ): Promise<WallLine[]> {
-
+  
   const image = await loadImage(imagePath);
+  console.log("Processing", floors.length, "floors");
 
-  console.log("Image loaded:", image.length, "bytes");
+  console.log("Image loaded:", image.width, "x", image.height);
 
-  // Temporary fake wall so we can verify the pipeline works.
-  const walls = [
-  {
-    x1: 100,
-    y1: 100,
-    x2: 500,
-    y2: 100,
-  },
-];
+ const walls: WallLine[] = [];
 
+for (const floor of floors) {
+  console.log(
+    "Scanning",
+    floor.name,
+    floor.top,
+    floor.bottom
+  );
+}
 
 return walls;
