@@ -35,7 +35,10 @@ console.dir(detectedFloors, { depth: null });
 
     const base64 = image.toString("base64");
     
-const detectedWalls = await detectWalls(filePath);
+const detectedWalls = await detectWalls(
+  filePath,
+  detectedFloors
+);
 
 const detectedRooms = await detectRooms(detectedWalls);
 
