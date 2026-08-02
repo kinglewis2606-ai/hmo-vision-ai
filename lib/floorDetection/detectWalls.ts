@@ -16,6 +16,9 @@ export async function detectWalls(
 ): Promise<WallLine[]> {
   
   const image = await loadImage(imagePath);
+  const pixels = image.data;
+const width = image.width;
+  
   console.log("Processing", floors.length, "floors");
 
   console.log("Image loaded:", image.width, "x", image.height);
@@ -23,12 +26,16 @@ export async function detectWalls(
  const walls: WallLine[] = [];
 
 for (const floor of floors) {
-  console.log(
-    "Scanning",
-    floor.name,
-    floor.top,
-    floor.bottom
-  );
+
+  console.log("Scanning", floor.name);
+
+  for (let y = floor.top; y < floor.bottom; y++) {
+
+    const rowOffset = y * width;
+
+    // Real pixel scanning will go here.
+  }
+
 }
 
 return walls;
