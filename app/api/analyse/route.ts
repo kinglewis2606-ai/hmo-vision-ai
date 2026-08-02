@@ -5,18 +5,25 @@ import fs from "fs";
 import path from "path";
 import { detectWalls } from "@/lib/floorDetection/detectWalls";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
+import { detectFloors } from "@/lib/floorDetection/detectFloors";
 
 export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
     const { filename, address, propertyType } = await req.json();
 
     const filePath = path.join(process.cwd(), "public", "uploads", filename);
+    
+  
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({
         success: false,
         error: "Uploaded floor plan not found.",
       });
     }
+const detectedFloors = await detectFloors(filePath);
+    
+    console.log("Detected floors:");
+console.dir(detectedFloors, { depth: null });
 
     const image = fs.readFileSync(filePath);
     const ext = path.extname(filename).toLowerCase();
