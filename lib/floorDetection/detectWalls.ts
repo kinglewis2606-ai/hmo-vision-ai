@@ -1,3 +1,5 @@
+import { loadImage } from "./loadImage";
+
 export interface WallLine {
   x1: number;
   y1: number;
@@ -5,9 +7,14 @@ export interface WallLine {
   y2: number;
 }
 
-export async function detectWalls(imagePath: string): Promise<WallLine[]> {
-  console.log("Wall detection started:", imagePath);
+export async function detectWalls(
+  imagePath: string
+): Promise<WallLine[]> {
 
-  // Placeholder until the real wall detection is implemented.
+  const image = await loadImage(imagePath);
+
+  console.log("Image loaded:", image.length, "bytes");
+
+  // Real wall detection comes next.
   return [];
 }
