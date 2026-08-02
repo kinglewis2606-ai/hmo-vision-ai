@@ -27,6 +27,4 @@ export async function detectWalls(
 ];
 
 
-console.log("Detected rooms:", rooms);
-
 return walls;
