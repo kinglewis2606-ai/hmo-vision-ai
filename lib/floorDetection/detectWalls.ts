@@ -1,7 +1,9 @@
 import { loadImage } from "./loadImage";
 import { DetectedFloor } from "./detectFloors";
 import { filterWalls } from "./filterWalls";
+import { mergeWalls } from "./mergeWalls";
 
+Create wall merging module
 export interface WallLine {
   x1: number;
   y1: number;
@@ -171,9 +173,10 @@ for (const floor of floors) {
 
   const filteredWalls = filterWalls(walls);
 
-  console.log(
-    `Returning ${filteredWalls.length} wall segments`
-  );
+const mergedWalls = mergeWalls(filteredWalls);
 
-  return filteredWalls;
-}
+console.log(
+  `Returning ${mergedWalls.length} wall segments`
+);
+
+return mergedWalls;
