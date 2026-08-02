@@ -4,6 +4,7 @@ import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
 import { detectWalls } from "@/lib/floorDetection/detectWalls";
+import { detectRooms } from "@/lib/floorDetection/detectRooms";
 
 export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
@@ -29,9 +30,13 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
     
 const detectedWalls = await detectWalls(filePath);
 
+const detectedRooms = await detectRooms(detectedWalls);
+
 console.log("Detected walls:");
 console.dir(detectedWalls, { depth: null });
 
+console.log("Detected rooms:");
+console.dir(detectedRooms, { depth: null });
     const response = await openai.responses.create({
       model: "gpt-5",
       input: [
