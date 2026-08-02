@@ -3,7 +3,7 @@ import { openai } from "@/lib/openai";
 import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
-import { detectRooms } from "@/lib/roomDetector";
+import { detectWalls } from "@/lib/floorDetection/detectWalls";
 
 export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
@@ -27,10 +27,10 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
 
     const base64 = image.toString("base64");
     
-const detectedFloors = await detectRooms(filePath);
+const detectedWalls = await detectWalls(filePath);
 
-console.log("Detected floors:");
-console.dir(detectedFloors, { depth: null });
+console.log("Detected walls:");
+console.dir(detectedWalls, { depth: null });
 
     const response = await openai.responses.create({
       model: "gpt-5",
