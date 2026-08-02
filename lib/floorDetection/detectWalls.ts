@@ -3,7 +3,6 @@ import { DetectedFloor } from "./detectFloors";
 import { filterWalls } from "./filterWalls";
 import { mergeWalls } from "./mergeWalls";
 
-Create wall merging module
 export interface WallLine {
   x1: number;
   y1: number;
