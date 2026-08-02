@@ -1,7 +1,5 @@
-import fs from "fs";
+import fs from "fs/promises";
 
 export async function loadImage(imagePath: string): Promise<Buffer> {
-  console.log("Loading image:", imagePath);
-
-  return fs.readFileSync(imagePath);
+  return await fs.readFile(imagePath);
 }
