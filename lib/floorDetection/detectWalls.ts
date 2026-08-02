@@ -34,7 +34,7 @@ export async function detectWalls(
 
   const pixels = image.data;
   const width = image.width;
-  
+  const height = image.height;
 
   console.log(
     `Scanning ${width} x ${height} image`
