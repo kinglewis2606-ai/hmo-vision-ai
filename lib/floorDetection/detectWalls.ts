@@ -179,3 +179,4 @@ console.log(
 );
 
 return mergedWalls;
+}
