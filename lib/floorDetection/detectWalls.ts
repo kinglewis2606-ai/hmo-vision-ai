@@ -15,6 +15,13 @@ export async function detectWalls(
 
   console.log("Image loaded:", image.length, "bytes");
 
-  // Real wall detection comes next.
-  return [];
+  // Temporary fake wall so we can verify the pipeline works.
+  return [
+    {
+      x1: 100,
+      y1: 100,
+      x2: 500,
+      y2: 100,
+    },
+  ];
 }
