@@ -3,6 +3,7 @@ import { openai } from "@/lib/openai";
 import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
+import { detectRooms } from "@/lib/roomDetector";
 
 export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
@@ -25,7 +26,11 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
     if (ext === ".webp") mime = "image/webp";
 
     const base64 = image.toString("base64");
+    
+const detectedFloors = await detectRooms(filePath);
 
+console.log("Detected floors:");
+console.dir(detectedFloors, { depth: null });
 
     const response = await openai.responses.create({
       model: "gpt-5",
