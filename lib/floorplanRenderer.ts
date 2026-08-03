@@ -124,5 +124,7 @@ ${room.type ? ` (${room.type})` : ""}
 
   svg += "</svg>";
 
+  console.log(svg);
+  
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
