@@ -8,65 +8,50 @@ export interface DetectedRoom {
   height: number;
 }
 
-const MIN_ROOM_SIZE = 40;
-
 export async function detectRooms(
   walls: WallLine[]
 ): Promise<DetectedRoom[]> {
 
-  console.log(`Detecting rooms from ${walls.length} walls`);
+  const horizontal = walls.filter(
+    w => w.y1 === w.y2
+  );
 
-  const horizontal = walls.filter(w => w.y1 === w.y2);
-  const vertical = walls.filter(w => w.x1 === w.x2);
+  const vertical = walls.filter(
+    w => w.x1 === w.x2
+  );
 
   const rooms: DetectedRoom[] = [];
-  let roomId = 1;
+  let id = 1;
 
-  for (let i = 0; i < horizontal.length; i++) {
+  for (let h1 = 0; h1 < horizontal.length; h1++) {
 
-    const top = horizontal[i];
+    for (let h2 = h1 + 1; h2 < horizontal.length; h2++) {
 
-    for (let j = i + 1; j < horizontal.length; j++) {
+      const top = horizontal[h1];
+      const bottom = horizontal[h2];
 
-      const bottom = horizontal[j];
-
-      if (bottom.y1 <= top.y1) continue;
+      if (bottom.y1 - top.y1 < 60) continue;
 
       const left = vertical.find(v =>
         v.y1 <= top.y1 &&
         v.y2 >= bottom.y1 &&
-        Math.abs(v.y1 - top.y1) < 5 &&
-        Math.abs(v.y2 - bottom.y1) < 5
+        Math.abs(v.x1 - top.x1) < 20
       );
 
       const right = vertical.find(v =>
-        v !== left &&
         v.y1 <= top.y1 &&
         v.y2 >= bottom.y1 &&
-        Math.abs(v.y1 - top.y1) < 5 &&
-        Math.abs(v.y2 - bottom.y1) < 5
+        Math.abs(v.x1 - top.x2) < 20
       );
 
       if (!left || !right) continue;
 
-      const x = Math.min(left.x1, right.x1);
-      const y = top.y1;
-      const width = Math.abs(right.x1 - left.x1);
-      const height = bottom.y1 - top.y1;
-
-      if (
-        width < MIN_ROOM_SIZE ||
-        height < MIN_ROOM_SIZE
-      ) {
-        continue;
-      }
-
       rooms.push({
-        id: `room-${roomId++}`,
-        x,
-        y,
-        width,
-        height,
+        id: `room-${id++}`,
+        x: left.x1,
+        y: top.y1,
+        width: right.x1 - left.x1,
+        height: bottom.y1 - top.y1,
       });
 
     }
