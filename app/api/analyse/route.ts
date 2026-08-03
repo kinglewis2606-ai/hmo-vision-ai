@@ -6,6 +6,7 @@ import path from "path";
 import { detectWalls } from "@/lib/floorDetection/detectWalls";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
+import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
 
 export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
@@ -41,6 +42,11 @@ const detectedWalls = await detectWalls(
 );
 
 const detectedRooms = await detectRooms(detectedWalls);
+    
+    const originalFloorPlan = buildOriginalFloorPlan(
+  detectedFloors,
+  detectedRooms
+);
 
 console.log("Detected walls:");
 console.dir(detectedWalls, { depth: null });
@@ -426,6 +432,10 @@ Do not leave the changes array empty unless the room is completely unchanged.
       });
     }
 
+    // Replace the AI-generated original floor plan
+// with our detected geometry
+result.originalFloorPlan = originalFloorPlan;
+    
     // Generate an AI floor plan from the recommended layout
 result.generatedLayoutImage = renderFloorPlan(
   result.originalFloorPlan,
