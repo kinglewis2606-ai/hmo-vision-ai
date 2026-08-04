@@ -46,6 +46,17 @@ export async function detectRooms(
 
       if (!left || !right) continue;
 
+      const duplicate = rooms.some(
+  r =>
+    Math.abs(r.x - left.x1) < 5 &&
+    Math.abs(r.y - top.y1) < 5 &&
+    Math.abs(r.width - (right.x1 - left.x1)) < 5 &&
+    Math.abs(r.height - (bottom.y1 - top.y1)) < 5
+);
+
+if (duplicate) {
+  continue;
+}
       rooms.push({
         id: `room-${id++}`,
         x: left.x1,
