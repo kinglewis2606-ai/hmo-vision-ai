@@ -270,7 +270,7 @@ setReport(parsedReport);
   </div>
 
 </div>
-)}
+
             <div className="grid md:grid-cols-2 gap-6">
 
               <div className="border rounded-lg p-6 bg-slate-50">
