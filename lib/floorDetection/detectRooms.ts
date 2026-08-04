@@ -8,6 +8,10 @@ export interface DetectedRoom {
   height: number;
 }
 
+const WALL_TOLERANCE = 35;
+const MIN_ROOM = 60;
+const MAX_ROOM = 1200;
+
 export async function detectRooms(
   walls: WallLine[]
 ): Promise<DetectedRoom[]> {
@@ -27,52 +31,31 @@ export async function detectRooms(
 
   for (const top of horizontal) {
 
-    const bottom = horizontal.find(h =>
-      h.y1 > top.y1 &&
-      Math.abs(h.x1 - top.x1) < 20 &&
-      Math.abs(h.x2 - top.x2) < 20 &&
-      h.y1 - top.y1 > 60
+    const bottoms = horizontal.filter(h =>
+      h.y1 > top.y1 + MIN_ROOM &&
+      Math.abs(h.x1 - top.x1) < WALL_TOLERANCE &&
+      Math.abs(h.x2 - top.x2) < WALL_TOLERANCE
     );
 
-    if (!bottom) continue;
+    for (const bottom of bottoms) {
 
-    const left = vertical.find(v =>
-      Math.abs(v.x1 - top.x1) < 20 &&
-      v.y1 <= top.y1 &&
-      v.y2 >= bottom.y1
-    );
+      const leftWalls = vertical.filter(v =>
+        Math.abs(v.x1 - top.x1) < WALL_TOLERANCE &&
+        v.y1 <= top.y1 + WALL_TOLERANCE &&
+        v.y2 >= bottom.y1 - WALL_TOLERANCE
+      );
 
-    const right = vertical.find(v =>
-      Math.abs(v.x1 - top.x2) < 20 &&
-      v.y1 <= top.y1 &&
-      v.y2 >= bottom.y1
-    );
+      const rightWalls = vertical.filter(v =>
+        Math.abs(v.x1 - top.x2) < WALL_TOLERANCE &&
+        v.y1 <= top.y1 + WALL_TOLERANCE &&
+        v.y2 >= bottom.y1 - WALL_TOLERANCE
+      );
 
-    if (!left || !right) continue;
+      if (!leftWalls.length || !rightWalls.length)
+        continue;
 
-    const width = right.x1 - left.x1;
-    const height = bottom.y1 - top.y1;
+      const left = leftWalls.reduce((a, b) =>
+        Math.abs(a.x1 - top.x1) < Math.abs(b.x1 - top.x1) ? a : b
+      );
 
-    if (width < 60 || height < 60)
-      continue;
-
-    const key = `${left.x1}-${top.y1}-${width}-${height}`;
-
-    if (seen.has(key))
-      continue;
-
-    seen.add(key);
-
-    rooms.push({
-      id: `room-${id++}`,
-      x: left.x1,
-      y: top.y1,
-      width,
-      height,
-    });
-  }
-
-  console.log(`Detected ${rooms.length} rooms`);
-
-  return rooms;
-}
+      const right = rightWalls.reduce
