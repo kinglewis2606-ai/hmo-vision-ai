@@ -1,57 +1,47 @@
 "use client";
 
-export type Box = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  label: string;
-  type?: "bedroom" | "kitchen" | "bathroom" | "communal";
-};
+interface Props {
+  image: string;
+}
 
-export default function FloorPlanOverlay({
-  imageUrl,
-  boxes,
-}: {
-  imageUrl: string;
-  boxes: Box[];
-}) {
-  const colours = {
-    bedroom: "rgba(37,99,235,0.55)",
-    kitchen: "rgba(22,163,74,0.55)",
-    bathroom: "rgba(168,85,247,0.55)",
-    communal: "rgba(245,158,11,0.55)",
-  };
-
+export default function FloorPlanOverlay({ image }: Props) {
   return (
-    <div className="relative w-full aspect-[4/3] overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
-      <img
-  src={imageUrl}
-  alt="Floor Plan"
-  className="absolute inset-0 h-full w-full object-contain"
-  draggable={false}
-  onLoad={() => console.log("Loaded:", imageUrl)}
-  onError={(e) => {
-    console.log("Failed:", imageUrl);
-    console.log(e);
-  }}
-/>
+    <div className="relative w-full">
 
-      {boxes.map((box, i) => (
-        <div
-          key={i}
-          className="absolute flex items-center justify-center rounded-lg border-2 border-blue-400 text-center text-sm font-semibold text-white shadow-lg"
-          style={{
-            left: `${box.x}%`,
-            top: `${box.y}%`,
-            width: `${box.width}%`,
-            height: `${box.height}%`,
-            backgroundColor: colours[box.type || "bedroom"],
-          }}
+      <img
+        src={image}
+        className="w-full rounded-xl border"
+        alt="Proposed"
+      />
+
+      <svg
+        className="absolute inset-0 w-full h-full"
+        viewBox="0 0 1000 1400"
+      >
+
+        <rect
+          x="110"
+          y="620"
+          width="210"
+          height="170"
+          fill="rgba(0,180,255,.25)"
+          stroke="#00B4FF"
+          strokeWidth="4"
+        />
+
+        <text
+          x="215"
+          y="710"
+          fill="#00B4FF"
+          fontSize="26"
+          textAnchor="middle"
+          fontWeight="bold"
         >
-          {box.label}
-        </div>
-      ))}
+          Bedroom 5
+        </text>
+
+      </svg>
+
     </div>
   );
 }
