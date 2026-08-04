@@ -257,8 +257,9 @@ setReport(parsedReport);
 
     <div className="relative">
 
-      <img
-        src={`/api/uploads/${filename}`}
+      <FloorPlanOverlay
+    image={`/api/uploads/${filename}`}
+/>
         className="w-full rounded-xl border"
         alt="Proposed"
       />
