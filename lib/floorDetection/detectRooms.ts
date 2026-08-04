@@ -12,61 +12,64 @@ export async function detectRooms(
   walls: WallLine[]
 ): Promise<DetectedRoom[]> {
 
-  const horizontal = walls.filter(
-    w => w.y1 === w.y2
-  );
+  const horizontal = walls
+    .filter(w => w.y1 === w.y2)
+    .sort((a, b) => a.y1 - b.y1);
 
-  const vertical = walls.filter(
-    w => w.x1 === w.x2
-  );
+  const vertical = walls
+    .filter(w => w.x1 === w.x2)
+    .sort((a, b) => a.x1 - b.x1);
 
   const rooms: DetectedRoom[] = [];
+  const seen = new Set<string>();
+
   let id = 1;
 
-  for (let h1 = 0; h1 < horizontal.length; h1++) {
+  for (const top of horizontal) {
 
-    for (let h2 = h1 + 1; h2 < horizontal.length; h2++) {
+    const bottom = horizontal.find(h =>
+      h.y1 > top.y1 &&
+      Math.abs(h.x1 - top.x1) < 20 &&
+      Math.abs(h.x2 - top.x2) < 20 &&
+      h.y1 - top.y1 > 60
+    );
 
-      const top = horizontal[h1];
-      const bottom = horizontal[h2];
+    if (!bottom) continue;
 
-      if (bottom.y1 - top.y1 < 60) continue;
+    const left = vertical.find(v =>
+      Math.abs(v.x1 - top.x1) < 20 &&
+      v.y1 <= top.y1 &&
+      v.y2 >= bottom.y1
+    );
 
-      const left = vertical.find(v =>
-        v.y1 <= top.y1 &&
-        v.y2 >= bottom.y1 &&
-        Math.abs(v.x1 - top.x1) < 20
-      );
+    const right = vertical.find(v =>
+      Math.abs(v.x1 - top.x2) < 20 &&
+      v.y1 <= top.y1 &&
+      v.y2 >= bottom.y1
+    );
 
-      const right = vertical.find(v =>
-        v.y1 <= top.y1 &&
-        v.y2 >= bottom.y1 &&
-        Math.abs(v.x1 - top.x2) < 20
-      );
+    if (!left || !right) continue;
 
-      if (!left || !right) continue;
+    const width = right.x1 - left.x1;
+    const height = bottom.y1 - top.y1;
 
-      const duplicate = rooms.some(
-  r =>
-    Math.abs(r.x - left.x1) < 5 &&
-    Math.abs(r.y - top.y1) < 5 &&
-    Math.abs(r.width - (right.x1 - left.x1)) < 5 &&
-    Math.abs(r.height - (bottom.y1 - top.y1)) < 5
-);
+    if (width < 60 || height < 60)
+      continue;
 
-if (duplicate) {
-  continue;
-}
-      rooms.push({
-        id: `room-${id++}`,
-        x: left.x1,
-        y: top.y1,
-        width: right.x1 - left.x1,
-        height: bottom.y1 - top.y1,
-      });
+    const key = `${left.x1}-${top.y1}-${width}-${height}`;
 
-    }
+    if (seen.has(key))
+      continue;
 
+    seen.add(key);
+
+    rooms.push({
+      id: `room-${id++}`,
+      x: left.x1,
+      y: top.y1,
+      width,
+      height,
+    });
   }
 
   console.log(`Detected ${rooms.length} rooms`);
