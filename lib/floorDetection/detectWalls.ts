@@ -174,9 +174,9 @@ for (const floor of floors) {
 
 const mergedWalls = mergeWalls(filteredWalls);
 
-console.log(
-  `Returning ${mergedWalls.length} wall segments`
-);
+console.log(`Raw walls: ${walls.length}`);
+console.log(`Filtered walls: ${filteredWalls.length}`);
+console.log(`Merged walls: ${mergedWalls.length}`);
 
 return mergedWalls;
 }
