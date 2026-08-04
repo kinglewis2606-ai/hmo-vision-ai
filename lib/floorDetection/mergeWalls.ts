@@ -1,6 +1,7 @@
 import { WallLine } from "./detectWalls";
 
-const GAP = 5;
+const GAP = 15;
+const ALIGNMENT = 3;
 
 export function mergeWalls(walls: WallLine[]): WallLine[] {
   const horizontal = walls
@@ -13,35 +14,35 @@ export function mergeWalls(walls: WallLine[]): WallLine[] {
 
   const merged: WallLine[] = [];
 
-  // Merge horizontal walls
+  // Merge horizontal
   for (const wall of horizontal) {
     const last = merged[merged.length - 1];
 
     if (
-  last &&
-  Math.abs(last.y1 - wall.y1) <= 1 &&
-  wall.x1 >= last.x2 &&
-  wall.x1 - last.x2 <= GAP
-) {
-  last.x2 = wall.x2;
-} else {
-  merged.push({ ...wall });
+      last &&
+      last.y1 === last.y2 &&
+      Math.abs(last.y1 - wall.y1) <= ALIGNMENT &&
+      wall.x1 <= last.x2 + GAP
+    ) {
+      last.x2 = Math.max(last.x2, wall.x2);
+    } else {
+      merged.push({ ...wall });
     }
   }
 
-  // Merge vertical walls
+  // Merge vertical
   for (const wall of vertical) {
     const last = merged[merged.length - 1];
 
     if (
-  last &&
-  Math.abs(last.x1 - wall.x1) <= 1 &&
-  wall.y1 >= last.y2 &&
-  wall.y1 - last.y2 <= GAP
-) {
-  last.y2 = wall.y2;
-} else {
-  merged.push({ ...wall });
+      last &&
+      last.x1 === last.x2 &&
+      Math.abs(last.x1 - wall.x1) <= ALIGNMENT &&
+      wall.y1 <= last.y2 + GAP
+    ) {
+      last.y2 = Math.max(last.y2, wall.y2);
+    } else {
+      merged.push({ ...wall });
     }
   }
 
