@@ -45,5 +45,84 @@ export async function findEnclosedRooms(
 
   console.log("Occupancy grid built");
 
-  return [];
+  const visited = Array.from(
+  { length: imageHeight },
+  () => new Uint8Array(imageWidth)
+);
+
+const rooms: DetectedRoom[] = [];
+
+const directions = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+];
+
+for (let startY = 0; startY < imageHeight; startY++) {
+  for (let startX = 0; startX < imageWidth; startX++) {
+
+    if (grid[startY][startX] === 1) continue;
+    if (visited[startY][startX]) continue;
+
+    const queue = [[startX, startY]];
+    visited[startY][startX] = 1;
+
+    let minX = startX;
+    let maxX = startX;
+    let minY = startY;
+    let maxY = startY;
+
+    let pixels = 0;
+
+    while (queue.length) {
+
+      const [x, y] = queue.shift()!;
+
+      pixels++;
+
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+
+      for (const [dx, dy] of directions) {
+
+        const nx = x + dx;
+        const ny = y + dy;
+
+        if (
+          nx < 0 ||
+          ny < 0 ||
+          nx >= imageWidth ||
+          ny >= imageHeight
+        ) {
+          continue;
+        }
+
+        if (visited[ny][nx]) continue;
+        if (grid[ny][nx] === 1) continue;
+
+        visited[ny][nx] = 1;
+        queue.push([nx, ny]);
+      }
+    }
+
+    // Ignore tiny blobs
+    if (pixels < 500) continue;
+
+    rooms.push({
+      id: `room-${rooms.length + 1}`,
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    });
+
+  }
+}
+
+console.log(`Found ${rooms.length} enclosed spaces`);
+
+return rooms;
 }
