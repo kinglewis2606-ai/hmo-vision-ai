@@ -110,9 +110,17 @@ font-size="16"
 font-family="Arial"
 text-anchor="middle"
 dominant-baseline="middle">
-${room.name}
-${room.type ? ` (${room.type})` : ""}
+${room.name
   .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")}
+
+${room.type
+  ? ` (${room.type})`
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+  : ""}
   .replace(/</g, "&lt;")
   .replace(/>/g, "&gt;")}
 </text>
