@@ -18,13 +18,13 @@ export function mergeWalls(walls: WallLine[]): WallLine[] {
     const last = merged[merged.length - 1];
 
     if (
-      last &&
-      Math.abs(last.y1 - wall.y1) <= GAP
-      Math.abs(last.x1 - wall.x1) <= GAP
-    ) {
-      last.x2 = Math.max(last.x2, wall.x2);
-    } else {
-      merged.push({ ...wall });
+  last &&
+  Math.abs(last.y1 - wall.y1) <= GAP &&
+  wall.x1 <= last.x2 + GAP
+) {
+  last.x2 = Math.max(last.x2, wall.x2);
+} else {
+  merged.push({ ...wall });
     }
   }
 
@@ -33,13 +33,13 @@ export function mergeWalls(walls: WallLine[]): WallLine[] {
     const last = merged[merged.length - 1];
 
     if (
-      last &&
-      Math.abs(last.x1 - wall.x1) <= GAP
-      Math.abs(last.y1 - wall.y1) <= GAP
-    ) {
-      last.y2 = Math.max(last.y2, wall.y2);
-    } else {
-      merged.push({ ...wall });
+  last &&
+  Math.abs(last.x1 - wall.x1) <= GAP &&
+  wall.y1 <= last.y2 + GAP
+) {
+  last.y2 = Math.max(last.y2, wall.y2);
+} else {
+  merged.push({ ...wall });
     }
   }
 
