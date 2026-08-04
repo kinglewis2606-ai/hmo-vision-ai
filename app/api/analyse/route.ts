@@ -22,6 +22,19 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
       });
     }
 
+    const detectedFloors = await detectFloors(filePath);
+
+const detectedWalls = await detectWalls(
+  filePath,
+  detectedFloors
+);
+
+const detectedRooms = await detectRooms(detectedWalls);
+
+const originalFloorPlan = buildOriginalFloorPlan(
+  detectedFloors,
+  detectedRooms
+);
     
     console.log("Detected floors:");
 console.dir(detectedFloors, { depth: null });
@@ -432,15 +445,22 @@ Do not leave the changes array empty unless the room is completely unchanged.
       });
     }
 
-    // Replace the AI-generated original floor plan
-// with our detected geometry
-if (
-  originalFloorPlan?.floors?.length &&
-  originalFloorPlan.floors.some(f => f.rooms.length >= 5)
-) {
+    const detectedRoomCount =
+  originalFloorPlan?.floors?.reduce(
+    (total: number, floor: any) => total + floor.rooms.length,
+    0
+  ) ?? 0;
+
+console.log(`Detected ${detectedRoomCount} total rooms`);
+
+if (detectedRoomCount >= 5) {
+  console.log("Using detected floor plan");
   result.originalFloorPlan = originalFloorPlan;
+} else {
+  console.log("Using AI-generated floor plan");
 }
-    
+
+   
     // Generate an AI floor plan from the recommended layout
 result.generatedLayoutImage = renderFloorPlan(
   result.originalFloorPlan,
