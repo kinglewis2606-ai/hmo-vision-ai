@@ -260,10 +260,7 @@ setReport(parsedReport);
       <FloorPlanOverlay
     image={`/api/uploads/${filename}`}
 />
-        className="w-full rounded-xl border"
-        alt="Proposed"
-      />
-
+        
       {/* Overlay goes here next */}
 
     </div>
