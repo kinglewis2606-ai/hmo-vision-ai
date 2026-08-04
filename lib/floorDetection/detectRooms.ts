@@ -9,19 +9,18 @@ export interface DetectedRoom {
 }
 
 const WALL_TOLERANCE = 35;
-const MIN_ROOM = 60;
-const MAX_ROOM = 1200;
+const MIN_ROOM_SIZE = 60;
+const MAX_ROOM_SIZE = 1200;
 
 export async function detectRooms(
   walls: WallLine[]
 ): Promise<DetectedRoom[]> {
-
   const horizontal = walls
-    .filter(w => w.y1 === w.y2)
+    .filter((w) => w.y1 === w.y2)
     .sort((a, b) => a.y1 - b.y1);
 
   const vertical = walls
-    .filter(w => w.x1 === w.x2)
+    .filter((w) => w.x1 === w.x2)
     .sort((a, b) => a.x1 - b.x1);
 
   const rooms: DetectedRoom[] = [];
@@ -30,32 +29,80 @@ export async function detectRooms(
   let id = 1;
 
   for (const top of horizontal) {
-
-    const bottoms = horizontal.filter(h =>
-      h.y1 > top.y1 + MIN_ROOM &&
-      Math.abs(h.x1 - top.x1) < WALL_TOLERANCE &&
-      Math.abs(h.x2 - top.x2) < WALL_TOLERANCE
+    const bottomCandidates = horizontal.filter(
+      (h) =>
+        h.y1 > top.y1 + MIN_ROOM_SIZE &&
+        Math.abs(h.x1 - top.x1) < WALL_TOLERANCE &&
+        Math.abs(h.x2 - top.x2) < WALL_TOLERANCE
     );
 
-    for (const bottom of bottoms) {
-
-      const leftWalls = vertical.filter(v =>
-        Math.abs(v.x1 - top.x1) < WALL_TOLERANCE &&
-        v.y1 <= top.y1 + WALL_TOLERANCE &&
-        v.y2 >= bottom.y1 - WALL_TOLERANCE
+    for (const bottom of bottomCandidates) {
+      const leftCandidates = vertical.filter(
+        (v) =>
+          Math.abs(v.x1 - top.x1) < WALL_TOLERANCE &&
+          v.y1 <= top.y1 + WALL_TOLERANCE &&
+          v.y2 >= bottom.y1 - WALL_TOLERANCE
       );
 
-      const rightWalls = vertical.filter(v =>
-        Math.abs(v.x1 - top.x2) < WALL_TOLERANCE &&
-        v.y1 <= top.y1 + WALL_TOLERANCE &&
-        v.y2 >= bottom.y1 - WALL_TOLERANCE
+      const rightCandidates = vertical.filter(
+        (v) =>
+          Math.abs(v.x1 - top.x2) < WALL_TOLERANCE &&
+          v.y1 <= top.y1 + WALL_TOLERANCE &&
+          v.y2 >= bottom.y1 - WALL_TOLERANCE
       );
 
-      if (!leftWalls.length || !rightWalls.length)
+      if (leftCandidates.length === 0 || rightCandidates.length === 0) {
         continue;
+      }
 
-      const left = leftWalls.reduce((a, b) =>
-        Math.abs(a.x1 - top.x1) < Math.abs(b.x1 - top.x1) ? a : b
+      const left = leftCandidates.reduce((best, current) =>
+        Math.abs(current.x1 - top.x1) < Math.abs(best.x1 - top.x1)
+          ? current
+          : best
       );
 
-      const right = rightWalls.reduce
+      const right = rightCandidates.reduce((best, current) =>
+        Math.abs(current.x1 - top.x2) < Math.abs(best.x1 - top.x2)
+          ? current
+          : best
+      );
+
+      const width = right.x1 - left.x1;
+      const height = bottom.y1 - top.y1;
+
+      if (
+        width < MIN_ROOM_SIZE ||
+        height < MIN_ROOM_SIZE ||
+        width > MAX_ROOM_SIZE ||
+        height > MAX_ROOM_SIZE
+      ) {
+        continue;
+      }
+
+      const key = [
+        Math.round(left.x1 / 10),
+        Math.round(top.y1 / 10),
+        Math.round(width / 10),
+        Math.round(height / 10),
+      ].join("-");
+
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+
+      rooms.push({
+        id: `room-${id++}`,
+        x: left.x1,
+        y: top.y1,
+        width,
+        height,
+      });
+    }
+  }
+
+  console.log(`Detected ${rooms.length} rooms`);
+
+  return rooms;
+}
