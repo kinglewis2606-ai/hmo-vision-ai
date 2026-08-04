@@ -21,11 +21,13 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
         error: "Uploaded floor plan not found.",
       });
     }
-const detectedFloors = await detectFloors(filePath);
+
     
     console.log("Detected floors:");
 console.dir(detectedFloors, { depth: null });
 
+    const floorContext = JSON.stringify(detectedFloors, null, 2);
+    
     const image = fs.readFileSync(filePath);
     const ext = path.extname(filename).toLowerCase();
 
@@ -36,18 +38,6 @@ console.dir(detectedFloors, { depth: null });
 
     const base64 = image.toString("base64");
     
-const detectedWalls = await detectWalls(
-  filePath,
-  detectedFloors
-);
-
-const detectedRooms = await detectRooms(detectedWalls);
-    
-    const originalFloorPlan = buildOriginalFloorPlan(
-  detectedFloors,
-  detectedRooms
-);
-
 console.log("Detected walls:");
 console.dir(detectedWalls, { depth: null });
 
@@ -77,6 +67,16 @@ ${address || "Unknown"}
 
 Property Type:
 ${propertyType || "Unknown"}
+
+Detected Floor Boundaries:
+
+${floorContext}
+
+These floor boundaries were detected automatically.
+
+Use them when constructing both originalFloorPlan and proposedFloorPlan.
+
+Do not invent additional floors.
 
 IMPORTANT RULES
 
@@ -434,7 +434,12 @@ Do not leave the changes array empty unless the room is completely unchanged.
 
     // Replace the AI-generated original floor plan
 // with our detected geometry
-result.originalFloorPlan = originalFloorPlan;
+if (
+  originalFloorPlan?.floors?.length &&
+  originalFloorPlan.floors.some(f => f.rooms.length >= 5)
+) {
+  result.originalFloorPlan = originalFloorPlan;
+}
     
     // Generate an AI floor plan from the recommended layout
 result.generatedLayoutImage = renderFloorPlan(
