@@ -544,16 +544,23 @@ console.log("================================");
       
       
     } catch (err) {
-  console.error("JSON PARSE ERROR:");
-  console.error(err);
+  console.error("========== JSON PARSE ERROR ==========");
+
+  if (err instanceof Error) {
+    console.error(err.name);
+    console.error(err.message);
+    console.error(err.stack);
+  } else {
+    console.error(err);
+  }
 
   console.error("FIRST 500 CHARS:");
-  console.error(cleaned.substring(0, 500));
+  console.error(cleaned.slice(0, 500));
 
   console.error("LAST 500 CHARS:");
-  console.error(cleaned.substring(cleaned.length - 500));
-  console.log("RETURNING SCORE:", result.hmoScore);
-  console.log("RETURNING VERDICT:", result.verdict);
+  console.error(cleaned.slice(-500));
+
+  console.error("RAW LENGTH:", cleaned.length);
 
   return NextResponse.json({
     success: false,
