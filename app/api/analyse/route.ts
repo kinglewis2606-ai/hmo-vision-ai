@@ -155,7 +155,7 @@ Score using these criteria:
 
 • Maximum achievable HMO size (35 points)
 • Layout efficiency (20 points)
-• Planning/licensing feasibility (15 points)
+• Planning/licensing feasibility (195 points)
 • Rental income potential (15 points)
 • Estimated conversion cost (15 points)
 
@@ -435,14 +435,17 @@ Do not leave the changes array empty unless the room is completely unchanged.
     let result;
 
     try {
-      result = JSON.parse(cleaned);
-      
+  result = JSON.parse(cleaned);
+} catch {
+  console.error("AI returned invalid JSON:");
+  console.error(cleaned);
 
-result.proposedFloorPlan =
-  applyRoomChanges(
-    result.originalFloorPlan,
-    roomChanges
-  );
+  return NextResponse.json({
+    success: false,
+    error: "OpenAI returned invalid JSON.",
+  });
+    }
+    
     } catch {
       console.error("AI returned invalid JSON:");
       console.error(cleaned);
@@ -470,7 +473,7 @@ console.log(
     0
   )} total rooms`
 );
-}
+
 
    
     // Generate an AI floor plan from the recommended layout
