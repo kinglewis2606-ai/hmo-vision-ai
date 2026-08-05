@@ -464,7 +464,10 @@ console.log("================================");
     0
   )} rooms`
 );
-
+    
+console.log("========== PROPOSED FLOOR PLAN ==========");
+console.log(JSON.stringify(result.proposedFloorPlan, null, 2));
+console.log("=========================================");
 result.generatedLayoutImage = renderFloorPlan(
   result.originalFloorPlan,
   result.proposedFloorPlan
