@@ -469,7 +469,19 @@ result.generatedLayoutImage = renderFloorPlan(
   result.originalFloorPlan,
   result.proposedFloorPlan
 );
-  
+
+    console.log(
+  "Generated image length:",
+  result.generatedLayoutImage?.length
+);
+
+console.log(
+  "Generated image starts with:",
+  result.generatedLayoutImage?.substring(0, 30)
+);
+
+console.log("RETURNING SCORE:", result.hmoScore);
+console.log("RETURNING VERDICT:", result.verdict);
 return NextResponse.json({
   success: true,
   result,
