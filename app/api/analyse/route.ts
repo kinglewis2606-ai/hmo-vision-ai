@@ -447,15 +447,7 @@ Do not leave the changes array empty unless the room is completely unchanged.
     }
     
     } catch {
-      console.error("AI returned invalid JSON:");
-      console.error(cleaned);
-
-      return NextResponse.json({
-        success: false,
-        error: "OpenAI returned invalid JSON.",
-      });
-    }
-
+    
     // Always use the detected floor plan as the source of truth
 result.originalFloorPlan = originalFloorPlan;
 
