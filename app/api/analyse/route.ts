@@ -543,10 +543,15 @@ result.proposedFloorPlan.floors.forEach((floor: any) => {
 console.log("================================");
       
       
-} catch {
-  console.error("===== INVALID JSON START =====");
-console.error(cleaned);
-console.error("===== INVALID JSON END =====");
+    } catch (err) {
+  console.error("JSON PARSE ERROR:");
+  console.error(err);
+
+  console.error("FIRST 500 CHARS:");
+  console.error(cleaned.substring(0, 500));
+
+  console.error("LAST 500 CHARS:");
+  console.error(cleaned.substring(cleaned.length - 500));
   console.log("RETURNING SCORE:", result.hmoScore);
   console.log("RETURNING VERDICT:", result.verdict);
 
