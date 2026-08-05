@@ -36,7 +36,7 @@ export interface FloorPlan {
   floors: Floor[];
 }
 
-const ROOM_SCALE = 2;
+ROOM_SCALE = 3;
 
 function escapeXml(text: string): string {
   return text
@@ -107,14 +107,26 @@ ${escapeXml(floor.name)}
       lowestY = Math.max(lowestY, y + h);
 
       svg += `
-<rect
+      
+      <rect
 x="${x}"
 y="${y}"
 width="${w}"
 height="${h}"
-fill="white"
-stroke="black"
-stroke-width="3"/>
+fill="#ffffff"
+stroke="#111111"
+stroke-width="6"
+rx="2"/>
+
+svg += `
+<rect
+x="${x + 3}"
+y="${y + 3}"
+width="${w - 6}"
+height="${h - 6}"
+fill="none"
+stroke="#666"
+stroke-width="1"/>
 `;
 
       const label = escapeXml(
@@ -125,7 +137,8 @@ stroke-width="3"/>
 <text
 x="${x + w / 2}"
 y="${y + h / 2}"
-font-size="15"
+font-size="19"
+font-weight="bold"
 font-family="Arial"
 text-anchor="middle"
 dominant-baseline="middle">
@@ -230,9 +243,9 @@ export function renderFloorPlan(
   let svg = `
 <svg
 xmlns="http://www.w3.org/2000/svg"
-width="1400"
-height="2200"
-viewBox="0 0 1400 2200"
+width="2200"
+height="2800"
+viewBox="0 0 2200 2800"
 style="background:white">
 `;
 
