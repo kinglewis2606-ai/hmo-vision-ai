@@ -477,7 +477,11 @@ console.log("NEW BUILD 5 AUG 2026");
 console.log("############################################");
 
       console.log("========== AI RESPONSE ==========");
-console.dir(result, { depth: null });
+console.log("===== PROPOSED FLOOR PLAN =====");
+console.dir(result.proposedFloorPlan, { depth: null });
+
+console.log("===== ORIGINAL FLOOR PLAN =====");
+console.dir(result.originalFloorPlan, { depth: null });
 console.log("================================");
       
       
