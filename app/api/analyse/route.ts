@@ -559,3 +559,29 @@ console.log("================================");
     error: "OpenAI returned invalid JSON.",
   });
     }
+console.log(
+  `AI returned ${result.originalFloorPlan.floors.reduce(
+    (t: number, f: any) => t + f.rooms.length,
+    0
+  )} rooms`
+);
+
+result.generatedLayoutImage = renderFloorPlan(
+  result.originalFloorPlan,
+  result.proposedFloorPlan
+);
+
+return NextResponse.json({
+  success: true,
+  result,
+});
+
+} catch (error: any) {
+  console.error(error);
+
+  return NextResponse.json({
+    success: false,
+    error: error.message || "Analysis failed.",
+  });
+}
+                                         }
