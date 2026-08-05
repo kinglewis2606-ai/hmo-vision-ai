@@ -543,13 +543,8 @@ result.proposedFloorPlan.floors.forEach((floor: any) => {
 console.log("================================");
       
       
-    } catch (err) {
-  co} catch (err: any) {
-  console.error(
-    "JSON ERROR:",
-    err?.name,
-    err?.message
-  );
+    } catch (err: any) {
+  console.error("JSON ERROR:", err?.name, err?.message);
 
   console.error("FIRST:");
   console.error(cleaned.slice(0, 500));
@@ -564,50 +559,3 @@ console.log("================================");
     error: "OpenAI returned invalid JSON.",
   });
     }
-    
-    console.log(
-  `AI returned ${result.originalFloorPlan.floors.reduce(
-    (t: number, f: any) => t + f.rooms.length,
-    0
-  )} rooms`
-);
-    
-console.log("========== PROPOSED FLOOR PLAN ==========");
-console.log(JSON.stringify(result.proposedFloorPlan, null, 2));
-console.log("=========================================");
-result.generatedLayoutImage = renderFloorPlan(
-  result.originalFloorPlan,
-  result.proposedFloorPlan
-);
-
-    console.log(
-  "Generated image length:",
-  result.generatedLayoutImage?.length
-);
-
-console.log(
-  "Generated image starts with:",
-  result.generatedLayoutImage?.substring(0, 30)
-);
-
-console.log("RETURNING SCORE:", result.hmoScore);
-console.log("RETURNING VERDICT:", result.verdict);
-return NextResponse.json({
-  success: true,
-  result,
-});
-
-  } catch (error: any) {
-  console.error("========== FULL ERROR ==========");
-  console.dir(error, { depth: null });
-
-  if (error instanceof Error) {
-    console.error("Message:", error.message);
-    console.error("Stack:", error.stack);
-  }
-  return NextResponse.json({
-    success: false,
-    error: error.message || "Analysis failed.",
-  });
-}
-}
