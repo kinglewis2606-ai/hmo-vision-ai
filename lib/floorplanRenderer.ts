@@ -88,6 +88,32 @@ ${escapeXml(floor.name)}
         room.width > 0 &&
         room.height > 0;
 
+      const neighbours = new Set(room.adjacentRooms ?? []);
+
+const leftShared = floor.rooms.some(
+  r =>
+    neighbours.has(r.id) &&
+    Math.abs(r.x + r.width - room.x) < 15
+);
+
+const rightShared = floor.rooms.some(
+  r =>
+    neighbours.has(r.id) &&
+    Math.abs(room.x + room.width - r.x) < 15
+);
+
+const topShared = floor.rooms.some(
+  r =>
+    neighbours.has(r.id) &&
+    Math.abs(r.y + r.height - room.y) < 15
+);
+
+const bottomShared = floor.rooms.some(
+  r =>
+    neighbours.has(r.id) &&
+    Math.abs(room.y + room.height - r.y) < 15
+);
+
       const w = hasCoords
         ? room.width * ROOM_SCALE
         : 140;
@@ -106,17 +132,28 @@ ${escapeXml(floor.name)}
 
       lowestY = Math.max(lowestY, y + h);
 
-      svg += `
+      
+svg += `
 <rect
 x="${x}"
 y="${y}"
 width="${w}"
 height="${h}"
-fill="#ffffff"
-stroke="#111111"
-stroke-width="6"
-rx="2"/>
+fill="white"
+stroke="none"/>
 `;
+
+if (!topShared)
+  svg += `<line x1="${x}" y1="${y}" x2="${x + w}" y2="${y}" stroke="black" stroke-width="6"/>`;
+
+if (!bottomShared)
+  svg += `<line x1="${x}" y1="${y + h}" x2="${x + w}" y2="${y + h}" stroke="black" stroke-width="6"/>`;
+
+if (!leftShared)
+  svg += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y + h}" stroke="black" stroke-width="6"/>`;
+
+if (!rightShared)
+  svg += `<line x1="${x + w}" y1="${y}" x2="${x + w}" y2="${y + h}" stroke="black" stroke-width="6"/>`;
 
 svg += `
 <rect
