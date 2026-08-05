@@ -7,7 +7,7 @@ import { detectWalls } from "@/lib/floorDetection/detectWalls";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
-import { applyRoomChanges } from "@/lib/applyRoomChanges";
+// import { applyRoomChanges } from "@/lib/applyRoomChanges";
 
 export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
@@ -450,7 +450,7 @@ Do not leave the changes array empty unless the room is completely unchanged.
 result.originalFloorPlan = originalFloorPlan;
 
 // Apply AI changes to create the proposed plan
-const roomChanges = result.roomChanges ?? [];
+// const roomChanges = result.roomChanges ?? [];
 
 result.proposedFloorPlan = applyRoomChanges(
   originalFloorPlan,
