@@ -20,8 +20,10 @@ export interface Room {
 
   shape?: string;
 
-  doors?: Door[];
-  windows?: Window[];
+adjacentRooms?: string[];
+
+doors?: Door[];
+windows?: Window[];
 
   notes?: string;
 }
