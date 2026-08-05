@@ -107,8 +107,7 @@ ${escapeXml(floor.name)}
       lowestY = Math.max(lowestY, y + h);
 
       svg += `
-      
-      <rect
+<rect
 x="${x}"
 y="${y}"
 width="${w}"
@@ -117,6 +116,7 @@ fill="#ffffff"
 stroke="#111111"
 stroke-width="6"
 rx="2"/>
+`;
 
 svg += `
 <rect
