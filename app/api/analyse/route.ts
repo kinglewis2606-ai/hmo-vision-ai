@@ -198,11 +198,35 @@ You must build TWO complete digital floor plan models.
 
 Model 1: originalFloorPlan
 
-This must represent the property exactly as uploaded.
+Return EXACTLY the detected floor plan supplied above.
+
+Do not rename, remove or omit any detected room.
 
 Model 2: proposedFloorPlan
 
-This must represent the recommended HMO conversion.
+Start by making a complete copy of originalFloorPlan.
+
+Then modify that copy.
+
+Never delete rooms.
+
+Every floor must contain the same number of structural spaces unless a room is intentionally split.
+
+Every floor must contain at least one room.
+
+Only change:
+
+• room name
+• room type
+• changes
+• notes
+• confidence
+
+Only change x, y, width or height if a wall has physically moved.
+
+If a room is split, replace that room with two rooms occupying the same footprint.
+
+Never return an empty floor.
 
 Rules:
 
@@ -471,6 +495,14 @@ Do not leave the changes array empty unless the room is completely unchanged.
 
     try {
   result = JSON.parse(cleaned);
+
+      for (const floor of result.proposedFloorPlan.floors) {
+  if (!floor.rooms || floor.rooms.length === 0) {
+    throw new Error(
+      `AI returned an empty floor: ${floor.name}`
+    );
+  }
+      }
 
       console.log("############################################");
 console.log("NEW BUILD 5 AUG 2026");
