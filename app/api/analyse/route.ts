@@ -82,37 +82,25 @@ ${address || "Unknown"}
 Property Type:
 ${propertyType || "Unknown"}
 
-Detected Floor Plan Geometry:
+Uploaded Floor Plan
 
-${JSON.stringify(originalFloorPlan, null, 2)}
+The uploaded floor plan image is the authoritative source.
 
-This is the detected geometry of the uploaded floor plan.
+First analyse the image itself.
 
-Use this as the base geometry for BOTH originalFloorPlan and proposedFloorPlan.
+Create a complete digital representation of the existing property.
 
-IMPORTANT:
+Infer every room, hallway, staircase and floor directly from the image.
 
-• Preserve every room's x, y, width and height unless that room is genuinely altered.
+Only after reconstructing the existing layout should you create the proposed HMO layout.
 
-• Preserve the overall building footprint.
+Keep the same overall building footprint.
 
-• Preserve stair positions.
+Do not invent extra floors.
 
-• Preserve floor levels.
+Do not invent impossible rooms.
 
-• If a room is unchanged, copy its geometry exactly.
-
-• If a room is split, the two new rooms must together occupy the original room's area.
-
-• If two rooms are combined, the new room must occupy the combined area.
-
-• Never create overlapping rooms.
-
-• Rooms on the same floor must not overlap.
-
-• Adjacent rooms should continue sharing walls.
-
-Do not invent a new coordinate system.
+The proposed layout must be based on the original layout you infer from the image.
 IMPORTANT RULES
 
 • Only recommend legal and realistic HMO layouts.
@@ -198,13 +186,11 @@ You must build TWO complete digital floor plan models.
 
 Model 1: originalFloorPlan
 
-Return EXACTLY the detected floor plan supplied above.
-
-Do not rename, remove or omit any detected room.
-
 Model 2: proposedFloorPlan
 
-Start by making a complete copy of originalFloorPlan.
+Create a complete originalFloorPlan by analysing the uploaded floor plan image.
+
+Then create proposedFloorPlan by modifying that original layout.
 
 Then modify that copy.
 
@@ -251,15 +237,7 @@ For every room include:
 
 These coordinates already come from the detected floor plan.
 
-Treat them as the authoritative geometry.
 
-Do NOT generate a new layout from scratch.
-
-Reuse these coordinates wherever possible.
-
-Only change coordinates if a wall has genuinely moved.
-
-Never reposition rooms simply to improve appearance.
 Adjacent rooms should have adjacent coordinates.
 
 The relative positioning of rooms is more important than exact dimensions.
@@ -294,7 +272,7 @@ Before returning your JSON, verify that:
 • Every proposed room occupies real space from the original floor plan.
 Every room in proposedFloorPlan must correspond to a room in originalFloorPlan.
 
-If a room has not changed, keep the same name and dimensions.
+If a room is unchanged between the original and proposed layouts, preserve its geometry where practical.
 
 If a room has changed:
 
