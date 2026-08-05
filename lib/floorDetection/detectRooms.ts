@@ -16,11 +16,11 @@ export async function detectRooms(
   walls: WallLine[]
 ): Promise<DetectedRoom[]> {
   const horizontal = walls
-    .filter((w) => w.y1 === w.y2)
+    .filter((w) => Math.abs(w.y1 - w.y2) <= 3)
     .sort((a, b) => a.y1 - b.y1);
 
   const vertical = walls
-    .filter((w) => w.x1 === w.x2)
+    .filter((w) => Math.abs(w.x1 - w.x2) <= 3)
     .sort((a, b) => a.x1 - b.x1);
 
   const rooms: DetectedRoom[] = [];
