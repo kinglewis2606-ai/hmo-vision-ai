@@ -155,7 +155,7 @@ Score using these criteria:
 
 • Maximum achievable HMO size (35 points)
 • Layout efficiency (20 points)
-• Planning/licensing feasibility (195 points)
+• Planning/licensing feasibility (15 points)
 • Rental income potential (15 points)
 • Estimated conversion cost (15 points)
 
