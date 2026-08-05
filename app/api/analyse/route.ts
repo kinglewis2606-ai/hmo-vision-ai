@@ -544,23 +544,20 @@ console.log("================================");
       
       
     } catch (err) {
-  console.error("========== JSON PARSE ERROR ==========");
+  co} catch (err: any) {
+  console.error(
+    "JSON ERROR:",
+    err?.name,
+    err?.message
+  );
 
-  if (err instanceof Error) {
-    console.error(err.name);
-    console.error(err.message);
-    console.error(err.stack);
-  } else {
-    console.error(err);
-  }
-
-  console.error("FIRST 500 CHARS:");
+  console.error("FIRST:");
   console.error(cleaned.slice(0, 500));
 
-  console.error("LAST 500 CHARS:");
+  console.error("LAST:");
   console.error(cleaned.slice(-500));
 
-  console.error("RAW LENGTH:", cleaned.length);
+  console.error("LEN:", cleaned.length);
 
   return NextResponse.json({
     success: false,
