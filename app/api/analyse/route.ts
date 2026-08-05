@@ -7,6 +7,7 @@ import { detectWalls } from "@/lib/floorDetection/detectWalls";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
+import { applyRoomChanges } from "@/lib/applyRoomChanges";
 
 export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
   try {
@@ -435,6 +436,13 @@ Do not leave the changes array empty unless the room is completely unchanged.
 
     try {
       result = JSON.parse(cleaned);
+      
+
+result.proposedFloorPlan =
+  applyRoomChanges(
+    result.originalFloorPlan,
+    roomChanges
+  );
     } catch {
       console.error("AI returned invalid JSON:");
       console.error(cleaned);
@@ -445,19 +453,23 @@ Do not leave the changes array empty unless the room is completely unchanged.
       });
     }
 
-    const detectedRoomCount =
-  originalFloorPlan?.floors?.reduce(
-    (total: number, floor: any) => total + floor.rooms.length,
+    // Always use the detected floor plan as the source of truth
+result.originalFloorPlan = originalFloorPlan;
+
+// Apply AI changes to create the proposed plan
+const roomChanges = result.roomChanges ?? [];
+
+result.proposedFloorPlan = applyRoomChanges(
+  originalFloorPlan,
+  roomChanges
+);
+
+console.log(
+  `Detected ${originalFloorPlan.floors.reduce(
+    (t, f) => t + f.rooms.length,
     0
-  ) ?? 0;
-
-console.log(`Detected ${detectedRoomCount} total rooms`);
-
-if (detectedRoomCount >= 5) {
-  console.log("Using detected floor plan");
-  result.originalFloorPlan = originalFloorPlan;
-} else {
-  console.log("Using AI-generated floor plan");
+  )} total rooms`
+);
 }
 
    
