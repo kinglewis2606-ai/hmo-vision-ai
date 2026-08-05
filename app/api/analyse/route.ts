@@ -544,8 +544,9 @@ console.log("================================");
       
       
 } catch {
-  console.error("AI returned invalid JSON:");
-  console.error(cleaned);
+  console.error("===== INVALID JSON START =====");
+console.error(cleaned);
+console.error("===== INVALID JSON END =====");
   console.log("RETURNING SCORE:", result.hmoScore);
   console.log("RETURNING VERDICT:", result.verdict);
 
