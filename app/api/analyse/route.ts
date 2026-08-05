@@ -477,11 +477,37 @@ console.log("NEW BUILD 5 AUG 2026");
 console.log("############################################");
 
       console.log("========== AI RESPONSE ==========");
-console.log("===== PROPOSED FLOOR PLAN =====");
-console.dir(result.proposedFloorPlan, { depth: null });
+console.log("===== ORIGINAL =====");
 
-console.log("===== ORIGINAL FLOOR PLAN =====");
-console.dir(result.originalFloorPlan, { depth: null });
+result.originalFloorPlan.floors.forEach((floor: any) => {
+  console.log(floor.name);
+
+  floor.rooms.forEach((room: any) => {
+    console.log(
+      room.name,
+      `x=${room.x}`,
+      `y=${room.y}`,
+      `w=${room.width}`,
+      `h=${room.height}`
+    );
+  });
+});
+
+console.log("===== PROPOSED =====");
+
+result.proposedFloorPlan.floors.forEach((floor: any) => {
+  console.log(floor.name);
+
+  floor.rooms.forEach((room: any) => {
+    console.log(
+      room.name,
+      `x=${room.x}`,
+      `y=${room.y}`,
+      `w=${room.width}`,
+      `h=${room.height}`
+    );
+  });
+});
 console.log("================================");
       
       
