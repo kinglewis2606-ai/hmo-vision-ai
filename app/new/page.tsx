@@ -257,9 +257,18 @@ setReport(parsedReport);
 
     <div className="relative">
 
-      <FloorPlanOverlay
+      {report.generatedLayoutImage ? (
+  <img
+    src={report.generatedLayoutImage}
+    className="w-full rounded-xl border"
+    alt="Proposed HMO Layout"
+  />
+) : (
+  <FloorPlanOverlay
     image={`/api/uploads/${filename}`}
-/>
+    proposedFloorPlan={report.proposedFloorPlan}
+  />
+)}
         
       {/* Overlay goes here next */}
 
