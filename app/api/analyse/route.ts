@@ -446,8 +446,6 @@ Do not leave the changes array empty unless the room is completely unchanged.
   });
     }
     
-    } catch {
-    
     // Always use the detected floor plan as the source of truth
 result.originalFloorPlan = originalFloorPlan;
 
