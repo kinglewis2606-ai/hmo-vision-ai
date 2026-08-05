@@ -36,7 +36,7 @@ export interface FloorPlan {
   floors: Floor[];
 }
 
-ROOM_SCALE = 3;
+const ROOM_SCALE = 3;
 
 function escapeXml(text: string): string {
   return text
