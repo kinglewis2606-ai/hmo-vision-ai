@@ -452,10 +452,7 @@ result.originalFloorPlan = originalFloorPlan;
 // Apply AI changes to create the proposed plan
 // const roomChanges = result.roomChanges ?? [];
 
-result.proposedFloorPlan = applyRoomChanges(
-  originalFloorPlan,
-  roomChanges
-);
+result.originalFloorPlan = originalFloorPlan;
 
 console.log(
   `Detected ${originalFloorPlan.floors.reduce(
