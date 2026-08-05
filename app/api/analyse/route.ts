@@ -444,9 +444,7 @@ console.log("############################################");
       console.log("========== AI RESPONSE ==========");
 console.dir(result, { depth: null });
 console.log("================================");
-      console.log("===== ROOM CHANGES =====");
-console.dir(result.roomChanges, { depth: null });
-console.log("========================");
+      
       
 } catch {
   console.error("AI returned invalid JSON:");
@@ -458,24 +456,13 @@ console.log("========================");
   });
     }
     
-    // Always use the detected floor plan as the source of truth
-result.originalFloorPlan = originalFloorPlan;
-
-// Apply AI changes to create the proposed plan
-// const roomChanges = result.roomChanges ?? [];
-
-result.originalFloorPlan = originalFloorPlan;
-
-console.log(
-  `Detected ${originalFloorPlan.floors.reduce(
-    (t, f) => t + f.rooms.length,
+    console.log(
+  `AI returned ${result.originalFloorPlan.floors.reduce(
+    (t: number, f: any) => t + f.rooms.length,
     0
-  )} total rooms`
+  )} rooms`
 );
 
-
-   
-    // Generate an AI floor plan from the recommended layout
 result.generatedLayoutImage = renderFloorPlan(
   result.originalFloorPlan,
   result.proposedFloorPlan
