@@ -82,16 +82,37 @@ ${address || "Unknown"}
 Property Type:
 ${propertyType || "Unknown"}
 
-Detected Floor Boundaries:
+Detected Floor Plan Geometry:
 
-${floorContext}
+${JSON.stringify(originalFloorPlan, null, 2)}
 
-These floor boundaries were detected automatically.
+This is the detected geometry of the uploaded floor plan.
 
-Use them when constructing both originalFloorPlan and proposedFloorPlan.
+Use this as the base geometry for BOTH originalFloorPlan and proposedFloorPlan.
 
-Do not invent additional floors.
+IMPORTANT:
 
+• Preserve every room's x, y, width and height unless that room is genuinely altered.
+
+• Preserve the overall building footprint.
+
+• Preserve stair positions.
+
+• Preserve floor levels.
+
+• If a room is unchanged, copy its geometry exactly.
+
+• If a room is split, the two new rooms must together occupy the original room's area.
+
+• If two rooms are combined, the new room must occupy the combined area.
+
+• Never create overlapping rooms.
+
+• Rooms on the same floor must not overlap.
+
+• Adjacent rooms should continue sharing walls.
+
+Do not invent a new coordinate system.
 IMPORTANT RULES
 
 • Only recommend legal and realistic HMO layouts.
@@ -204,12 +225,17 @@ For every room include:
 • width
 • height
 
-These coordinates represent the room's position within the floor plan.
+These coordinates already come from the detected floor plan.
 
-They do NOT need to be perfectly accurate measurements.
+Treat them as the authoritative geometry.
 
-They should preserve the layout of the uploaded property.
+Do NOT generate a new layout from scratch.
 
+Reuse these coordinates wherever possible.
+
+Only change coordinates if a wall has genuinely moved.
+
+Never reposition rooms simply to improve appearance.
 Adjacent rooms should have adjacent coordinates.
 
 The relative positioning of rooms is more important than exact dimensions.
@@ -233,6 +259,15 @@ Also include:
 
 The proposedFloorPlan must contain the converted version of the property after all recommended HMO alterations have been completed.
 Return ONLY valid JSON using EXACTLY this structure.
+VALIDATION RULES
+
+Before returning your JSON, verify that:
+
+• No two rooms overlap.
+• Every room fits inside the original building footprint.
+• Every floor keeps the same overall outline.
+• Existing hallways and stairs remain connected.
+• Every proposed room occupies real space from the original floor plan.
 Every room in proposedFloorPlan must correspond to a room in originalFloorPlan.
 
 If a room has not changed, keep the same name and dimensions.
