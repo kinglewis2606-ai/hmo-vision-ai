@@ -436,6 +436,9 @@ Do not leave the changes array empty unless the room is completely unchanged.
 
     try {
   result = JSON.parse(cleaned);
+      console.log("===== ROOM CHANGES =====");
+console.dir(result.roomChanges, { depth: null });
+console.log("========================");
 } catch {
   console.error("AI returned invalid JSON:");
   console.error(cleaned);
