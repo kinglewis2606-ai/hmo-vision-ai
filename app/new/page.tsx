@@ -266,7 +266,6 @@ setReport(parsedReport);
 ) : (
   <FloorPlanOverlay
     image={`/api/uploads/${filename}`}
-    proposedFloorPlan={report.proposedFloorPlan}
   />
 )}
         
