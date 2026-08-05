@@ -437,6 +437,10 @@ Do not leave the changes array empty unless the room is completely unchanged.
     try {
   result = JSON.parse(cleaned);
 
+      console.log("############################################");
+console.log("NEW BUILD 5 AUG 2026");
+console.log("############################################");
+
       console.log("========== AI RESPONSE ==========");
 console.dir(result, { depth: null });
 console.log("================================");
