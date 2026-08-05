@@ -449,6 +449,8 @@ console.log("================================");
 } catch {
   console.error("AI returned invalid JSON:");
   console.error(cleaned);
+  console.log("RETURNING SCORE:", result.hmoScore);
+  console.log("RETURNING VERDICT:", result.verdict);
 
   return NextResponse.json({
     success: false,
