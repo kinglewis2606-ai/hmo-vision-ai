@@ -55,25 +55,7 @@ function renderPlan(
 
   let offsetY = 70;
 
-  const allRooms = plan.floors.flatMap(f => f.rooms);
-
-const minX = Math.min(...allRooms.map(r => r.x));
-const minY = Math.min(...allRooms.map(r => r.y));
-
-const maxX = Math.max(...allRooms.map(r => r.x + r.width));
-const maxY = Math.max(...allRooms.map(r => r.y + r.height));
-
-const planWidth = Math.max(1, maxX - minX);
-const planHeight = Math.max(1, maxY - minY);
-
-const DRAW_WIDTH = 560;
-const DRAW_HEIGHT = 700;
-const PADDING = 20;
-
-const scale = Math.min(
-  (DRAW_WIDTH - PADDING * 2) / planWidth,
-  (DRAW_HEIGHT - PADDING * 2) / planHeight
-);
+  
   
   svg += `
 <text
@@ -86,7 +68,23 @@ ${escapeXml(title)}
 </text>
 `;
 
-  for (const floor of plan.floors) {
+  for (const floor of plan.floors) {const minX = Math.min(...floor.rooms.map(r => r.x));
+const minY = Math.min(...floor.rooms.map(r => r.y));
+
+const maxX = Math.max(...floor.rooms.map(r => r.x + r.width));
+const maxY = Math.max(...floor.rooms.map(r => r.y + r.height));
+
+const floorWidth = Math.max(1, maxX - minX);
+const floorHeight = Math.max(1, maxY - minY);
+
+const DRAW_WIDTH = 980;
+const DRAW_HEIGHT = 320;
+const PADDING = 20;
+
+const scale = Math.min(
+  (DRAW_WIDTH - PADDING * 2) / floorWidth,
+  (DRAW_HEIGHT - PADDING * 2) / floorHeight
+);
 
     svg += `
 <text
@@ -218,19 +216,7 @@ dominant-baseline="middle">
 ${label}
 </text>
 `;
-      if (room.type) {
-  svg += `
-<text
-x="${x + w / 2}"
-y="${y + h / 2 + fontSize}"
-font-size="${Math.max(8, fontSize - 3)}"
-fill="#555"
-font-family="Arial"
-text-anchor="middle">
-${escapeXml(room.type)}
-</text>
-`;
-      }
+      
       if (room.doors) {
         for (const door of room.doors) {
 
