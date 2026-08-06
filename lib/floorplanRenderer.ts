@@ -327,25 +327,23 @@ export function renderFloorPlan(
   proposed: FloorPlan
 ): string {
 
-  let svg = `
-<svg
-xmlns="http://www.w3.org/2000/svg"
-width="1100"
-height="2600"
-viewBox="0 0 1100 2600"
-style="background:white">
-`;
-
   const result = renderPlan(
-    svg,
+    "",
     proposed,
     40,
     "AI Proposed HMO Layout"
   );
 
-  svg = result.svg;
+  const svgHeight = result.bottom + 40;
 
-  svg += `
+  const svg = `
+<svg
+xmlns="http://www.w3.org/2000/svg"
+width="1100"
+height="${svgHeight}"
+viewBox="0 0 1100 ${svgHeight}"
+style="background:white">
+${result.svg}
 </svg>
 `;
 
