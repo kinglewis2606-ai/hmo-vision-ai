@@ -4,7 +4,7 @@ import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
 import { detectWalls } from "@/lib/floorDetection/detectWalls";
-import { detectRooms } from "@/lib/floorDetection/detectRooms";
+import { detectRoomsContours } from "@/lib/floorDetection/detectRoomsContours";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
 // import { applyRoomChanges } from "@/lib/applyRoomChanges";
@@ -25,12 +25,10 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
 
     const detectedFloors = await detectFloors(filePath);
 
-const detectedWalls = await detectWalls(
+const detectedRooms = await detectRoomsContours(
   filePath,
   detectedFloors
 );
-
-const detectedRooms = await detectRooms(detectedWalls);
 
 const originalFloorPlan = buildOriginalFloorPlan(
   detectedFloors,
@@ -57,9 +55,6 @@ console.dir(detectedFloors, { depth: null });
 
     const base64 = image.toString("base64");
     
-console.log("Detected walls:");
-console.dir(detectedWalls, { depth: null });
-
 console.log("Detected rooms:");
 console.dir(detectedRooms, { depth: null });
     const response = await openai.responses.create({
