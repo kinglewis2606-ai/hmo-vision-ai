@@ -11,24 +11,11 @@ export default function NewProjectPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
+
+  const [originalFloorPlan, setOriginalFloorPlan] = useState<any>(null);
+
+const [proposedFloorPlan, setProposedFloorPlan] = useState<any>(null);
   
-  const testBoxes = [
-  {
-    label: "Bedroom 1",
-    x: 140,
-    y: 120,
-    width: 180,
-    height: 120,
-  },
-  {
-    label: "Kitchen",
-    x: 380,
-    y: 300,
-    width: 220,
-    height: 160,
-    colour: "rgba(34,197,94,0.35)",
-  },
-];
   async function analyseFloorPlan() {
     if (!filename) {
       alert("Please upload a floor plan first.");
@@ -67,6 +54,10 @@ const parsedReport =
     : data.result;
 
 setReport(parsedReport);
+
+setOriginalFloorPlan(data.originalFloorPlan);
+
+setProposedFloorPlan(data.proposedFloorPlan);
 
       } catch (err) {
   console.error("Analyse error:", err);
