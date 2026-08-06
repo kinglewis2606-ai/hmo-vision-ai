@@ -38,7 +38,6 @@ export interface FloorPlan {
   floors: Floor[];
 }
 
-const ROOM_SCALE = 3;
 
 function escapeXml(text: string): string {
   return text
@@ -56,6 +55,26 @@ function renderPlan(
 
   let offsetY = 70;
 
+  const allRooms = plan.floors.flatMap(f => f.rooms);
+
+const minX = Math.min(...allRooms.map(r => r.x));
+const minY = Math.min(...allRooms.map(r => r.y));
+
+const maxX = Math.max(...allRooms.map(r => r.x + r.width));
+const maxY = Math.max(...allRooms.map(r => r.y + r.height));
+
+const planWidth = Math.max(1, maxX - minX);
+const planHeight = Math.max(1, maxY - minY);
+
+const DRAW_WIDTH = 560;
+const DRAW_HEIGHT = 700;
+const PADDING = 20;
+
+const scale = Math.min(
+  (DRAW_WIDTH - PADDING * 2) / planWidth,
+  (DRAW_HEIGHT - PADDING * 2) / planHeight
+);
+  
   svg += `
 <text
 x="${startX}"
@@ -117,20 +136,20 @@ const bottomShared = floor.rooms.some(
 );
 
       const w = hasCoords
-        ? room.width * ROOM_SCALE
-        : 140;
+  ? room.width * scale
+  : 140;
 
-      const h = hasCoords
-        ? room.height * ROOM_SCALE
-        : 100;
+const h = hasCoords
+  ? room.height * scale
+  : 100;
 
-      const x = hasCoords
-        ? startX + room.x * ROOM_SCALE
-        : startX + (index % 3) * 180;
+const x = hasCoords
+  ? startX + PADDING + (room.x - minX) * scale
+  : startX + (index % 3) * 180;
 
-      const y = hasCoords
-        ? offsetY + room.y * ROOM_SCALE
-        : offsetY + Math.floor(index / 3) * 140;
+const y = hasCoords
+  ? offsetY + PADDING + (room.y - minY) * scale
+  : offsetY + Math.floor(index / 3) * 140;
 
       lowestY = Math.max(lowestY, y + h);
 
