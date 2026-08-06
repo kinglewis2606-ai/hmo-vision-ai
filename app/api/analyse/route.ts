@@ -184,11 +184,6 @@ Never return contradictory results.
 
 You must build TWO complete digital floor plan models.
 
-Model 1: originalFloorPlan
-
-Return EXACTLY the originalFloorPlan JSON provided above.
-
-Do not modify it.
 
 Model 2: Create proposedFloorPlan by COPYING originalFloorPlan.
 
@@ -312,60 +307,6 @@ Do not leave the changes array empty unless the room is completely unchanged.
     "confidence": ""
   },
 
-  "originalFloorPlan": {
-    "floors": [
-      {
-        "name": "",
-        "level": 0,
-        "rooms": [
-
-          {
-  "id": "",
-
-  "name": "",
-
-  "type": "",
-
-  "x": 0,
-
-  "y": 0,
-
-  "width": 0,
-
-  "height": 0,
-
-  "approxAreaSqm": 0,
-
-  "approxWidthM": 0,
-
-  "approxDepthM": 0,
-
-  "shape": "",
-
-  "adjacentRooms": [],
-
-  "doors": [
-    {
-      "connectsTo": "",
-      "wall": ""
-    }
-  ],
-
-  "windows": [
-    {
-      "wall": ""
-    }
-  ],
-
-  "notes": "",
-
-  "confidence": ""
-}
-        ]
-      }
-    ]
-  },
-
   "proposedFloorPlan": {
     "floors": [
       {
@@ -470,6 +411,7 @@ Do not leave the changes array empty unless the room is completely unchanged.
 
     try {
   result = JSON.parse(cleaned);
+      result.originalFloorPlan = originalFloorPlan;
 
       for (const floor of result.proposedFloorPlan.floors) {
   if (!floor.rooms || floor.rooms.length === 0) {
