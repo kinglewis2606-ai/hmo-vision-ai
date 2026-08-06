@@ -160,7 +160,17 @@ x="${x}"
 y="${y}"
 width="${w}"
 height="${h}"
-fill="white"
+fill="${
+  room.type?.toLowerCase().includes("bed")
+    ? "#e6f2ff"
+    : room.type?.toLowerCase().includes("bath")
+    ? "#e8ffe8"
+    : room.type?.toLowerCase().includes("kitchen")
+    ? "#fff3d6"
+    : room.type?.toLowerCase().includes("communal")
+    ? "#fff7c7"
+    : "#f5f5f5"
+}"
 stroke="none"/>
 `;
 
@@ -185,17 +195,22 @@ height="${h - 6}"
 fill="none"
 stroke="#666"
 stroke-width="1"/>
+stroke-linecap="round"
+stroke-linejoin="round"
 `;
 
-      const label = escapeXml(
-        `${room.name}${room.type ? ` (${room.type})` : ""}`
-      );
+    const label = escapeXml(room.name);
 
-      svg += `
+const fontSize = Math.max(
+  10,
+  Math.min(18, Math.min(w, h) / 5)
+);
+
+svg += `
 <text
 x="${x + w / 2}"
 y="${y + h / 2}"
-font-size="19"
+font-size="${fontSize}"
 font-weight="bold"
 font-family="Arial"
 text-anchor="middle"
@@ -203,7 +218,19 @@ dominant-baseline="middle">
 ${label}
 </text>
 `;
-
+      if (room.type) {
+  svg += `
+<text
+x="${x + w / 2}"
+y="${y + h / 2 + fontSize}"
+font-size="${Math.max(8, fontSize - 3)}"
+fill="#555"
+font-family="Arial"
+text-anchor="middle">
+${escapeXml(room.type)}
+</text>
+`;
+      }
       if (room.doors) {
         for (const door of room.doors) {
 
@@ -279,6 +306,8 @@ x2="${wx + 24}"
 y2="${wy}"
 stroke="#0077ff"
 stroke-width="3"/>
+stroke-linecap="round"
+stroke-linejoin="round"
 `;
         }
       }
@@ -331,6 +360,8 @@ x2="680"
 y2="2180"
 stroke="#cccccc"
 stroke-width="2"/>
+stroke-linecap="round"
+stroke-linejoin="round"
 `;
 
   svg += `
