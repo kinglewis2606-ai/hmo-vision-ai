@@ -102,14 +102,25 @@ export function applyRoomChanges(
 
         case "ExtendBathroom":
 
-          room.width += 30;
-          room.height += 30;
+          newRooms.push({
+    ...room,
+    name: change.newName ?? room.name,
+    type: change.newType ?? room.type
+});
 
           newRooms.push(room);
 
           break;
 
         case "SplitRoom":
+
+    console.warn(
+        "SplitRoom not implemented safely."
+    );
+
+    newRooms.push(room);
+
+    break;
 
           if (!change.split) {
             newRooms.push(room);
