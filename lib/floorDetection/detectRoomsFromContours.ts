@@ -1,6 +1,7 @@
 import { loadImage } from "./loadImage";
 import { DetectedFloor } from "./detectFloors";
 import { findEnclosedRooms } from "./findEnclosedRooms";
+import { detectWalls } from "./detectWalls";
 
 export interface DetectedRoom {
   id: string;
@@ -140,12 +141,18 @@ export async function detectRoomsContours(
   floors: DetectedFloor[]
 ): Promise<DetectedRoom[]> {
 
-  const image = await loadImage(imagePath);
+  const walls = await detectWalls(
+  imagePath,
+  floors
+);
 
-  const rooms = await findEnclosedRooms(
-    image,
-    floors
-  );
+const image = await loadImage(imagePath);
+
+const rooms = await findEnclosedRooms(
+  walls,
+  image.width,
+  image.height
+);
 
   console.log(`Detected ${rooms.length} rooms`);
 
