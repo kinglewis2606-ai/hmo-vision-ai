@@ -464,7 +464,7 @@ console.log("================================");
   console.error("JSON ERROR:", err?.name, err?.message);
 
   console.error("FIRST:");
-  console.error(cleaned.slice(0, 500));
+  console.error(cleaned.slice(0, 3000));
 
   console.error("LAST:");
   console.error(cleaned.slice(-500));
