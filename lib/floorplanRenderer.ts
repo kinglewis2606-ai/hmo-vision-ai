@@ -330,39 +330,20 @@ export function renderFloorPlan(
   let svg = `
 <svg
 xmlns="http://www.w3.org/2000/svg"
-width="2200"
-height="2800"
-viewBox="0 0 2200 2800"
+width="1100"
+height="2600"
+viewBox="0 0 1100 2600"
 style="background:white">
 `;
 
-  const left = renderPlan(
+  const result = renderPlan(
     svg,
-    original,
-    40,
-    "Existing Floor Plan"
-  );
-
-  const right = renderPlan(
-    left.svg,
     proposed,
-    720,
+    40,
     "AI Proposed HMO Layout"
   );
 
-  svg = right.svg;
-
-  svg += `
-<line
-x1="680"
-y1="20"
-x2="680"
-y2="2180"
-stroke="#cccccc"
-stroke-width="2"/>
-stroke-linecap="round"
-stroke-linejoin="round"
-`;
+  svg = result.svg;
 
   svg += `
 </svg>
