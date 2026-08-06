@@ -472,9 +472,9 @@ console.log("================================");
   console.error("LEN:", cleaned.length);
 
   return NextResponse.json({
-    success: false,
-    error: "OpenAI returned invalid JSON.",
-  });
+  success: false,
+  error: err.message,
+});
     }
 console.log(
   `AI returned ${result.originalFloorPlan.floors.reduce(
