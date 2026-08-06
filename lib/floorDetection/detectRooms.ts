@@ -42,7 +42,8 @@ function lineIntersectsRect(
 }
 
 export async function detectRooms(
-  walls: WallLine[]
+  walls: WallLine[],
+  floors?: { top: number; bottom: number }[]
 ): Promise<DetectedRoom[]> {
 
   const horizontal = walls.filter(
