@@ -2,9 +2,17 @@
 
 interface Props {
   image: string;
+
+  originalFloorPlan?: any;
+
+  proposedFloorPlan?: any;
 }
 
-export default function FloorPlanOverlay({ image }: Props) {
+export default function FloorPlanOverlay({
+    image,
+    originalFloorPlan,
+    proposedFloorPlan,
+}: Props) {
   return (
     <div className="relative w-full">
 
@@ -13,35 +21,33 @@ export default function FloorPlanOverlay({ image }: Props) {
         className="w-full rounded-xl border"
         alt="Proposed"
       />
-
-      <svg
+{proposedFloorPlan && (
+    <svg
         className="absolute inset-0 w-full h-full"
         viewBox="0 0 1000 1400"
-      >
+    >
+        {proposedFloorPlan.rooms?.map((room:any) => (
+            <g key={room.id}>
+                <polygon
+                    points={room.points}
+                    fill="rgba(0,180,255,.20)"
+                    stroke="#00B4FF"
+                    strokeWidth="3"
+                />
 
-        <rect
-          x="110"
-          y="620"
-          width="210"
-          height="170"
-          fill="rgba(0,180,255,.25)"
-          stroke="#00B4FF"
-          strokeWidth="4"
-        />
-
-        <text
-          x="215"
-          y="710"
-          fill="#00B4FF"
-          fontSize="26"
-          textAnchor="middle"
-          fontWeight="bold"
-        >
-          Bedroom 5
-        </text>
-
-      </svg>
-
+                <text
+                    x={room.centroid.x}
+                    y={room.centroid.y}
+                    textAnchor="middle"
+                    fill="#00B4FF"
+                    fontSize="20"
+                >
+                    {room.label}
+                </text>
+            </g>
+        ))}
+    </svg>
+)}
     </div>
   );
 }
