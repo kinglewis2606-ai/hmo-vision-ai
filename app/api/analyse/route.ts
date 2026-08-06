@@ -183,75 +183,36 @@ The HMO score, verdict and investor summary must all agree with each other.
 Never return contradictory results.
 
 You must build TWO complete digital floor plan models.
+HMO DESIGN RULES
 
+You MUST NOT create geometry.
 
-Model 2: Create proposedFloorPlan by COPYING originalFloorPlan.
+You MUST NOT create coordinates.
 
-Only modify:
+You MUST NOT create x, y, width or height.
 
-- room name
-- room type
-- notes
-- changes
+The building geometry has already been detected.
 
-Keep:
+Instead you must return ONLY planning decisions.
 
-- id
-- x
-- y
-- width
-- height
-- shape
-- doors
-- windows
-- adjacentRooms
+Each decision must reference an existing room id.
 
-unless a wall is genuinely moved.
+Example:
 
-• Preserve the same building footprint.
-• Preserve the same number of floors.
-• Preserve stair locations wherever possible.
-• Preserve the general room arrangement wherever practical.
-• Only modify rooms that are realistically changed during the HMO conversion.
-• Never invent extra floors.
-• Never invent rooms that cannot physically fit.
-
-For every room include:
-
-• Unique room id
-• Room name
-• Room type
-
-• x position
-• y position
-• width
-• height
-
-These coordinates already come from the detected floor plan.
-
-
-Adjacent rooms should have adjacent coordinates.
-
-The relative positioning of rooms is more important than exact dimensions.
-
-Keep the same coordinate system in originalFloorPlan and proposedFloorPlan.
-
-If a room is unchanged, its x, y, width and height should remain the same.
-
-Only modify coordinates when walls are genuinely moved during the HMO conversion.
-
-Also include:
-
-• Approximate width (metres)
-• Approximate depth (metres)
-• Approximate floor area (sqm)
-• Adjacent rooms
-• Door locations
-• Window locations
-• Notes
-• Confidence
-
-The proposedFloorPlan must contain the converted version of the property after all recommended HMO alterations have been completed.
+{
+  "changes":[
+    {
+      "roomId":"r12",
+      "action":"convert",
+      "newType":"Bedroom",
+      "reason":"Large reception room"
+    },
+    {
+      "roomId":"r8",
+      "action":"addEnsuite"
+    }
+  ]
+}
 Return ONLY valid JSON using EXACTLY this structure.
 VALIDATION RULES
 
@@ -412,10 +373,13 @@ Do not leave the changes array empty unless the room is completely unchanged.
     try {
   result = JSON.parse(cleaned);
       result.originalFloorPlan = originalFloorPlan;
-
-      for (const floor of result.proposedFloorPlan.floors) {
-  if (!floor.rooms || floor.rooms.length === 0) {
-    throw new Error(
+result.proposedFloorPlan =
+  structuredClone(originalFloorPlan);
+      result.proposedFloorPlan = applyRoomChanges(
+    result.proposedFloorPlan,
+    result.changes
+);
+      
       `AI returned an empty floor: ${floor.name}`
     );
   }
