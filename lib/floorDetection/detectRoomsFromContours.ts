@@ -1,5 +1,6 @@
 import { loadImage } from "./loadImage";
 import { DetectedFloor } from "./detectFloors";
+import { findEnclosedRooms } from "./findEnclosedRooms";
 
 export interface DetectedRoom {
   id: string;
@@ -141,101 +142,12 @@ export async function detectRoomsContours(
 
   const image = await loadImage(imagePath);
 
-  const pixels = image.data;
-  const width = image.width;
-  const height = image.height;
+  const rooms = await findEnclosedRooms(
+    image,
+    floors
+  );
 
-  const visited = new Uint8Array(width * height);
+  console.log(`Detected ${rooms.length} rooms`);
 
-  const rooms: DetectedRoom[] = [];
-
-  let roomId = 1;
-
-  for (const floor of floors) {
-
-    console.log(`Searching rooms on ${floor.name}`);
-
-    for (let y = floor.top; y < floor.bottom; y++) {
-
-      for (let x = 0; x < width; x++) {
-
-        const i = index(width, x, y);
-
-        if (visited[i]) {
-          continue;
-        }
-
-        if (isWall(pixels, width, x, y)) {
-          visited[i] = 1;
-          continue;
-        }
-
-        const region = floodFill(
-          pixels,
-          width,
-          height,
-          visited,
-          x,
-          y,
-          floor
-        );
-
-        if (region.length < MIN_ROOM_AREA) {
-          continue;
-        }
-
-        if (region.length > MAX_ROOM_AREA) {
-          continue;
-        }
-
-        const box = boundingBox(region);
-
-        if (box.width < 60 || box.height < 60) {
-          continue;
-        }
-
-        rooms.push({
-          id: `room-${roomId++}`,
-          x: box.x,
-          y: box.y,
-          width: box.width,
-          height: box.height,
-        });
-      }
-    }
-  }  // Remove duplicates caused by irregular regions
-
-  const deduped: DetectedRoom[] = [];
-
-  for (const room of rooms) {
-
-    const duplicate = deduped.find((r) =>
-
-      Math.abs(r.x - room.x) < 20 &&
-      Math.abs(r.y - room.y) < 20 &&
-      Math.abs(r.width - room.width) < 20 &&
-      Math.abs(r.height - room.height) < 20
-
-    );
-
-    if (!duplicate) {
-      deduped.push(room);
-    }
-  }
-
-  console.log(`Detected ${deduped.length} rooms`);
-
-  for (const room of deduped) {
-
-    console.log(
-      room.id,
-      `x=${room.x}`,
-      `y=${room.y}`,
-      `w=${room.width}`,
-      `h=${room.height}`
-    );
-
-  }
-
-  return deduped;
-}
+  return rooms;
+                 }
