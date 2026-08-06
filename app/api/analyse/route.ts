@@ -4,7 +4,7 @@ import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
 import { detectWalls } from "@/lib/floorDetection/detectWalls";
-import { detectRoomsFromContours } from "@/lib/floorDetection/detectRoomsFromContours";
+import { detectRoomsContours } from "@/lib/floorDetection/detectRoomsFromContours";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
 // import { applyRoomChanges } from "@/lib/applyRoomChanges";
@@ -25,7 +25,7 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
 
     const detectedFloors = await detectFloors(filePath);
 
-const detectedRooms = await detectRoomsFromContours(
+const detectedRooms = await detectRoomsContours(
   filePath,
   detectedFloors
 );
