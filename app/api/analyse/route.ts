@@ -25,9 +25,10 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
 
     const detectedFloors = await detectFloors(filePath);
 
+const detectedWalls = await detectWalls(filePath);
+
 const detectedRooms = await detectRooms(
-  filePath,
-  detectedFloors
+  detectedWalls
 );
 
 const originalFloorPlan = buildOriginalFloorPlan(
