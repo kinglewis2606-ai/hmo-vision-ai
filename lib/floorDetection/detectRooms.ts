@@ -46,6 +46,19 @@ export async function detectRooms(
   floors?: { top: number; bottom: number }[]
 ): Promise<DetectedRoom[]> {
 
+  if (walls.length === 0) {
+  return [];
+}
+
+console.log(
+  `Room detector received ${walls.length} merged walls`
+);
+
+if (floors) {
+  console.log(
+    `Using ${floors.length} detected floors`
+  );
+}
   const horizontal = walls.filter(
     w => Math.abs(w.y1 - w.y2) < 3
   );
