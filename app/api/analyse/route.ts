@@ -36,6 +36,11 @@ const originalFloorPlan = buildOriginalFloorPlan(
   detectedFloors,
   detectedRooms
 );
+    const originalFloorPlanJson = JSON.stringify(
+  originalFloorPlan,
+  null,
+  2
+);
     
     console.log("Detected floors:");
 console.dir(detectedFloors, { depth: null });
@@ -84,23 +89,18 @@ ${propertyType || "Unknown"}
 
 Uploaded Floor Plan
 
-The uploaded floor plan image is the authoritative source.
+The original floor plan has already been detected.
 
-First analyse the image itself.
+Use the following JSON as the authoritative building geometry.
 
-Create a complete digital representation of the existing property.
+Do NOT recreate the building.
 
-Infer every room, hallway, staircase and floor directly from the image.
+Do NOT invent new coordinates.
 
-Only after reconstructing the existing layout should you create the proposed HMO layout.
+Here is the detected floor plan:
 
-Keep the same overall building footprint.
+${originalFloorPlanJson}
 
-Do not invent extra floors.
-
-Do not invent impossible rooms.
-
-The proposed layout must be based on the original layout you infer from the image.
 IMPORTANT RULES
 
 • Only recommend legal and realistic HMO layouts.
@@ -186,35 +186,32 @@ You must build TWO complete digital floor plan models.
 
 Model 1: originalFloorPlan
 
-Model 2: proposedFloorPlan
+Return EXACTLY the originalFloorPlan JSON provided above.
 
-Create a complete originalFloorPlan by analysing the uploaded floor plan image.
+Do not modify it.
 
-Then create proposedFloorPlan by modifying that original layout.
+Model 2: Create proposedFloorPlan by COPYING originalFloorPlan.
 
-Then modify that copy.
+Only modify:
 
-Never delete rooms.
+- room name
+- room type
+- notes
+- changes
 
-Every floor must contain the same number of structural spaces unless a room is intentionally split.
+Keep:
 
-Every floor must contain at least one room.
+- id
+- x
+- y
+- width
+- height
+- shape
+- doors
+- windows
+- adjacentRooms
 
-Only change:
-
-• room name
-• room type
-• changes
-• notes
-• confidence
-
-Only change x, y, width or height if a wall has physically moved.
-
-If a room is split, replace that room with two rooms occupying the same footprint.
-
-Never return an empty floor.
-
-Rules:
+unless a wall is genuinely moved.
 
 • Preserve the same building footprint.
 • Preserve the same number of floors.
