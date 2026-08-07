@@ -1,15 +1,7 @@
 import { loadImage } from "./loadImage";
-import { DetectedFloor } from "./detectFloors";
+import { DetectedFloor, DetectedRoom } from "@/lib/types/floorPlan";
 import { findEnclosedRooms } from "./findEnclosedRooms";
 import { detectWalls } from "./detectWalls";
-
-export interface DetectedRoom {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
 interface Point {
   x: number;
@@ -136,25 +128,26 @@ function boundingBox(points: Point[]) {
     area: points.length,
   };
 }
+
 export async function detectRoomsContours(
   imagePath: string,
   floors: DetectedFloor[]
 ): Promise<DetectedRoom[]> {
 
   const walls = await detectWalls(
-  imagePath,
-  floors
-);
+    imagePath,
+    floors
+  );
 
-const image = await loadImage(imagePath);
+  const image = await loadImage(imagePath);
 
-const rooms = await findEnclosedRooms(
-  walls,
-  image.width,
-  image.height
-);
+  const rooms = await findEnclosedRooms(
+    walls,
+    image.width,
+    image.height
+  );
 
   console.log(`Detected ${rooms.length} rooms`);
 
   return rooms;
-                 }
+}
