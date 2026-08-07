@@ -1,14 +1,7 @@
 import { loadImage } from "./loadImage";
-import { DetectedFloor } from "./detectFloors";
+import { DetectedFloor, WallLine } from "@/lib/types/floorPlan";
 import { filterWalls } from "./filterWalls";
 import { mergeWalls } from "./mergeWalls";
-
-export interface WallLine {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
 
 const DARK_PIXEL = 90;
 const MIN_WALL_LENGTH = 80;
