@@ -198,98 +198,14 @@ export interface RoomChange {
   /** ID of room being modified */
   roomId: string;
   
-  /** Type of modification to apply */
-  action:
-    | "ConvertToBedroom"
-    | "ConvertToKitchen"
-    | "ConvertToBathroom"
-    | "ConvertToEnsuite"
-    | "SplitRoom"
-    | "MergeRoom"
-    | "ExtendBathroom"
-    | "NoChange";
-  
-  /** New name for room (optional) */
-  newName?: string;
-  
-  /** New type for room (optional) */
+  /** New type for the room (e.g., "Bedroom", "Kitchen") */
   newType?: string;
   
-  /** Split configuration (required for SplitRoom action) */
-  split?: {
-    /** Name of first resulting room */
-    firstName: string;
-    
-    /** Type of first resulting room */
-    firstType: string;
-    
-    /** Name of second resulting room */
-    secondName: string;
-    
-    /** Type of second resulting room */
-    secondType: string;
-    
-    /** Direction to split: "horizontal" or "vertical" */
-    direction?: "horizontal" | "vertical";
-  };
-}
-
-// ============================================================================
-// LAYER 5: RENDERING MODEL (Derived Properties for Visualization)
-// ============================================================================
-
-export interface RenderOptions {
-  /** Title for the rendered plan */
-  title?: string;
+  /** New name for the room */
+  newName?: string;
   
-  /** Whether to render walls */
-  showWalls?: boolean;
-  
-  /** Whether to render doors */
-  showDoors?: boolean;
-  
-  /** Whether to render windows */
-  showWindows?: boolean;
-  
-  /** Whether to render labels */
-  showLabels?: boolean;
-  
-  /** Set of room IDs to highlight */
-  highlightRooms?: Set<string>;
-  
-  /** Color for highlighted rooms */
-  highlightColor?: string;
-}
-
-/**
- * RoomRenderingData extends Room with derived properties calculated at render time.
- * These properties are NOT stored in the canonical model, but derived from it by the renderer.
- */
-export interface RoomRenderingData extends Room {
-  /** Polygon points for rendering (calculated from bounding box) */
-  polygon?: Array<{ x: number; y: number }>;
-  
-  /** Center point of room (calculated from bounding box) */
-  centroid?: { x: number; y: number };
-  
-  /** Rendered color based on room type and highlighting */
-  renderedColor?: string;
-}
-
-export interface FloorPlanRenderingData extends FloorPlan {
-  /** Floors with rendering context */
-  floors: Array<
-    Floor & {
-      renderingContext?: {
-        /** Scale factor for this floor's rendering */
-        scale: number;
-        
-        /** X offset for this floor's rendering */
-        offsetX: number;
-        
-        /** Y offset for this floor's rendering */
-        offsetY: number;
-      };
-    }
-  >;
+  /** Reason for this change (used for audit trail)
+   * If provided and room has no notes, this is stored in room.notes
+   */
+  reason?: string;
 }
