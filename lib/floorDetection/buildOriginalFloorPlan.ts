@@ -1,5 +1,4 @@
-import { DetectedFloor } from "./detectFloors";
-import { DetectedRoom } from "./detectRooms";
+import { DetectedFloor, DetectedRoom } from "@/lib/types/floorPlan";
 
 function touching(a: DetectedRoom, b: DetectedRoom): boolean {
   const tolerance = 15;
