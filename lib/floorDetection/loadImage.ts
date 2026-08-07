@@ -13,10 +13,14 @@ export async function loadImage(
     .raw()
     .toBuffer({ resolveWithObject: true });
 
+  // Sharp's metadata object doesn't expose density directly in all versions.
+  // Default to 96 DPI if not available.
+  const dpi = (info as any).density || 96;
+
   return {
     data: new Uint8Array(data),
     width: info.width,
     height: info.height,
-    dpi: info.density || 96,
+    dpi,
   };
 }
