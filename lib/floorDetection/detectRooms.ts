@@ -1,12 +1,4 @@
-import { WallLine } from "./detectWalls";
-
-export interface DetectedRoom {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+import { WallLine, DetectedRoom } from "@/lib/types/floorPlan";
 
 const CELL_SIZE = 8;
 const MIN_ROOM_AREA = 2000;
