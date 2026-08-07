@@ -21,8 +21,9 @@ export function applyRoomChanges(
           if (change.newName) {
             room.name = change.newName;
           }
-          if (change.changes) {
-            room.changes = change.changes;
+          // Store the change reason for audit trail if provided
+          if (change.reason && !room.notes) {
+            room.notes = change.reason;
           }
         }
       }
