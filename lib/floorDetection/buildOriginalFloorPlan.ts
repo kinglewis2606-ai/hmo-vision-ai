@@ -1,4 +1,4 @@
-import { DetectedFloor, DetectedRoom } from "@/lib/types/floorPlan";
+import { DetectedFloor, DetectedRoom, WallLine, FloorPlan, Floor, Room } from "@/lib/types/floorPlan";
 
 function touching(a: DetectedRoom, b: DetectedRoom): boolean {
   const tolerance = 15;
@@ -35,70 +35,89 @@ function getAdjacentRooms(
     .map(r => r.id);
 }
 
+/**
+ * Builds the original floor plan from detected geometry.
+ * 
+ * This is the single source of truth for building geometry.
+ * It combines:
+ * - Detected floors (structure)
+ * - Detected rooms (enclosed spaces)
+ * - Wall lines (structural elements)
+ * 
+ * The resulting FloorPlan is IMMUTABLE and forms the basis for all
+ * AI planning decisions and transformations.
+ */
 export function buildOriginalFloorPlan(
   floors: DetectedFloor[],
-  rooms: DetectedRoom[]
-) {
+  rooms: DetectedRoom[],
+  walls?: WallLine[]
+): FloorPlan {
+  const builtFloors: Floor[] = floors.map((floor, floorIndex) => {
+
+    const floorRooms = rooms.filter(
+      room =>
+        room.y >= floor.top &&
+        room.y < floor.bottom
+    );
+
+    const roomsData: Room[] = floorRooms.map(room => ({
+
+      id: room.id,
+
+      name: "Unknown Room",
+
+      type: "unknown",
+
+      x: room.x,
+
+      y: room.y,
+
+      width: room.width,
+
+      height: room.height,
+
+      approxAreaSqm: Number(
+        ((room.width * room.height) / 10000).toFixed(1)
+      ),
+
+      approxWidthM: Number(
+        (room.width / 100).toFixed(1)
+      ),
+
+      approxDepthM: Number(
+        (room.height / 100).toFixed(1)
+      ),
+
+      shape: "rectangle",
+
+      adjacentRooms: getAdjacentRooms(
+        room,
+        floorRooms
+      ),
+
+      doors: [],
+
+      windows: [],
+
+      notes: "",
+
+      confidence: "Geometry Detection"
+
+    }));
+
+    return {
+      name: floor.name,
+      level: floorIndex,
+      rooms: roomsData
+    };
+  });
+
   return {
-    floors: floors.map((floor, floorIndex) => {
-
-      const floorRooms = rooms.filter(
-        room =>
-          room.y >= floor.top &&
-          room.y < floor.bottom
-      );
-
-      return {
-
-        name: floor.name,
-
-        level: floorIndex,
-
-        rooms: floorRooms.map(room => ({
-
-          id: room.id,
-
-          name: "Unknown Room",
-
-          type: "unknown",
-
-          x: room.x,
-
-          y: room.y,
-
-          width: room.width,
-
-          height: room.height,
-
-          approxAreaSqm: Number(
-            ((room.width * room.height) / 10000).toFixed(1)
-          ),
-
-          approxWidthM: Number(
-            (room.width / 100).toFixed(1)
-          ),
-
-          approxDepthM: Number(
-            (room.height / 100).toFixed(1)
-          ),
-
-          shape: "rectangle",
-
-          adjacentRooms: getAdjacentRooms(
-            room,
-            floorRooms
-          ),
-
-          doors: [],
-
-          windows: [],
-
-          notes: "",
-
-          confidence: "Geometry Detection"
-
-        }))
-      };
-    })
+    floors: builtFloors,
+    walls: walls || [],
+    metadata: {
+      // Metadata can be populated by detection pipeline
+      // including pixelsPerMeter calibration
+    }
   };
 }
