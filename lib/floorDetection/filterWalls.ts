@@ -1,4 +1,4 @@
-import { WallLine } from "./detectWalls";
+import { WallLine } from "@/lib/types/floorPlan";
 
 export function filterWalls(
   walls: WallLine[]
