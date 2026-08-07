@@ -1,4 +1,4 @@
-import { WallLine } from "./detectWalls";
+import { WallLine } from "@/lib/types/floorPlan";
 
 const GAP = 15;
 const ALIGNMENT = 3;
