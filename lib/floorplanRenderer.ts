@@ -1,43 +1,4 @@
-export interface Door {
-  wall: string;
-  connectsTo: string;
-}
-
-export interface Window {
-  wall: string;
-}
-
-export interface Room {
-  id: string;
-  name: string;
-  type: string;
-
-  x: number;
-  y: number;
-
-  width: number;
-  height: number;
-
-  shape?: string;
-
-adjacentRooms?: string[];
-
-doors?: Door[];
-windows?: Window[];
-
-  notes?: string;
-}
-
-export interface Floor {
-  name: string;
-  level: number;
-  rooms: Room[];
-}
-
-export interface FloorPlan {
-  floors: Floor[];
-}
-
+import { Room, Floor, FloorPlan } from "@/lib/types/floorPlan";
 
 function escapeXml(text: string): string {
   return text
