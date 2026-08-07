@@ -1,10 +1,5 @@
 import sharp from "sharp";
-
-export interface DetectedFloor {
-  name: string;
-  top: number;
-  bottom: number;
-}
+import { DetectedFloor } from "@/lib/types/floorPlan";
 
 export async function detectFloors(
   imagePath: string
@@ -23,16 +18,19 @@ export async function detectFloors(
   return [
     {
       name: "Ground Floor",
+      level: 0,
       top: 0,
       bottom: sectionHeight,
     },
     {
       name: "First Floor",
+      level: 1,
       top: sectionHeight,
       bottom: sectionHeight * 2,
     },
     {
       name: "Second Floor",
+      level: 2,
       top: sectionHeight * 2,
       bottom: height,
     },
