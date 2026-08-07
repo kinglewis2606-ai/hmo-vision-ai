@@ -10,13 +10,13 @@ import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorP
 import { buildHMOAnalysisPrompt } from "@/lib/prompts/hmoAnalysisPrompt";
 // import { applyRoomChanges } from "@/lib/applyRoomChanges";
 
-export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===");
+export async function POST(req: Request) {
+  console.log("=== ANALYSE ROUTE HIT ===");
   try {
     const { filename, address, propertyType } = await req.json();
 
     const filePath = path.join(process.cwd(), "public", "uploads", filename);
-    
-  
+
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({
         success: false,
@@ -26,31 +26,30 @@ export async function POST(req: Request) {console.log("=== ANALYSE ROUTE HIT ===
 
     const detectedFloors = await detectFloors(filePath);
 
-const detectedWalls = await detectWalls(
-  filePath,
-  detectedFloors
-);
-    
-const detectedRooms = await detectRooms(
-  detectedWalls,
-  detectedFloors
-);
+    const detectedWalls = await detectWalls(
+      filePath,
+      detectedFloors
+    );
 
-const originalFloorPlan = buildOriginalFloorPlan(
-  detectedFloors,
-  detectedRooms
-);
+    const detectedRooms = await detectRooms(
+      detectedWalls,
+      detectedFloors
+    );
+
+    const originalFloorPlan = buildOriginalFloorPlan(
+      detectedFloors,
+      detectedRooms
+    );
+
     const originalFloorPlanJson = JSON.stringify(
-  originalFloorPlan,
-  null,
-  2
-);
-    
-    console.log("Detected floors:");
-console.dir(detectedFloors, { depth: null });
+      originalFloorPlan,
+      null,
+      2
+    );
 
-    const floorContext = JSON.stringify(detectedFloors, null, 2);
-    
+    console.log("Detected floors:");
+    console.dir(detectedFloors, { depth: null });
+
     const image = fs.readFileSync(filePath);
     const ext = path.extname(filename).toLowerCase();
 
@@ -60,15 +59,15 @@ console.dir(detectedFloors, { depth: null });
     if (ext === ".webp") mime = "image/webp";
 
     const base64 = image.toString("base64");
-    
-console.log("Detected rooms:");
-console.dir(detectedRooms, { depth: null });
+
+    console.log("Detected rooms:");
+    console.dir(detectedRooms, { depth: null });
 
     const promptText = buildHMOAnalysisPrompt(address, propertyType)
       .replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", originalFloorPlanJson);
 
     const response = await openai.responses.create({
-      model: "gpt-4-vision",
+      model: "gpt-5",
       input: [
         {
           role: "user",
@@ -98,98 +97,88 @@ console.dir(detectedRooms, { depth: null });
     let result;
 
     try {
-  result = JSON.parse(cleaned);
+      result = JSON.parse(cleaned);
       result.originalFloorPlan = originalFloorPlan;
-result.proposedFloorPlan =
-  structuredClone(originalFloorPlan);
+      result.proposedFloorPlan = structuredClone(originalFloorPlan);
       // result.proposedFloorPlan = applyRoomChanges(
       //   result.proposedFloorPlan,
       //   result.changes
       // );
-      
-      `AI returned an empty floor: ${floor.name}`
-    );
-  }
-      }
 
       console.log("############################################");
-console.log("NEW BUILD 5 AUG 2026");
-console.log("############################################");
+      console.log("NEW BUILD 5 AUG 2026");
+      console.log("############################################");
 
       console.log("========== AI RESPONSE ==========");
-console.log("===== ORIGINAL =====");
+      console.log("===== ORIGINAL =====");
 
-result.originalFloorPlan.floors.forEach((floor: any) => {
-  console.log(floor.name);
+      result.originalFloorPlan.floors.forEach((floor: any) => {
+        console.log(floor.name);
 
-  floor.rooms.forEach((room: any) => {
-    console.log(
-      room.name,
-      `x=${room.x}`,
-      `y=${room.y}`,
-      `w=${room.width}`,
-      `h=${room.height}`
-    );
-  });
-});
+        floor.rooms.forEach((room: any) => {
+          console.log(
+            room.name,
+            `x=${room.x}`,
+            `y=${room.y}`,
+            `w=${room.width}`,
+            `h=${room.height}`
+          );
+        });
+      });
 
-console.log("===== PROPOSED =====");
+      console.log("===== PROPOSED =====");
 
-result.proposedFloorPlan.floors.forEach((floor: any) => {
-  console.log(floor.name);
+      result.proposedFloorPlan.floors.forEach((floor: any) => {
+        console.log(floor.name);
 
-  floor.rooms.forEach((room: any) => {
-    console.log(
-      room.name,
-      `x=${room.x}`,
-      `y=${room.y}`,
-      `w=${room.width}`,
-      `h=${room.height}`
-    );
-  });
-});
-console.log("================================");
-      
-      
+        floor.rooms.forEach((room: any) => {
+          console.log(
+            room.name,
+            `x=${room.x}`,
+            `y=${room.y}`,
+            `w=${room.width}`,
+            `h=${room.height}`
+          );
+        });
+      });
+
+      console.log("================================");
+
+      console.log(
+        `AI returned ${result.originalFloorPlan.floors.reduce(
+          (t: number, f: any) => t + f.rooms.length,
+          0
+        )} rooms`
+      );
+
+      result.generatedLayoutImage = renderFloorPlan(
+        result.originalFloorPlan,
+        result.proposedFloorPlan
+      );
+
+      return NextResponse.json({
+        success: true,
+        result,
+      });
     } catch (err: any) {
-  console.error("JSON ERROR:", err?.name, err?.message);
+      console.error("JSON ERROR:", err?.name, err?.message);
+      console.error("FIRST:");
+      console.error(cleaned.slice(0, 3000));
+      console.error("LAST:");
+      console.error(cleaned.slice(-500));
+      console.error("LEN:", cleaned.length);
 
-  console.error("FIRST:");
-  console.error(cleaned.slice(0, 3000));
-
-  console.error("LAST:");
-  console.error(cleaned.slice(-500));
-
-  console.error("LEN:", cleaned.length);
-
-  return NextResponse.json({
-  success: false,
-  error: err.message,
-});
+      return NextResponse.json({
+        success: false,
+        error: err.message,
+      });
     }
-console.log(
-  `AI returned ${result.originalFloorPlan.floors.reduce(
-    (t: number, f: any) => t + f.rooms.length,
-    0
-  )} rooms`
-);
+  } catch (error: any) {
+    console.error(error);
 
-result.generatedLayoutImage = renderFloorPlan(
-  result.originalFloorPlan,
-  result.proposedFloorPlan
-);
-
-return NextResponse.json({
-  success: true,
-  result,
-});
-
-} catch (error: any) {
-  console.error(error);
-
-  return NextResponse.json({
-    success: false,
-    error: error.message || "Analysis failed.",
-  });
+    return NextResponse.json({
+      success: false,
+      error: error.message || "Analysis failed.",
+    });
+  }
 }
-                                         }
