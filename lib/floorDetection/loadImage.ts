@@ -1,10 +1,5 @@
 import sharp from "sharp";
-
-export interface LoadedImage {
-  data: Uint8Array;
-  width: number;
-  height: number;
-}
+import { LoadedImage } from "@/lib/types/floorPlan";
 
 export async function loadImage(
   imagePath: string
@@ -22,5 +17,6 @@ export async function loadImage(
     data: new Uint8Array(data),
     width: info.width,
     height: info.height,
+    dpi: info.density || 96,
   };
 }
