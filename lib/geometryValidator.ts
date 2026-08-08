@@ -15,12 +15,15 @@ function hasPositiveDimensions(room: Room): boolean {
 }
 
 function getWallSegmentKey(wall: WallLine): string {
-  const start = `${wall.x1},${wall.y1}`
-  const end = `${wall.x2},${wall.y2}`
+  const start: [number, number] = [wall.x1, wall.y1]
+  const end: [number, number] = [wall.x2, wall.y2]
+  const [first, second] =
+    start[0] < end[0] ||
+    (start[0] === end[0] && start[1] <= end[1])
+      ? [start, end]
+      : [end, start]
 
-  return start <= end
-    ? `${start}:${end}`
-    : `${end}:${start}`
+  return `${first[0]},${first[1]}:${second[0]},${second[1]}`
 }
 
 export function validateGeometry(
@@ -74,8 +77,6 @@ export function validateGeometry(
 
     if (!Number.isInteger(floor.level)) {
       errors.push(`floors[${floorIndex}].level must be an integer`)
-    } else if (floor.level < 0 || floor.level >= floorPlan.floors.length) {
-      errors.push(`floors[${floorIndex}].level must be a valid floor index`)
     } else if (floorLevels.has(floor.level)) {
       errors.push(`Duplicate floor level detected: ${floor.level}`)
     } else {
