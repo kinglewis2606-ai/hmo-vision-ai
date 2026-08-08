@@ -172,7 +172,7 @@ export interface FloorPlan {
   floors: Floor[];
   
   /** Detected wall segments (reference geometry) */
-  walls?: WallLine[];
+  walls: WallLine[];
   
   /** Metadata about the floor plan */
   metadata?: {

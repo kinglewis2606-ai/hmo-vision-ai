@@ -1,4 +1,9 @@
-import { DetectedFloor, DetectedRoom } from "@/lib/types/floorPlan";
+import {
+  DetectedFloor,
+  DetectedRoom,
+  FloorPlan,
+  WallLine,
+} from "@/lib/types/floorPlan";
 
 function touching(a: DetectedRoom, b: DetectedRoom): boolean {
   const tolerance = 15;
@@ -37,9 +42,11 @@ function getAdjacentRooms(
 
 export function buildOriginalFloorPlan(
   floors: DetectedFloor[],
-  rooms: DetectedRoom[]
-) {
+  rooms: DetectedRoom[],
+  walls: WallLine[] = []
+): FloorPlan {
   return {
+    walls,
     floors: floors.map((floor, floorIndex) => {
 
       const floorRooms = rooms.filter(

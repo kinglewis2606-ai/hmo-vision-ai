@@ -7,6 +7,7 @@ import { detectWalls } from "@/lib/floorDetection/detectWalls";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
+import { validateGeometry } from "@/lib/geometryValidator";
 import { buildHMOAnalysisPrompt } from "@/lib/prompts/hmoAnalysisPrompt";
 // import { applyRoomChanges } from "@/lib/applyRoomChanges";
 
@@ -38,8 +39,25 @@ export async function POST(req: Request) {
 
     const originalFloorPlan = buildOriginalFloorPlan(
       detectedFloors,
-      detectedRooms
+      detectedRooms,
+      detectedWalls
     );
+
+    const geometryValidation = validateGeometry(originalFloorPlan);
+
+    if (!geometryValidation.valid) {
+      console.warn(
+        "Original floor plan geometry validation failed:",
+        geometryValidation
+      );
+    } else if (geometryValidation.warnings.length > 0) {
+      console.warn(
+        "Original floor plan geometry validation warnings:",
+        geometryValidation
+      );
+    } else {
+      console.log("Original floor plan geometry validation passed");
+    }
 
     const originalFloorPlanJson = JSON.stringify(
       originalFloorPlan,
