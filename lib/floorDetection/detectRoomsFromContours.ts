@@ -1,5 +1,5 @@
 import { loadImage } from "./loadImage";
-import { DetectedFloor, DetectedRoom, LoadedImage } from "@/lib/types/floorPlan";
+import { DetectedFloor, DetectedRoom } from "@/lib/types/floorPlan";
 import { findEnclosedRooms } from "./findEnclosedRooms";
 import { detectWalls } from "./detectWalls";
 
@@ -188,18 +188,22 @@ function boundingBox(points: Point[]) {
  * 
  * @param imagePath - Path to floor plan image
  * @param floors - Detected floor boundaries
+ * @param imageDpi - Optional DPI for threshold calibration (defaults to 96)
  * @returns Array of detected rooms
  */
-export async function detectRoomsContours(
+export async function detectRoomsFromContours(
   imagePath: string,
-  floors: DetectedFloor[]
+  floors: DetectedFloor[],
+  imageDpi?: number
 ): Promise<DetectedRoom[]> {
 
   // Load and preprocess image
   const image = await loadImage(imagePath);
   
   // Calibrate detection threshold based on image DPI
-  const wallThreshold = calibrateWallThreshold(image.dpi);
+  // Use provided DPI or fall back to image DPI or 96
+  const dpi = imageDpi ?? image.dpi ?? 96;
+  const wallThreshold = calibrateWallThreshold(dpi);
 
   // Detect wall structures
   const walls = await detectWalls(
