@@ -65,6 +65,7 @@ export function validateGeometry(
   }
 
   const roomIds = new Set<string>()
+  const declaredRoomIds = new Set<string>()
   const wallIds = new Set<string>()
   const wallSegments = new Set<string>()
   const floorLevels = new Set<number>()
@@ -102,8 +103,10 @@ export function validateGeometry(
         errors.push(`floors[${floorIndex}].rooms[${roomIndex}].id must be a non-empty string`)
       } else if (roomIds.has(room.id)) {
         errors.push(`Duplicate room id detected: ${room.id}`)
+        declaredRoomIds.add(room.id)
       } else {
         roomIds.add(room.id)
+        declaredRoomIds.add(room.id)
       }
 
       if (!isFiniteNumber(room.x)) {
@@ -147,7 +150,14 @@ export function validateGeometry(
       }
 
       room.adjacentRooms.forEach(adjacentRoomId => {
-        if (!roomIds.has(adjacentRoomId)) {
+        if (typeof adjacentRoomId !== "string" || adjacentRoomId.trim() === "") {
+          warnings.push(
+            `Room ${room.id || `${floorIndex}:${roomIndex}`} references an invalid adjacent room id`
+          )
+          return
+        }
+
+        if (!declaredRoomIds.has(adjacentRoomId)) {
           warnings.push(
             `Room ${room.id || `${floorIndex}:${roomIndex}`} references unknown adjacent room ${adjacentRoomId}`
           )
@@ -197,7 +207,7 @@ export function validateGeometry(
       }
     }
 
-    const wallId = (wall as WallLine & { id?: unknown }).id
+    const wallId = wall.id
 
     if (typeof wallId === "string" && wallId.trim() !== "") {
       if (wallIds.has(wallId)) {

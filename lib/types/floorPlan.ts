@@ -49,6 +49,9 @@ export interface DetectedFloor {
 }
 
 export interface WallLine {
+  /** Optional wall identifier */
+  id?: string;
+
   /** Starting x-coordinate in pixels */
   x1: number;
   
