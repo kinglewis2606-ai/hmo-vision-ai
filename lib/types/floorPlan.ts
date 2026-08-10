@@ -145,15 +145,32 @@ export interface HMOAnalysisResult {
   investorSummary?: string;
 }
 
+/** Per-floor rendered pair (original image + proposed overlay data-URI) */
+export interface FloorRenderPair {
+  floorIndex: number;
+  /** data-URI of the original uploaded image (cropped to this floor's yRange if multi-floor) */
+  originalImage: string;
+  /** data-URI of the proposed layout overlay composited onto the original image */
+  proposedImage: string;
+}
+
 // Full analysis pipeline result
 export interface AnalysisPipelineResult {
   originalFloorPlan: FloorPlan;
   proposedFloorPlan: FloorPlan;
   hmoAnalysis: HMOAnalysisResult;
-  /** Base-64 PNG of the rendered original layout */
+  /**
+   * @deprecated Use renderedFloors[0].originalImage instead.
+   * Kept for backward-compat; equals renderedFloors[0]?.originalImage.
+   */
   originalLayoutImage?: string;
-  /** Base-64 PNG of the rendered proposed layout */
+  /**
+   * @deprecated Use renderedFloors[0].proposedImage instead.
+   * Kept for backward-compat; equals renderedFloors[0]?.proposedImage.
+   */
   proposedLayoutImage?: string;
+  /** Per-floor rendered pairs: original uploaded image + proposed overlay */
+  renderedFloors: FloorRenderPair[];
   /** The original uploaded image filename */
   sourceFilename: string;
 }

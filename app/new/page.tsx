@@ -76,10 +76,15 @@ export default function NewAnalysisPage() {
   const currentPropFloor = result?.proposedFloorPlan.floors[activeFloor];
   const ai = result?.hmoAnalysis;
 
-  // Per-floor rendered images — stored on the result object if provided
-  // by the API. Otherwise fall back to the top-level images for floor 0.
-  const getOrigImg = () => result?.originalLayoutImage ?? null;
-  const getPropImg = () => result?.proposedLayoutImage ?? null;
+  // Per-floor rendered images from the API
+  const getOrigImg = () =>
+    result?.renderedFloors?.[activeFloor]?.originalImage ??
+    result?.originalLayoutImage ??
+    null;
+  const getPropImg = () =>
+    result?.renderedFloors?.[activeFloor]?.proposedImage ??
+    result?.proposedLayoutImage ??
+    null;
 
   return (
     <main className="min-h-screen bg-slate-100">
@@ -231,7 +236,7 @@ export default function NewAnalysisPage() {
                 {/* Original */}
                 <div className="bg-white rounded-xl shadow p-4">
                   <h3 className="font-bold text-center mb-3 text-gray-700">
-                    Original Detected Layout
+                    Original Floor Plan
                   </h3>
                   {getOrigImg() ? (
                     <img
@@ -250,7 +255,7 @@ export default function NewAnalysisPage() {
                 {/* Proposed */}
                 <div className="bg-white rounded-xl shadow p-4">
                   <h3 className="font-bold text-center mb-3 text-gray-700">
-                    Proposed HMO Layout
+                    Proposed HMO Layout (overlay)
                   </h3>
                   {getPropImg() ? (
                     <img

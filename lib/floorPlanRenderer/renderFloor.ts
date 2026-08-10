@@ -1,7 +1,7 @@
 // floorPlanRenderer.ts
 // Renders a single floor from a FloorPlan to a PNG buffer using Canvas API.
-// Works in Node.js via the 'canvas' package (optional), or produces an SVG
-// fallback that is then returned as a data-URI if canvas is unavailable.
+// Can composite a semi-transparent overlay onto a background image.
+// Falls back to an SVG data-URI if the canvas package is unavailable.
 
 import type { Floor, Room, Wall } from "../types/floorPlan";
 
@@ -10,12 +10,20 @@ export interface RenderOptions {
   width?: number;
   /** Target canvas height in pixels (default 600) */
   height?: number;
-  /** Background colour (default white) */
+  /** Background colour (default white, ignored when backgroundImage is supplied) */
   background?: string;
   /** Wall colour */
   wallColour?: string;
   /** Highlight colour for modified rooms */
   modifiedColour?: string;
+  /**
+   * Optional base image to render the overlay onto.
+   * Must be a data-URI (e.g. "data:image/png;base64,…" or "data:image/jpeg;base64,…").
+   * When provided the room overlay is drawn semi-transparently on top of this image.
+   */
+  backgroundImage?: string;
+  /** Opacity for the room overlay when backgroundImage is supplied (0–1, default 0.45) */
+  overlayOpacity?: number;
 }
 
 const ROOM_COLOURS: Record<string, string> = {
@@ -35,6 +43,8 @@ const MODIFIED_COLOUR = "#fff3cd";
 
 /**
  * Render a floor to a base-64 PNG string.
+ * When `options.backgroundImage` is a data-URI the room overlay is composited
+ * semi-transparently onto that image so the original photo is preserved.
  * Falls back to an SVG data-URI if the 'canvas' native module is unavailable.
  */
 export async function renderFloor(
@@ -52,15 +62,25 @@ export async function renderFloor(
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-    const { createCanvas } = require(/* turbopackIgnore: true */ "canvas") as any;
+    const { createCanvas, loadImage: loadCanvasImage } = require(/* turbopackIgnore: true */ "canvas") as any;
     const canvas = createCanvas(targetW, targetH);
     const ctx = canvas.getContext("2d");
 
-    // Background
-    ctx.fillStyle = options.background ?? "#ffffff";
-    ctx.fillRect(0, 0, targetW, targetH);
+    // Draw background: either the supplied image or a solid colour
+    if (options.backgroundImage) {
+      const bgImg = await loadCanvasImage(options.backgroundImage);
+      ctx.drawImage(bgImg, 0, 0, targetW, targetH);
+    } else {
+      ctx.fillStyle = options.background ?? "#ffffff";
+      ctx.fillRect(0, 0, targetW, targetH);
+    }
 
-    // Draw rooms
+    // Draw room overlay (semi-transparent when a background image is present)
+    const overlayOpacity = options.backgroundImage != null
+      ? (options.overlayOpacity ?? 0.45)
+      : 1.0;
+    ctx.globalAlpha = overlayOpacity;
+
     for (const room of floor.rooms) {
       const rx = Math.round(room.bounds.x * scaleX);
       const ry = Math.round(room.bounds.y * scaleY);
@@ -76,34 +96,10 @@ export async function renderFloor(
       ctx.strokeStyle = "#555555";
       ctx.lineWidth = 1.5;
       ctx.strokeRect(rx, ry, rw, rh);
-
-      // Room label
-      if (rw > 30 && rh > 18) {
-        ctx.fillStyle = "#333333";
-        const fontSize = Math.max(9, Math.min(13, Math.floor(rw / 7)));
-        ctx.font = `${fontSize}px sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(
-          room.label,
-          rx + rw / 2,
-          ry + rh / 2,
-          rw - 6
-        );
-        if (room.areaM2 != null && rh > 32) {
-          ctx.font = `${Math.max(8, fontSize - 2)}px sans-serif`;
-          ctx.fillStyle = "#666666";
-          ctx.fillText(
-            `${room.areaM2}m²`,
-            rx + rw / 2,
-            ry + rh / 2 + fontSize + 2,
-            rw - 6
-          );
-        }
-      }
     }
 
-    // Draw walls
+    // Draw walls at full opacity
+    ctx.globalAlpha = 1.0;
     ctx.strokeStyle = options.wallColour ?? "#222222";
     ctx.lineWidth = 2;
     for (const wall of floor.walls) {
@@ -117,6 +113,33 @@ export async function renderFloor(
         Math.round(wall.end.y * scaleY)
       );
       ctx.stroke();
+    }
+
+    // Room labels at full opacity (on top of overlay)
+    for (const room of floor.rooms) {
+      const rx = Math.round(room.bounds.x * scaleX);
+      const ry = Math.round(room.bounds.y * scaleY);
+      const rw = Math.round(room.bounds.width * scaleX);
+      const rh = Math.round(room.bounds.height * scaleY);
+
+      if (rw > 30 && rh > 18) {
+        ctx.fillStyle = "#333333";
+        const fontSize = Math.max(9, Math.min(13, Math.floor(rw / 7)));
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(room.label, rx + rw / 2, ry + rh / 2, rw - 6);
+        if (room.areaM2 != null && rh > 32) {
+          ctx.font = `${Math.max(8, fontSize - 2)}px sans-serif`;
+          ctx.fillStyle = "#666666";
+          ctx.fillText(
+            `${room.areaM2}m²`,
+            rx + rw / 2,
+            ry + rh / 2 + fontSize + 2,
+            rw - 6
+          );
+        }
+      }
     }
 
     return canvas.toDataURL("image/png");

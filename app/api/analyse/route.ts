@@ -3,6 +3,7 @@ import { openai } from "@/lib/openai";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
 import { applyRoomChanges } from "@/lib/applyRoomChanges";
 import { renderFloor } from "@/lib/floorPlanRenderer/renderFloor";
+import { cropImageToFloor } from "@/lib/floorPlanRenderer/cropImageToFloor";
 import { checkRateLimit, rateLimitRetryAfter } from "@/lib/rateLimit";
 import { logger } from "@/lib/logger";
 import { config } from "@/lib/config";
@@ -13,7 +14,7 @@ import {
   recordDetectionTime,
   recordAiTime,
 } from "@/lib/metrics";
-import type { RoomChange, HMOAnalysisResult, AnalysisPipelineResult } from "@/lib/types/floorPlan";
+import type { RoomChange, HMOAnalysisResult, AnalysisPipelineResult, FloorRenderPair } from "@/lib/types/floorPlan";
 import fs from "fs";
 import path from "path";
 
@@ -80,6 +81,20 @@ export async function POST(req: Request) {
     );
   }
 
+  // Reject PDFs — they must be converted to an image before analysis.
+  // We never label raw PDF bytes as image/jpeg.
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === ".pdf") {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "PDF files are not supported for analysis. Please convert your floor plan to a JPEG or PNG image and upload again.",
+      },
+      { status: 415 }
+    );
+  }
+
   const filePath = path.join(process.cwd(), config.upload.dir, filename);
 
   if (!fs.existsSync(filePath)) {
@@ -88,6 +103,12 @@ export async function POST(req: Request) {
       { status: 404 }
     );
   }
+
+  // Read the original image bytes and encode as base-64 data-URI.
+  // This is the source of truth for the "Original" panel in the UI.
+  const imageBuffer = fs.readFileSync(filePath);
+  const mime = ext === ".png" ? "image/png" : "image/jpeg";
+  const originalImageDataUri = `data:${mime};base64,${imageBuffer.toString("base64")}`;
 
   logger.info("analysis started", { filename, address });
 
@@ -98,11 +119,7 @@ export async function POST(req: Request) {
     recordDetectionTime(Date.now() - detectionStart);
 
     // ── Phase 2: AI analysis ───────────────────────────────────────────────
-    const image = fs.readFileSync(filePath);
-    const ext = path.extname(filename).toLowerCase();
-    const mime =
-      ext === ".png" ? "image/png" : ext === ".pdf" ? "image/jpeg" : "image/jpeg";
-    const base64 = image.toString("base64");
+    const base64 = imageBuffer.toString("base64");
 
     const aiStart = Date.now();
     const aiController = new AbortController();
@@ -164,15 +181,49 @@ export async function POST(req: Request) {
     );
     const proposedFloorPlan = applyRoomChanges(originalFloorPlan, changes);
 
-    // ── Phase 4: Render both layouts ───────────────────────────────────────
+    // ── Phase 4: Render per-floor pairs ────────────────────────────────────
+    // For each floor:
+    //   - originalImage: the real uploaded photo cropped to this floor's yRange
+    //   - proposedImage: the same cropped photo with the proposed layout overlay
     const imgW = originalFloorPlan.metadata.imageWidthPx;
     const imgH = originalFloorPlan.metadata.imageHeightPx;
 
     const renderPromises = originalFloorPlan.floors.map(async (floor, i) => {
-      const origImg = await renderFloor(floor, imgW, imgH);
+      // Crop the original uploaded image to this floor's vertical band
+      const floorOriginalImage = await cropImageToFloor(
+        originalImageDataUri,
+        floor,
+        imgW,
+        imgH
+      );
+
+      // Proposed overlay composited on top of the same cropped image
       const propFloor = proposedFloorPlan.floors[i] ?? floor;
-      const propImg = await renderFloor(propFloor, imgW, imgH);
-      return { floorIndex: i, original: origImg, proposed: propImg };
+
+      // When cropping occurred the yRange shifts to (0, cropHeight-1) in the
+      // cropped image space.  Adjust room/wall coordinates accordingly.
+      const yOffset = floor.yRange?.top ?? 0;
+      const adjustedPropFloor = yOffset > 0
+        ? shiftFloorCoords(propFloor, -yOffset)
+        : propFloor;
+
+      const floorCropH = floor.yRange
+        ? floor.yRange.bottom - floor.yRange.top + 1
+        : imgH;
+
+      const proposedImage = await renderFloor(
+        adjustedPropFloor,
+        imgW,
+        floorCropH,
+        { backgroundImage: floorOriginalImage }
+      );
+
+      const pair: FloorRenderPair = {
+        floorIndex: i,
+        originalImage: floorOriginalImage,
+        proposedImage,
+      };
+      return pair;
     });
 
     const renderedFloors = await Promise.all(renderPromises);
@@ -181,8 +232,10 @@ export async function POST(req: Request) {
       originalFloorPlan,
       proposedFloorPlan,
       hmoAnalysis,
-      originalLayoutImage: renderedFloors[0]?.original,
-      proposedLayoutImage: renderedFloors[0]?.proposed,
+      // Backward-compat aliases for floor 0
+      originalLayoutImage: renderedFloors[0]?.originalImage,
+      proposedLayoutImage: renderedFloors[0]?.proposedImage,
+      renderedFloors,
       sourceFilename: filename,
     };
 
@@ -293,4 +346,27 @@ function normaliseRoomChanges(
       step,
     };
   });
+}
+
+/**
+ * Return a copy of a floor with all y-coordinates shifted by `dy`.
+ * Used to re-anchor room/wall coords after cropping to a floor's vertical band.
+ */
+function shiftFloorCoords(
+  floor: import("@/lib/types/floorPlan").Floor,
+  dy: number
+): import("@/lib/types/floorPlan").Floor {
+  return {
+    ...floor,
+    rooms: floor.rooms.map((r) => ({
+      ...r,
+      bounds: { ...r.bounds, y: r.bounds.y + dy },
+      polygon: r.polygon?.map((p) => ({ ...p, y: p.y + dy })),
+    })),
+    walls: floor.walls.map((w) => ({
+      ...w,
+      start: { ...w.start, y: w.start.y + dy },
+      end: { ...w.end, y: w.end.y + dy },
+    })),
+  };
 }
