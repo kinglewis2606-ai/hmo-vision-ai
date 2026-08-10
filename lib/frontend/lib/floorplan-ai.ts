@@ -1,5 +1,5 @@
 import fs from "fs";
-import { openai } from "./openai";
+import { openai } from "../../openai";
 
 export async function analyseFloorPlan(filePath: string) {
   const image = await openai.files.create({
@@ -34,6 +34,7 @@ Return ONLY valid JSON.
           {
             type: "input_image",
             file_id: image.id,
+            detail: "high",
           },
         ],
       },
