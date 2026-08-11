@@ -10,6 +10,9 @@ import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorP
 import { buildHMOAnalysisPrompt } from "@/lib/prompts/hmoAnalysisPrompt";
 import { applyRoomChanges } from "@/lib/applyRoomChanges";
 
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
 function isBedroomChange(change: any): boolean {
   const action = String(change?.action ?? "").toLowerCase().replace(/\s+/g, "");
   const type = String(change?.newType ?? "").toLowerCase();
@@ -66,13 +69,6 @@ function reconcileCurrentCounts(result: any, changes: any[]): void {
   }
 }
 
-/**
- * The detector owns geometry; the model owns semantic room identification.
- * To make the mapping deterministic for vision, send the model a second copy
- * of the uploaded image with the real detected room IDs drawn directly over
- * their geometry. The original upload is never modified or stored as the
- * proposed image.
- */
 async function buildAnnotatedAnalysisImage(
   filePath: string,
   floorPlan: any
@@ -115,13 +111,18 @@ export async function POST(req: Request) {
   console.log("=== ANALYSE ROUTE HIT ===");
   try {
     const { filename, address, propertyType } = await req.json();
-    const filePath = path.join(process.cwd(), "public", "uploads", filename);
-
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({ success: false, error: "Uploaded floor plan not found." });
+    if (!filename || typeof filename !== "string" || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      return NextResponse.json({ success: false, error: "Invalid uploaded filename." }, { status: 400 });
     }
 
+    const filePath = path.join(process.cwd(), "public", "uploads", filename);
+    if (!fs.existsSync(filePath)) {
+      return NextResponse.json({ success: false, error: "Uploaded floor plan not found." }, { status: 404 });
+    }
+
+    console.log("Analyse stage 1: detecting floors");
     const detectedFloors = await detectFloors(filePath);
+    console.log("Analyse stage 2: detecting rooms");
     const detectedRooms = await detectRooms(filePath, detectedFloors);
     const originalFloorPlan = buildOriginalFloorPlan(detectedFloors, detectedRooms);
 
@@ -132,14 +133,16 @@ export async function POST(req: Request) {
       imageDpi: imageMetadata.density,
     };
 
+    console.log(`Analyse geometry complete: ${detectedFloors.length} floors, ${detectedRooms.length} rooms`);
+
     const originalFloorPlanJson = JSON.stringify(originalFloorPlan, null, 2);
     const promptText = buildHMOAnalysisPrompt(address, propertyType)
       .replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", originalFloorPlanJson);
 
-    // Give vision an explicit visual ID map. This prevents room-5/room-6/etc.
-    // from being guessed from array order and fixes semantic-to-geometry drift.
+    console.log("Analyse stage 3: building visual room-ID map");
     const annotated = await buildAnnotatedAnalysisImage(filePath, originalFloorPlan);
 
+    console.log("Analyse stage 4: calling vision model");
     const response = await openai.responses.create({
       model: "gpt-5",
       input: [{
@@ -170,34 +173,41 @@ export async function POST(req: Request) {
         originalFloorPlan.floors.flatMap((floor: any) => floor.rooms.map((room: any) => room.id))
       );
       const validChanges = changes.filter((change: any) => validRoomIds.has(String(change?.roomId ?? "")));
-      const invalidChanges = changes.filter((change: any) => !validRoomIds.has(String(change?.roomId ?? "")));
-      if (invalidChanges.length) {
-        console.warn("Ignoring changes with unknown room IDs:", invalidChanges);
-      }
 
       const proposedFloorPlan = applyRoomChanges(labelledFloorPlan, validChanges);
-
       result.originalFloorPlan = originalFloorPlan;
       result.proposedFloorPlan = proposedFloorPlan;
       result.generatedLayoutImage = renderFloorPlan(
         labelledFloorPlan,
         proposedFloorPlan,
-        `data:${(path.extname(filename).toLowerCase() === ".png" ? "image/png" : path.extname(filename).toLowerCase() === ".webp" ? "image/webp" : "image/jpeg")};base64,${fs.readFileSync(filePath).toString("base64")}`,
+        `data:${extToMime(filename)};base64,${fs.readFileSync(filePath).toString("base64")}`,
         validChanges
       );
 
-      console.log("Detected rooms:", detectedRooms.length);
-      console.log("AI room labels:", roomLabels.length);
-      console.log("AI changes:", validChanges.length);
+      console.log("Analyse complete", {
+        detectedRooms: detectedRooms.length,
+        roomLabels: roomLabels.length,
+        changes: validChanges.length,
+      });
 
       return NextResponse.json({ success: true, result });
     } catch (err: any) {
       console.error("JSON ERROR:", err?.message);
       console.error(cleaned.slice(0, 3000));
-      return NextResponse.json({ success: false, error: err.message });
+      return NextResponse.json({ success: false, error: `AI returned invalid analysis JSON: ${err?.message || "unknown error"}` }, { status: 502 });
     }
   } catch (error: any) {
-    console.error(error);
-    return NextResponse.json({ success: false, error: error.message || "Analysis failed." });
+    console.error("ANALYSE ERROR:", error);
+    return NextResponse.json(
+      { success: false, error: error?.message || "Analysis failed on the server." },
+      { status: 500 }
+    );
   }
+}
+
+function extToMime(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".webp") return "image/webp";
+  return "image/jpeg";
 }
