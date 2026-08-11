@@ -12,17 +12,15 @@ Property Address: ${address || "Unknown"}
 Property Type: ${propertyType || "Unknown"}
 
 The application has already detected the floor-plan geometry. That geometry is authoritative.
-The uploaded image is also available to you for visual room identification.
+The uploaded analysis image contains a CRITICAL visual ID overlay: every detected room is outlined in red and has its exact roomId (for example room-7) printed in a red box at the centre of that room.
 
-CRITICAL GEOMETRY RULES
-- Do NOT invent rooms or coordinates.
-- Do NOT create x, y, width or height values.
-- Do NOT redesign the building from scratch.
-- You MUST identify the real detected rooms by their supplied roomId.
-- First return a roomLabels entry for EVERY detected room.
-- roomLabels is ONLY the bridge between the image and the deterministic geometry model; roomLabels do not themselves create visual proposal overlays.
-- Every change.roomId MUST exactly match one roomLabels.roomId and one detected room id.
-- If you cannot confidently identify a room, label it "Unknown" rather than inventing a room id.
+ROOM-ID MAPPING IS NON-NEGOTIABLE
+- Treat the red roomId printed inside a room as the ONLY authoritative link between the visual room and the JSON geometry.
+- Do not infer room IDs from array order, floor order, or numbering you invent yourself.
+- Before proposing any change, visually inspect which red roomId is physically inside the target room.
+- If the target is the ground-floor Living Room, use the roomId printed inside the ground-floor Living Room — not the next available number.
+- If the target is an existing Bedroom, use the roomId printed inside that bedroom.
+- Never call a bathroom, landing, kitchen or existing bedroom a bedroom merely because its roomId is convenient.
 
 Detected floor plan JSON:
 [FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]
@@ -32,11 +30,12 @@ summary.bedrooms = bedrooms BEFORE proposed works.
 summary.bathrooms = bathrooms/shower rooms BEFORE proposed works.
 summary.possibleHMOBedrooms = realistic proposed HMO bedroom total AFTER works.
 
-Example: 4 existing bedrooms + 2 reception-room conversions = bedrooms 4, possibleHMOBedrooms 6.
+Example: 4 existing bedrooms + 1 suitable reception-room conversion = bedrooms 4, possibleHMOBedrooms 5.
 
 ROOM IDENTIFICATION
-Use the uploaded image plus each room's coordinates, size, floor and adjacency to identify:
-- bedrooms
+Use BOTH the floor-plan image and the red roomId overlay. Identify every detected room by the roomId printed inside it.
+Classify each as:
+- bedroom
 - living room/lounge
 - dining room
 - kitchen
@@ -44,11 +43,11 @@ Use the uploaded image plus each room's coordinates, size, floor and adjacency t
 - WC
 - landing/hallway
 - stairs
-- other spaces
+- other
 
-Return one roomLabels item for EVERY detected room:
+Return exactly one roomLabels item for EVERY detected room. The roomId must be copied exactly from the red label visible inside that room:
 {
-  "roomId": "room-1",
+  "roomId": "room-7",
   "name": "Living Room",
   "type": "living room",
   "floor": "Ground Floor",
@@ -67,7 +66,9 @@ CHANGE LIST RULES — VERY IMPORTANT
 - Do NOT repeat existing bedrooms as ConvertToBedroom if they are already bedrooms.
 - Only include a room in changes when its use/type or physical planning treatment is genuinely changing.
 - A room that is merely being identified or labelled belongs in roomLabels, NOT changes.
-- Every proposed bedroom conversion MUST reference the exact detected roomId of the room being converted.
+- Every proposed bedroom conversion MUST reference the exact roomId printed inside the physical room being converted.
+- If the plan already has suitable bedrooms, retain them; do not create fake conversions merely to reach a target bedroom count.
+- Never use a roomId based only on sequential numbering or on the fact that it is the fifth/sixth/seventh room in the JSON.
 
 Use actions:
 - ConvertToBedroom
@@ -85,6 +86,7 @@ CONSISTENCY CHECK
 Before returning JSON:
 - every roomLabels.roomId exists in the detected plan
 - every change.roomId exists in roomLabels and the detected plan
+- every roomLabels.roomId matches the red ID printed inside the corresponding physical room
 - existing bedroom count is separate from proposed bedroom count
 - every proposed bedroom conversion is represented by exactly one relevant change
 - do not include unchanged rooms in changes
