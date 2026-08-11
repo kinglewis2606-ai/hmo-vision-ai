@@ -2,8 +2,9 @@ import { loadImage } from "./loadImage";
 import { DetectedFloor } from "@/lib/types/floorPlan";
 
 const DARK_THRESHOLD = 130;
-const DILATION_SIZE = 7;
+const DILATION_SIZE = 3;
 const FLOOR_COUNT = 3;
+const MAX_ORIENTATION_DIMENSION = 800;
 
 function buildBarrier(data: Uint8Array): Uint8Array {
   const barrier = new Uint8Array(data.length);
@@ -11,6 +12,29 @@ function buildBarrier(data: Uint8Array): Uint8Array {
     barrier[i] = data[i] < DARK_THRESHOLD ? 1 : 0;
   }
   return barrier;
+}
+
+function resizeNearest(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  scale: number
+): { data: Uint8Array; width: number; height: number } {
+  if (scale <= 1) return { data: source, width, height };
+
+  const outWidth = Math.max(1, Math.ceil(width / scale));
+  const outHeight = Math.max(1, Math.ceil(height / scale));
+  const output = new Uint8Array(outWidth * outHeight);
+
+  for (let y = 0; y < outHeight; y++) {
+    const sourceY = Math.min(height - 1, Math.floor(y * scale));
+    for (let x = 0; x < outWidth; x++) {
+      const sourceX = Math.min(width - 1, Math.floor(x * scale));
+      output[y * outWidth + x] = source[sourceY * width + sourceX];
+    }
+  }
+
+  return { data: output, width: outWidth, height: outHeight };
 }
 
 function dilateBinary(
@@ -25,11 +49,9 @@ function dilateBinary(
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let found = false;
-
       for (let dy = -radius; dy <= radius && !found; dy++) {
         const yy = y + dy;
         if (yy < 0 || yy >= height) continue;
-
         for (let dx = -radius; dx <= radius; dx++) {
           const xx = x + dx;
           if (xx < 0 || xx >= width) continue;
@@ -39,7 +61,6 @@ function dilateBinary(
           }
         }
       }
-
       output[y * width + x] = found ? 1 : 0;
     }
   }
@@ -69,16 +90,13 @@ function countCandidateRooms(
 
   const closed = dilateBinary(local, width, height, DILATION_SIZE);
   const visited = new Uint8Array(width * height);
-  const queueX = new Int32Array(width * height);
-  const queueY = new Int32Array(width * height);
+  const queue = new Int32Array(width * height);
   const floorArea = width * height;
   let candidates = 0;
 
-  const index = (x: number, y: number) => y * width + x;
-
   for (let y = 1; y < height - 1; y++) {
     for (let x = 1; x < width - 1; x++) {
-      const start = index(x, y);
+      const start = y * width + x;
       if (closed[start] || visited[start]) continue;
 
       let head = 0;
@@ -88,43 +106,33 @@ function countCandidateRooms(
       let minY = y;
       let maxX = x;
       let maxY = y;
-
-      queueX[tail] = x;
-      queueY[tail] = y;
-      tail++;
-      visited[start] = 1;
       let touchesEdge = false;
 
-      while (head < tail) {
-        const cx = queueX[head];
-        const cy = queueY[head];
-        head++;
-        area++;
+      queue[tail++] = start;
+      visited[start] = 1;
 
-        minX = Math.min(minX, cx);
-        minY = Math.min(minY, cy);
-        maxX = Math.max(maxX, cx);
-        maxY = Math.max(maxY, cy);
+      while (head < tail) {
+        const current = queue[head++];
+        const cy = Math.floor(current / width);
+        const cx = current - cy * width;
+        area++;
 
         if (cx <= 1 || cy <= 1 || cx >= width - 2 || cy >= height - 2) {
           touchesEdge = true;
         }
+        if (cx < minX) minX = cx;
+        if (cy < minY) minY = cy;
+        if (cx > maxX) maxX = cx;
+        if (cy > maxY) maxY = cy;
 
-        const neighbours = [
-          [cx + 1, cy],
-          [cx - 1, cy],
-          [cx, cy + 1],
-          [cx, cy - 1],
-        ];
-
-        for (const [nx, ny] of neighbours) {
+        const neighbours = [current - 1, current + 1, current - width, current + width];
+        for (const next of neighbours) {
+          if (next < 0 || next >= closed.length || closed[next] || visited[next]) continue;
+          const ny = Math.floor(next / width);
+          const nx = next - ny * width;
           if (nx <= 0 || ny <= 0 || nx >= width - 1 || ny >= height - 1) continue;
-          const ni = index(nx, ny);
-          if (closed[ni] || visited[ni]) continue;
-          visited[ni] = 1;
-          queueX[tail] = nx;
-          queueY[tail] = ny;
-          tail++;
+          visited[next] = 1;
+          queue[tail++] = next;
         }
       }
 
@@ -139,10 +147,10 @@ function countCandidateRooms(
       );
 
       if (
-        area >= Math.max(250, floorArea * 0.008) &&
+        area >= Math.max(100, floorArea * 0.008) &&
         fraction <= 0.18 &&
-        componentWidth >= 10 &&
-        componentHeight >= 10 &&
+        componentWidth >= 8 &&
+        componentHeight >= 8 &&
         aspect <= 6
       ) {
         candidates++;
@@ -167,29 +175,13 @@ function orientationScore(
       const right = level === FLOOR_COUNT - 1
         ? imageWidth
         : Math.floor((imageWidth * (level + 1)) / FLOOR_COUNT);
-      score += countCandidateRooms(
-        barrier,
-        imageWidth,
-        imageHeight,
-        left,
-        0,
-        right,
-        imageHeight
-      );
+      score += countCandidateRooms(barrier, imageWidth, imageHeight, left, 0, right, imageHeight);
     } else {
       const top = Math.floor((imageHeight * level) / FLOOR_COUNT);
       const bottom = level === FLOOR_COUNT - 1
         ? imageHeight
         : Math.floor((imageHeight * (level + 1)) / FLOOR_COUNT);
-      score += countCandidateRooms(
-        barrier,
-        imageWidth,
-        imageHeight,
-        0,
-        top,
-        imageWidth,
-        bottom
-      );
+      score += countCandidateRooms(barrier, imageWidth, imageHeight, 0, top, imageWidth, bottom);
     }
   }
 
@@ -202,13 +194,18 @@ export async function detectFloors(imagePath: string): Promise<DetectedFloor[]> 
 
   if (!width || !height) return [];
 
-  const barrier = buildBarrier(data);
-  const horizontalScore = orientationScore(barrier, width, height, true);
-  const verticalScore = orientationScore(barrier, width, height, false);
+  // Orientation detection is only a coarse classification. Do it on a small
+  // image so a large uploaded scan cannot block the API process for minutes.
+  const scale = Math.max(1, Math.ceil(Math.max(width, height) / MAX_ORIENTATION_DIMENSION));
+  const reduced = resizeNearest(data, width, height, scale);
+  const barrier = buildBarrier(reduced.data);
+
+  const horizontalScore = orientationScore(barrier, reduced.width, reduced.height, true);
+  const verticalScore = orientationScore(barrier, reduced.width, reduced.height, false);
   const sideBySide = horizontalScore >= verticalScore;
 
   console.log(
-    `Floor orientation scores: left-to-right=${horizontalScore}, top-to-bottom=${verticalScore}; selected=${sideBySide ? "left-to-right" : "top-to-bottom"}`
+    `Floor orientation analysis: ${width}x${height} -> ${reduced.width}x${reduced.height}; left-to-right=${horizontalScore}, top-to-bottom=${verticalScore}; selected=${sideBySide ? "left-to-right" : "top-to-bottom"}`
   );
 
   const floors: DetectedFloor[] = [];
@@ -223,18 +220,14 @@ export async function detectFloors(imagePath: string): Promise<DetectedFloor[]> 
         top: 0,
         bottom: height,
         left: Math.floor((width * level) / FLOOR_COUNT),
-        right: level === FLOOR_COUNT - 1
-          ? width
-          : Math.floor((width * (level + 1)) / FLOOR_COUNT),
+        right: level === FLOOR_COUNT - 1 ? width : Math.floor((width * (level + 1)) / FLOOR_COUNT),
       });
     } else {
       floors.push({
         name,
         level,
         top: Math.floor((height * level) / FLOOR_COUNT),
-        bottom: level === FLOOR_COUNT - 1
-          ? height
-          : Math.floor((height * (level + 1)) / FLOOR_COUNT),
+        bottom: level === FLOOR_COUNT - 1 ? height : Math.floor((height * (level + 1)) / FLOOR_COUNT),
         left: 0,
         right: width,
       });
