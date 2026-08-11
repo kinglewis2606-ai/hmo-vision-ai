@@ -3,12 +3,36 @@ import { openai } from "@/lib/openai";
 import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
+import sharp from "sharp";
 import { detectWalls } from "@/lib/floorDetection/detectWalls";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
 import { buildHMOAnalysisPrompt } from "@/lib/prompts/hmoAnalysisPrompt";
 import { applyRoomChanges } from "@/lib/applyRoomChanges";
+
+function isBedroomChange(change: any): boolean {
+  const action = String(change?.action ?? "").toLowerCase();
+  const type = String(change?.newType ?? "").toLowerCase();
+  return action.includes("converttobedroom") ||
+    action.includes("convert to bedroom") ||
+    type.includes("bedroom");
+}
+
+function reconcileCurrentBedroomCount(result: any, changes: any[]): void {
+  const potential = Number(result?.summary?.possibleHMOBedrooms);
+  const reportedCurrent = Number(result?.summary?.bedrooms);
+  const conversions = changes.filter(isBedroomChange).length;
+
+  if (!Number.isFinite(potential) || !Number.isFinite(reportedCurrent)) return;
+
+  // Keep "Current Bedrooms" separate from the proposed HMO total. If the AI
+  // accidentally reports the proposed count as current and explicitly lists
+  // bedroom conversions, derive the current count from those same decisions.
+  if (conversions > 0 && reportedCurrent >= potential) {
+    result.summary.bedrooms = Math.max(0, potential - conversions);
+  }
+}
 
 export async function POST(req: Request) {
   console.log("=== ANALYSE ROUTE HIT ===");
@@ -24,6 +48,13 @@ export async function POST(req: Request) {
     const detectedWalls = await detectWalls(filePath, detectedFloors);
     const detectedRooms = await detectRooms(detectedWalls, detectedFloors);
     const originalFloorPlan = buildOriginalFloorPlan(detectedFloors, detectedRooms);
+
+    const imageMetadata = await sharp(filePath).metadata();
+    originalFloorPlan.metadata = {
+      imageWidth: imageMetadata.width,
+      imageHeight: imageMetadata.height,
+      imageDpi: imageMetadata.density,
+    };
 
     const originalFloorPlanJson = JSON.stringify(originalFloorPlan, null, 2);
     const image = fs.readFileSync(filePath);
@@ -58,6 +89,7 @@ export async function POST(req: Request) {
       result.originalFloorPlan = originalFloorPlan;
 
       const changes = Array.isArray(result.changes) ? result.changes : [];
+      reconcileCurrentBedroomCount(result, changes);
       result.proposedFloorPlan = applyRoomChanges(originalFloorPlan, changes);
 
       console.log("Detected rooms:", detectedRooms.length);
