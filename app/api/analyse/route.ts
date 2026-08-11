@@ -19,35 +19,49 @@ function isBedroomChange(change: any): boolean {
     type.includes("bedroom");
 }
 
-function isBathroomAddition(change: any): boolean {
-  const action = String(change?.action ?? "").toLowerCase();
-  return action.includes("convert to bathroom") ||
-    action.includes("converttobathroom") ||
-    action.includes("convert to ensuite") ||
-    action.includes("converttoensuite") ||
-    action.includes("extendbathroom");
+function isBathroomType(type: string): boolean {
+  const value = type.toLowerCase();
+  return value.includes("bath") || value.includes("shower") || value.includes("ensuite");
+}
+
+function applyRoomLabels(floorPlan: any, labels: any[]): void {
+  const roomsById = new Map<string, any>();
+  for (const floor of floorPlan.floors) {
+    for (const room of floor.rooms) roomsById.set(room.id, room);
+  }
+
+  for (const label of labels) {
+    const room = roomsById.get(String(label?.roomId ?? ""));
+    if (!room) continue;
+    if (label.name) room.name = String(label.name);
+    if (label.type) room.type = String(label.type);
+    if (label.confidence) room.confidence = String(label.confidence);
+  }
 }
 
 function reconcileCurrentCounts(result: any, changes: any[]): void {
-  const potentialBedrooms = Number(result?.summary?.possibleHMOBedrooms);
-  const reportedBedrooms = Number(result?.summary?.bedrooms);
+  const labels = Array.isArray(result?.roomLabels) ? result.roomLabels : [];
+  const detectedBedrooms = labels.filter((label: any) =>
+    String(label?.type ?? "").toLowerCase().includes("bedroom")
+  ).length;
+  const detectedBathrooms = labels.filter((label: any) =>
+    isBathroomType(String(label?.type ?? ""))
+  ).length;
+
+  // The room labels are tied to real detected geometry, so they are the
+  // authoritative source for the existing-property counts.
+  if (detectedBedrooms > 0) result.summary.bedrooms = detectedBedrooms;
+  if (detectedBathrooms > 0) result.summary.bathrooms = detectedBathrooms;
+
   const bedroomConversions = changes.filter(isBedroomChange).length;
+  const currentBedrooms = Number(result?.summary?.bedrooms);
+  const proposedBedrooms = Number(result?.summary?.possibleHMOBedrooms);
 
-  if (Number.isFinite(potentialBedrooms) && Number.isFinite(reportedBedrooms)) {
-    // Keep current bedrooms separate from the proposed HMO total when the AI
-    // has accidentally copied the proposed total into the current field.
-    if (bedroomConversions > 0 && reportedBedrooms >= potentialBedrooms) {
-      result.summary.bedrooms = Math.max(0, potentialBedrooms - bedroomConversions);
+  if (Number.isFinite(currentBedrooms) && bedroomConversions > 0) {
+    const minimumProposed = currentBedrooms + bedroomConversions;
+    if (!Number.isFinite(proposedBedrooms) || proposedBedrooms < minimumProposed) {
+      result.summary.possibleHMOBedrooms = minimumProposed;
     }
-  }
-
-  const reportedBathrooms = Number(result?.summary?.bathrooms);
-  const bathroomAdditions = changes.filter(isBathroomAddition).length;
-
-  if (Number.isFinite(reportedBathrooms) && bathroomAdditions > 0 && reportedBathrooms >= bathroomAdditions) {
-    // Same protection for bathrooms: the report card is an existing-property
-    // metric, while proposed ensuites/showers belong to the works plan.
-    result.summary.bathrooms = Math.max(0, reportedBathrooms - bathroomAdditions);
   }
 }
 
@@ -103,13 +117,26 @@ export async function POST(req: Request) {
 
     try {
       const result = JSON.parse(cleaned);
-      result.originalFloorPlan = originalFloorPlan;
-
+      const roomLabels = Array.isArray(result.roomLabels) ? result.roomLabels : [];
       const changes = Array.isArray(result.changes) ? result.changes : [];
+
+      // First label the real detected geometry. Then apply the planning
+      // changes to those exact same room IDs. No second/invented geometry set.
+      applyRoomLabels(originalFloorPlan, roomLabels);
+      result.originalFloorPlan = originalFloorPlan;
       reconcileCurrentCounts(result, changes);
       result.proposedFloorPlan = applyRoomChanges(originalFloorPlan, changes);
 
+      const validRoomIds = new Set(
+        originalFloorPlan.floors.flatMap((floor: any) => floor.rooms.map((room: any) => room.id))
+      );
+      const invalidChanges = changes.filter((change: any) => !validRoomIds.has(change?.roomId));
+      if (invalidChanges.length) {
+        console.warn("Ignoring changes with unknown room IDs:", invalidChanges);
+      }
+
       console.log("Detected rooms:", detectedRooms.length);
+      console.log("AI room labels:", roomLabels.length);
       console.log("AI changes:", changes.length);
       console.log(
         "Proposed rooms:",
