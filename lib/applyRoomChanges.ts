@@ -3,16 +3,12 @@ import { FloorPlan, RoomChange } from "@/lib/types/floorPlan";
 function actionType(action?: string): string | undefined {
   const value = (action || "").toLowerCase().replace(/\s+/g, "");
   switch (value) {
-    case "convert to bedroom".replace(/\s+/g, ""):
     case "converttobedroom":
       return "bedroom";
-    case "convert to kitchen".replace(/\s+/g, ""):
     case "converttokitchen":
       return "kitchen";
-    case "convert to bathroom".replace(/\s+/g, ""):
     case "converttobathroom":
       return "bathroom";
-    case "convert to ensuite".replace(/\s+/g, ""):
     case "converttoensuite":
       return "ensuite";
     default:
@@ -47,23 +43,19 @@ export function applyRoomChanges(
       const inferredType = actionType(change.action);
       const requestedType = String(change.newType || inferredType || "").trim().toLowerCase();
       const action = String(change.action || "").toLowerCase();
-      const isEnsuite = requestedType.includes("ensuite") || action.includes("converttoensuite");
+      const isEnsuite = requestedType.includes("ensuite") || action.replace(/\s+/g, "") === "converttoensuite";
       const isNoChange = !requestedType && action.replace(/\s+/g, "") === "nochange";
 
       if (isNoChange) continue;
 
-      // Do not turn an already-bedroom into another bedroom just because the
-      // model repeated it in its change list. The same rule applies to other
-      // direct type conversions. This prevents unchanged rooms being rendered
-      // as proposed changes.
+      // A conversion to the room's existing semantic type is not a real
+      // proposal. Ignore it so unchanged rooms cannot acquire false overlays.
       const typeIsNoOp = requestedType.length > 0 && isNoOpTypeChange(room.type || "", requestedType);
 
       if (!isEnsuite && requestedType && !typeIsNoOp) {
         room.type = change.newType || inferredType!;
       }
 
-      // Names are only proposal annotations. Do not make a room visually
-      // "changed" merely because the AI renamed every existing room.
       if (!typeIsNoOp && change.newName && !isEnsuite) {
         room.name = change.newName;
       } else if (!typeIsNoOp && inferredType === "bedroom" && !/bedroom/i.test(room.name)) {
@@ -74,9 +66,8 @@ export function applyRoomChanges(
         room.notes = [room.notes, "Proposed En-suite"].filter(Boolean).join("; ");
       }
 
-      // Splits, merges, extensions and partition/door changes require actual
-      // geometry edits. Never invent coordinates here; retain the detected
-      // geometry and record the planning action instead.
+      // Structural changes are recorded as planning annotations only. The
+      // application never invents new coordinates for these actions.
       if (change.action && /split|merge|extend|partition|doorway|opening/i.test(change.action)) {
         room.notes = [room.notes, change.action].filter(Boolean).join("; ");
       }
