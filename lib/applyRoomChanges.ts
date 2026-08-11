@@ -36,16 +36,25 @@ export function applyRoomChanges(
       if (!room) continue;
 
       const inferredType = actionType(change.action);
-      if (change.newType || inferredType) {
+      const requestedType = String(change.newType || inferredType || "").toLowerCase();
+
+      // An ensuite is an amenity within a bedroom, not a replacement for the
+      // bedroom itself. Without new geometry we preserve the bedroom and mark
+      // the proposed ensuite as a planning annotation.
+      const isEnsuite = requestedType.includes("ensuite");
+
+      if (!isEnsuite && (change.newType || inferredType)) {
         room.type = change.newType || inferredType!;
       }
 
-      if (change.newName) {
+      if (change.newName && !isEnsuite) {
         room.name = change.newName;
       } else if (inferredType === "bedroom" && !/bedroom/i.test(room.name)) {
         room.name = "Proposed Bedroom";
-      } else if (inferredType === "ensuite") {
-        room.name = "Proposed En-suite";
+      }
+
+      if (isEnsuite) {
+        room.notes = [room.notes, "Proposed En-suite"].filter(Boolean).join("; ");
       }
 
       // Splits, merges, extensions and partition/door changes require actual
