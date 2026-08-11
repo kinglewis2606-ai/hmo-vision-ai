@@ -1,215 +1,274 @@
-import { WallLine, DetectedRoom, DetectedFloor } from "@/lib/types/floorPlan";
+import { loadImage } from "./loadImage";
+import { DetectedRoom, DetectedFloor } from "@/lib/types/floorPlan";
 
-const CELL_SIZE = 6;
+const DARK_THRESHOLD = 130;
+const DILATION_SIZE = 7;
+const MAX_ANALYSIS_DIMENSION = 1400;
 
-function lineIntersectsRect(
-  wall: WallLine,
-  left: number,
-  top: number,
-  right: number,
-  bottom: number
-): boolean {
-  const pad = 3;
-
-  if (Math.abs(wall.y1 - wall.y2) <= 3) {
-    const y = wall.y1;
-    const wallLeft = Math.min(wall.x1, wall.x2);
-    const wallRight = Math.max(wall.x1, wall.x2);
-
-    return (
-      y >= top - pad &&
-      y <= bottom + pad &&
-      wallRight >= left - pad &&
-      wallLeft <= right + pad
-    );
-  }
-
-  if (Math.abs(wall.x1 - wall.x2) <= 3) {
-    const x = wall.x1;
-    const wallTop = Math.min(wall.y1, wall.y2);
-    const wallBottom = Math.max(wall.y1, wall.y2);
-
-    return (
-      x >= left - pad &&
-      x <= right + pad &&
-      wallBottom >= top - pad &&
-      wallTop <= bottom + pad
-    );
-  }
-
-  return false;
+interface Region {
+  area: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
-function detectRoomsInFloor(
-  walls: WallLine[],
-  floor: DetectedFloor,
-  startId: number
-): { rooms: DetectedRoom[]; nextId: number } {
-  const left = Math.max(0, floor.left ?? 0);
-  const top = Math.max(0, floor.top ?? 0);
-  const right = Math.max(left + 1, floor.right ?? Math.max(left + 1, ...walls.map(w => Math.max(w.x1, w.x2)), left + 1));
-  const bottom = Math.max(top + 1, floor.bottom ?? Math.max(top + 1, ...walls.map(w => Math.max(w.y1, w.y2)), top + 1));
-
-  const cols = Math.ceil((right - left) / CELL_SIZE);
-  const rows = Math.ceil((bottom - top) / CELL_SIZE);
-
-  if (cols < 2 || rows < 2) return { rooms: [], nextId: startId };
-
-  const blocked: boolean[][] = Array.from(
-    { length: rows },
-    () => Array(cols).fill(false)
-  );
-
-  // Treat the panel perimeter as a boundary. This prevents the open space
-  // around the drawing from swallowing all internal rooms into one component.
-  for (let c = 0; c < cols; c++) {
-    blocked[0][c] = true;
-    blocked[rows - 1][c] = true;
+function buildBarrier(data: Uint8Array): Uint8Array {
+  const barrier = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    barrier[i] = data[i] < DARK_THRESHOLD ? 1 : 0;
   }
-  for (let r = 0; r < rows; r++) {
-    blocked[r][0] = true;
-    blocked[r][cols - 1] = true;
-  }
+  return barrier;
+}
 
-  for (let r = 1; r < rows - 1; r++) {
-    for (let c = 1; c < cols - 1; c++) {
-      const cellLeft = left + c * CELL_SIZE;
-      const cellTop = top + r * CELL_SIZE;
-      const cellRight = Math.min(right, cellLeft + CELL_SIZE);
-      const cellBottom = Math.min(bottom, cellTop + CELL_SIZE);
+function resizeNearest(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  scale: number
+): { data: Uint8Array; width: number; height: number } {
+  if (scale <= 1) return { data: source, width, height };
 
-      blocked[r][c] = walls.some(w =>
-        lineIntersectsRect(w, cellLeft, cellTop, cellRight, cellBottom)
-      );
+  const outWidth = Math.max(1, Math.ceil(width / scale));
+  const outHeight = Math.max(1, Math.ceil(height / scale));
+  const output = new Uint8Array(outWidth * outHeight);
+
+  for (let y = 0; y < outHeight; y++) {
+    const sourceY = Math.min(height - 1, y * scale);
+    for (let x = 0; x < outWidth; x++) {
+      const sourceX = Math.min(width - 1, x * scale);
+      output[y * outWidth + x] = source[sourceY * width + sourceX];
     }
   }
 
-  const visited: boolean[][] = Array.from(
-    { length: rows },
-    () => Array(cols).fill(false)
-  );
+  return { data: output, width: outWidth, height: outHeight };
+}
 
-  const rooms: DetectedRoom[] = [];
-  let id = startId;
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
-  const floorArea = (right - left) * (bottom - top);
-  const minRoomArea = Math.max(600, floorArea * 0.004);
-  const maxRoomArea = floorArea * 0.45;
+function dilateBinary(
+  source: Uint8Array,
+  width: number,
+  height: number,
+  size: number
+): Uint8Array {
+  const radius = Math.floor(size / 2);
+  const output = new Uint8Array(source.length);
 
-  for (let r = 1; r < rows - 1; r++) {
-    for (let c = 1; c < cols - 1; c++) {
-      if (blocked[r][c] || visited[r][c]) continue;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let found = false;
 
-      const queue: Array<[number, number]> = [[c, r]];
-      const cells: Array<[number, number]> = [];
-      visited[r][c] = true;
+      for (let dy = -radius; dy <= radius && !found; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= height) continue;
 
-      while (queue.length) {
-        const [cx, cy] = queue.shift()!;
-        cells.push([cx, cy]);
-
-        for (const [dx, dy] of dirs) {
-          const nx = cx + dx;
-          const ny = cy + dy;
-
-          if (
-            nx <= 0 ||
-            ny <= 0 ||
-            nx >= cols - 1 ||
-            ny >= rows - 1 ||
-            blocked[ny][nx] ||
-            visited[ny][nx]
-          ) {
-            continue;
+        for (let dx = -radius; dx <= radius; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= width) continue;
+          if (source[yy * width + xx]) {
+            found = true;
+            break;
           }
-
-          visited[ny][nx] = true;
-          queue.push([nx, ny]);
         }
       }
 
-      if (cells.length < 4) continue;
-
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-
-      for (const [cx, cy] of cells) {
-        minX = Math.min(minX, cx);
-        minY = Math.min(minY, cy);
-        maxX = Math.max(maxX, cx);
-        maxY = Math.max(maxY, cy);
-      }
-
-      const room = {
-        id: `room-${id++}`,
-        x: left + minX * CELL_SIZE,
-        y: top + minY * CELL_SIZE,
-        width: Math.min(right, left + (maxX + 1) * CELL_SIZE) - (left + minX * CELL_SIZE),
-        height: Math.min(bottom, top + (maxY + 1) * CELL_SIZE) - (top + minY * CELL_SIZE),
-      };
-
-      const area = room.width * room.height;
-      const aspect = room.width / Math.max(1, room.height);
-
-      if (
-        area < minRoomArea ||
-        area > maxRoomArea ||
-        aspect < 0.12 ||
-        aspect > 8
-      ) {
-        continue;
-      }
-
-      rooms.push(room);
+      output[y * width + x] = found ? 1 : 0;
     }
   }
 
-  return { rooms, nextId: id };
+  return output;
+}
+
+function findEnclosedRegions(
+  barrier: Uint8Array,
+  width: number,
+  height: number
+): Region[] {
+  const closed = dilateBinary(barrier, width, height, DILATION_SIZE);
+  const visited = new Uint8Array(width * height);
+  const queue = new Int32Array(width * height);
+  const regions: Region[] = [];
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const start = y * width + x;
+      if (closed[start] || visited[start]) continue;
+
+      let head = 0;
+      let tail = 0;
+      let area = 0;
+      let minX = x;
+      let minY = y;
+      let maxX = x;
+      let maxY = y;
+      let touchesEdge = false;
+
+      queue[tail++] = start;
+      visited[start] = 1;
+
+      while (head < tail) {
+        const current = queue[head++];
+        const cy = Math.floor(current / width);
+        const cx = current - cy * width;
+        area++;
+
+        if (cx <= 1 || cy <= 1 || cx >= width - 2 || cy >= height - 2) {
+          touchesEdge = true;
+        }
+
+        if (cx < minX) minX = cx;
+        if (cy < minY) minY = cy;
+        if (cx > maxX) maxX = cx;
+        if (cy > maxY) maxY = cy;
+
+        const neighbours = [
+          current - 1,
+          current + 1,
+          current - width,
+          current + width,
+        ];
+
+        for (const next of neighbours) {
+          if (next < 0 || next >= closed.length || closed[next] || visited[next]) continue;
+
+          const ny = Math.floor(next / width);
+          const nx = next - ny * width;
+          if (nx <= 0 || ny <= 0 || nx >= width - 1 || ny >= height - 1) continue;
+
+          visited[next] = 1;
+          queue[tail++] = next;
+        }
+      }
+
+      if (touchesEdge) continue;
+
+      regions.push({
+        area,
+        x: minX,
+        y: minY,
+        width: maxX - minX + 1,
+        height: maxY - minY + 1,
+      });
+    }
+  }
+
+  return regions;
+}
+
+function isRoomRegion(region: Region, floorWidth: number, floorHeight: number): boolean {
+  const floorArea = floorWidth * floorHeight;
+  const fraction = region.area / floorArea;
+  const aspect = Math.max(
+    region.width / Math.max(1, region.height),
+    region.height / Math.max(1, region.width)
+  );
+
+  return (
+    region.area >= Math.max(250, floorArea * 0.008) &&
+    fraction <= 0.18 &&
+    region.width >= 10 &&
+    region.height >= 10 &&
+    aspect <= 6
+  );
+}
+
+function dedupeRegions(regions: Region[]): Region[] {
+  const sorted = [...regions].sort((a, b) => b.area - a.area);
+  const kept: Region[] = [];
+
+  for (const region of sorted) {
+    const overlaps = kept.some(existing => {
+      const left = Math.max(region.x, existing.x);
+      const top = Math.max(region.y, existing.y);
+      const right = Math.min(region.x + region.width, existing.x + existing.width);
+      const bottom = Math.min(region.y + region.height, existing.y + existing.height);
+      const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+      const smaller = Math.min(
+        region.width * region.height,
+        existing.width * existing.height
+      );
+      return smaller > 0 && intersection / smaller > 0.75;
+    });
+
+    if (!overlaps) kept.push(region);
+  }
+
+  return kept.sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
 export async function detectRooms(
-  walls: WallLine[],
-  floors?: DetectedFloor[]
+  imagePath: string,
+  floors: DetectedFloor[]
 ): Promise<DetectedRoom[]> {
-  if (!walls.length) {
-    console.log("Room detector received 0 walls");
-    return [];
-  }
-
-  console.log(`Room detector received ${walls.length} merged walls`);
-
   if (!floors?.length) {
-    console.log("No floor bounds supplied; cannot safely assign room geometry");
+    console.log("Room detector received no floor bounds");
     return [];
   }
+
+  const image = await loadImage(imagePath);
+  const scale = Math.max(
+    1,
+    Math.ceil(Math.max(image.width, image.height) / MAX_ANALYSIS_DIMENSION)
+  );
+  const source = resizeNearest(
+    buildBarrier(image.data),
+    image.width,
+    image.height,
+    scale
+  );
+
+  console.log(
+    `Room geometry analysis: ${image.width}x${image.height} -> ${source.width}x${source.height} (scale ${scale})`
+  );
 
   const rooms: DetectedRoom[] = [];
   let nextId = 1;
 
   for (const floor of floors) {
-    const floorWalls = walls.filter(w => {
-      const left = floor.left ?? 0;
-      const right = floor.right ?? Infinity;
-      const top = floor.top ?? 0;
-      const bottom = floor.bottom ?? Infinity;
+    const fullLeft = Math.max(0, floor.left ?? 0);
+    const fullTop = Math.max(0, floor.top ?? 0);
+    const fullRight = Math.min(image.width, floor.right ?? image.width);
+    const fullBottom = Math.min(image.height, floor.bottom ?? image.height);
 
-      return (
-        Math.max(w.x1, w.x2) >= left &&
-        Math.min(w.x1, w.x2) <= right &&
-        Math.max(w.y1, w.y2) >= top &&
-        Math.min(w.y1, w.y2) <= bottom
-      );
-    });
+    const left = Math.floor(fullLeft / scale);
+    const top = Math.floor(fullTop / scale);
+    const right = Math.max(left + 1, Math.ceil(fullRight / scale));
+    const bottom = Math.max(top + 1, Math.ceil(fullBottom / scale));
 
-    const result = detectRoomsInFloor(floorWalls, floor, nextId);
-    rooms.push(...result.rooms);
-    nextId = result.nextId;
+    const floorWidth = right - left;
+    const floorHeight = bottom - top;
+    const local = new Uint8Array(floorWidth * floorHeight);
 
-    console.log(`${floor.name}: ${result.rooms.length} candidate rooms`);
+    for (let y = 0; y < floorHeight; y++) {
+      for (let x = 0; x < floorWidth; x++) {
+        const sx = Math.min(source.width - 1, left + x);
+        const sy = Math.min(source.height - 1, top + y);
+        local[y * floorWidth + x] = source.data[sy * source.width + sx];
+      }
+    }
+
+    const regions = findEnclosedRegions(local, floorWidth, floorHeight)
+      .filter(region => isRoomRegion(region, floorWidth, floorHeight));
+
+    const uniqueRegions = dedupeRegions(regions);
+
+    for (const region of uniqueRegions) {
+      const x = fullLeft + region.x * scale;
+      const y = fullTop + region.y * scale;
+      const width = Math.max(1, region.width * scale);
+      const height = Math.max(1, region.height * scale);
+
+      rooms.push({
+        id: `room-${nextId++}`,
+        x,
+        y,
+        width,
+        height,
+      });
+    }
+
+    console.log(`${floor.name}: ${uniqueRegions.length} enclosed room regions`);
   }
 
-  console.log(`Detected ${rooms.length} rooms`);
+  console.log(`Detected ${rooms.length} rooms from real pixel geometry`);
   return rooms;
 }
