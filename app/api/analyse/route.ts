@@ -48,7 +48,13 @@ function reconcileCurrentCounts(result: any, changes: any[]): void {
   if (detectedBedrooms > 0) result.summary.bedrooms = detectedBedrooms;
   if (detectedBathrooms > 0) result.summary.bathrooms = detectedBathrooms;
 
-  const bedroomConversions = changes.filter(isBedroomChange).length;
+  const bedroomConversions = changes.filter((change: any) => {
+    if (!isBedroomChange(change)) return false;
+    const label = labels.find((candidate: any) => String(candidate?.roomId ?? "") === String(change?.roomId ?? ""));
+    const currentType = String(label?.type ?? "").toLowerCase();
+    return !currentType.includes("bedroom");
+  }).length;
+
   const currentBedrooms = Number(result?.summary?.bedrooms);
   const proposedBedrooms = Number(result?.summary?.possibleHMOBedrooms);
 
