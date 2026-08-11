@@ -24,9 +24,6 @@ export async function POST(req: Request) {
     const detectedWalls = await detectWalls(filePath, detectedFloors);
     const detectedRooms = await detectRooms(detectedWalls, detectedFloors);
     const originalFloorPlan = buildOriginalFloorPlan(detectedFloors, detectedRooms);
-    originalFloorPlan.metadata = {
-      imageWidth: (await import("sharp")).default(filePath).metadata ? undefined : undefined,
-    };
 
     const originalFloorPlanJson = JSON.stringify(originalFloorPlan, null, 2);
     const image = fs.readFileSync(filePath);
