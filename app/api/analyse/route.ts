@@ -4,7 +4,6 @@ import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
-import { detectWalls } from "@/lib/floorDetection/detectWalls";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
@@ -48,8 +47,6 @@ function reconcileCurrentCounts(result: any, changes: any[]): void {
     isBathroomType(String(label?.type ?? ""))
   ).length;
 
-  // The room labels are tied to real detected geometry, so they are the
-  // authoritative source for the existing-property counts.
   if (detectedBedrooms > 0) result.summary.bedrooms = detectedBedrooms;
   if (detectedBathrooms > 0) result.summary.bathrooms = detectedBathrooms;
 
@@ -75,9 +72,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Uploaded floor plan not found." });
     }
 
+    // Geometry is now extracted directly from the uploaded pixels. No generic
+    // rectangles or AI-created room geometry is introduced at this stage.
     const detectedFloors = await detectFloors(filePath);
-    const detectedWalls = await detectWalls(filePath, detectedFloors);
-    const detectedRooms = await detectRooms(detectedWalls, detectedFloors);
+    const detectedRooms = await detectRooms(filePath, detectedFloors);
     const originalFloorPlan = buildOriginalFloorPlan(detectedFloors, detectedRooms);
 
     const imageMetadata = await sharp(filePath).metadata();
@@ -120,24 +118,26 @@ export async function POST(req: Request) {
       const roomLabels = Array.isArray(result.roomLabels) ? result.roomLabels : [];
       const changes = Array.isArray(result.changes) ? result.changes : [];
 
-      // First label the real detected geometry. Then apply the planning
-      // changes to those exact same room IDs. No second/invented geometry set.
+      // AI may classify existing rooms and propose changes, but every change
+      // must map back onto one of the pixel-detected room IDs.
       applyRoomLabels(originalFloorPlan, roomLabels);
       result.originalFloorPlan = originalFloorPlan;
       reconcileCurrentCounts(result, changes);
-      result.proposedFloorPlan = applyRoomChanges(originalFloorPlan, changes);
 
       const validRoomIds = new Set(
         originalFloorPlan.floors.flatMap((floor: any) => floor.rooms.map((room: any) => room.id))
       );
+      const validChanges = changes.filter((change: any) => validRoomIds.has(change?.roomId));
       const invalidChanges = changes.filter((change: any) => !validRoomIds.has(change?.roomId));
       if (invalidChanges.length) {
         console.warn("Ignoring changes with unknown room IDs:", invalidChanges);
       }
 
+      result.proposedFloorPlan = applyRoomChanges(originalFloorPlan, validChanges);
+
       console.log("Detected rooms:", detectedRooms.length);
       console.log("AI room labels:", roomLabels.length);
-      console.log("AI changes:", changes.length);
+      console.log("AI changes:", validChanges.length);
       console.log(
         "Proposed rooms:",
         result.proposedFloorPlan.floors.reduce(
