@@ -2,8 +2,8 @@ import { loadImage } from "./loadImage";
 import { DetectedRoom, DetectedFloor } from "@/lib/types/floorPlan";
 
 const DARK_THRESHOLD = 130;
-const DILATION_SIZE = 7;
-const MAX_ANALYSIS_DIMENSION = 1400;
+const DILATION_SIZE = 5;
+const MAX_ANALYSIS_DIMENSION = 1000;
 
 interface Region {
   area: number;
@@ -34,9 +34,9 @@ function resizeNearest(
   const output = new Uint8Array(outWidth * outHeight);
 
   for (let y = 0; y < outHeight; y++) {
-    const sourceY = Math.min(height - 1, y * scale);
+    const sourceY = Math.min(height - 1, Math.floor(y * scale));
     for (let x = 0; x < outWidth; x++) {
-      const sourceX = Math.min(width - 1, x * scale);
+      const sourceX = Math.min(width - 1, Math.floor(x * scale));
       output[y * outWidth + x] = source[sourceY * width + sourceX];
     }
   }
@@ -56,11 +56,9 @@ function dilateBinary(
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let found = false;
-
       for (let dy = -radius; dy <= radius && !found; dy++) {
         const yy = y + dy;
         if (yy < 0 || yy >= height) continue;
-
         for (let dx = -radius; dx <= radius; dx++) {
           const xx = x + dx;
           if (xx < 0 || xx >= width) continue;
@@ -70,7 +68,6 @@ function dilateBinary(
           }
         }
       }
-
       output[y * width + x] = found ? 1 : 0;
     }
   }
@@ -111,29 +108,18 @@ function findEnclosedRegions(
         const cx = current - cy * width;
         area++;
 
-        if (cx <= 1 || cy <= 1 || cx >= width - 2 || cy >= height - 2) {
-          touchesEdge = true;
-        }
-
+        if (cx <= 1 || cy <= 1 || cx >= width - 2 || cy >= height - 2) touchesEdge = true;
         if (cx < minX) minX = cx;
         if (cy < minY) minY = cy;
         if (cx > maxX) maxX = cx;
         if (cy > maxY) maxY = cy;
 
-        const neighbours = [
-          current - 1,
-          current + 1,
-          current - width,
-          current + width,
-        ];
-
+        const neighbours = [current - 1, current + 1, current - width, current + width];
         for (const next of neighbours) {
           if (next < 0 || next >= closed.length || closed[next] || visited[next]) continue;
-
           const ny = Math.floor(next / width);
           const nx = next - ny * width;
           if (nx <= 0 || ny <= 0 || nx >= width - 1 || ny >= height - 1) continue;
-
           visited[next] = 1;
           queue[tail++] = next;
         }
@@ -163,10 +149,10 @@ function isRoomRegion(region: Region, floorWidth: number, floorHeight: number): 
   );
 
   return (
-    region.area >= Math.max(250, floorArea * 0.008) &&
+    region.area >= Math.max(80, floorArea * 0.008) &&
     fraction <= 0.18 &&
-    region.width >= 10 &&
-    region.height >= 10 &&
+    region.width >= 8 &&
+    region.height >= 8 &&
     aspect <= 6
   );
 }
@@ -182,10 +168,7 @@ function dedupeRegions(regions: Region[]): Region[] {
       const right = Math.min(region.x + region.width, existing.x + existing.width);
       const bottom = Math.min(region.y + region.height, existing.y + existing.height);
       const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
-      const smaller = Math.min(
-        region.width * region.height,
-        existing.width * existing.height
-      );
+      const smaller = Math.min(region.width * region.height, existing.width * existing.height);
       return smaller > 0 && intersection / smaller > 0.75;
     });
 
@@ -205,16 +188,8 @@ export async function detectRooms(
   }
 
   const image = await loadImage(imagePath);
-  const scale = Math.max(
-    1,
-    Math.ceil(Math.max(image.width, image.height) / MAX_ANALYSIS_DIMENSION)
-  );
-  const source = resizeNearest(
-    buildBarrier(image.data),
-    image.width,
-    image.height,
-    scale
-  );
+  const scale = Math.max(1, Math.ceil(Math.max(image.width, image.height) / MAX_ANALYSIS_DIMENSION));
+  const source = resizeNearest(buildBarrier(image.data), image.width, image.height, scale);
 
   console.log(
     `Room geometry analysis: ${image.width}x${image.height} -> ${source.width}x${source.height} (scale ${scale})`
@@ -248,21 +223,15 @@ export async function detectRooms(
 
     const regions = findEnclosedRegions(local, floorWidth, floorHeight)
       .filter(region => isRoomRegion(region, floorWidth, floorHeight));
-
     const uniqueRegions = dedupeRegions(regions);
 
     for (const region of uniqueRegions) {
-      const x = fullLeft + region.x * scale;
-      const y = fullTop + region.y * scale;
-      const width = Math.max(1, region.width * scale);
-      const height = Math.max(1, region.height * scale);
-
       rooms.push({
         id: `room-${nextId++}`,
-        x,
-        y,
-        width,
-        height,
+        x: fullLeft + region.x * scale,
+        y: fullTop + region.y * scale,
+        width: Math.max(1, region.width * scale),
+        height: Math.max(1, region.height * scale),
       });
     }
 
