@@ -11,11 +11,9 @@ import { buildHMOAnalysisPrompt } from "@/lib/prompts/hmoAnalysisPrompt";
 import { applyRoomChanges } from "@/lib/applyRoomChanges";
 
 function isBedroomChange(change: any): boolean {
-  const action = String(change?.action ?? "").toLowerCase();
+  const action = String(change?.action ?? "").toLowerCase().replace(/\s+/g, "");
   const type = String(change?.newType ?? "").toLowerCase();
-  return action.includes("converttobedroom") ||
-    action.includes("convert to bedroom") ||
-    type.includes("bedroom");
+  return action === "converttobedroom" || type.includes("bedroom");
 }
 
 function isBathroomType(type: string): boolean {
@@ -72,8 +70,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Uploaded floor plan not found." });
     }
 
-    // Geometry is now extracted directly from the uploaded pixels. No generic
-    // rectangles or AI-created room geometry is introduced at this stage.
+    // This is the immutable geometry source of truth. AI labels and proposed
+    // changes are always applied to clones so the renderer can never confuse
+    // room identification with an actual proposed change.
     const detectedFloors = await detectFloors(filePath);
     const detectedRooms = await detectRooms(filePath, detectedFloors);
     const originalFloorPlan = buildOriginalFloorPlan(detectedFloors, detectedRooms);
@@ -118,38 +117,47 @@ export async function POST(req: Request) {
       const roomLabels = Array.isArray(result.roomLabels) ? result.roomLabels : [];
       const changes = Array.isArray(result.changes) ? result.changes : [];
 
-      // AI may classify existing rooms and propose changes, but every change
-      // must map back onto one of the pixel-detected room IDs.
-      applyRoomLabels(originalFloorPlan, roomLabels);
-      result.originalFloorPlan = originalFloorPlan;
+      // Keep the detected geometry immutable. Labels are useful metadata for
+      // the report, but they are NOT visual room changes.
+      const labelledFloorPlan = structuredClone(originalFloorPlan);
+      applyRoomLabels(labelledFloorPlan, roomLabels);
       reconcileCurrentCounts(result, changes);
 
       const validRoomIds = new Set(
         originalFloorPlan.floors.flatMap((floor: any) => floor.rooms.map((room: any) => room.id))
       );
-      const validChanges = changes.filter((change: any) => validRoomIds.has(change?.roomId));
-      const invalidChanges = changes.filter((change: any) => !validRoomIds.has(change?.roomId));
+      const validChanges = changes.filter((change: any) => validRoomIds.has(String(change?.roomId ?? "")));
+      const invalidChanges = changes.filter((change: any) => !validRoomIds.has(String(change?.roomId ?? "")));
       if (invalidChanges.length) {
         console.warn("Ignoring changes with unknown room IDs:", invalidChanges);
       }
 
-      result.proposedFloorPlan = applyRoomChanges(originalFloorPlan, validChanges);
+      // The proposed plan starts from the labelled geometry, then applies only
+      // explicit AI changes. No new coordinates are invented here.
+      const proposedFloorPlan = applyRoomChanges(labelledFloorPlan, validChanges);
+
+      result.originalFloorPlan = originalFloorPlan;
+      result.proposedFloorPlan = proposedFloorPlan;
 
       console.log("Detected rooms:", detectedRooms.length);
       console.log("AI room labels:", roomLabels.length);
       console.log("AI changes:", validChanges.length);
       console.log(
         "Proposed rooms:",
-        result.proposedFloorPlan.floors.reduce(
+        proposedFloorPlan.floors.reduce(
           (total: number, floor: any) => total + floor.rooms.length,
           0
         )
       );
 
+      // The renderer receives the explicit change list. It does NOT infer
+      // changes from room labels, which prevents every detected room being
+      // coloured simply because the AI classified it.
       result.generatedLayoutImage = renderFloorPlan(
-        result.originalFloorPlan,
-        result.proposedFloorPlan,
-        `data:${mime};base64,${base64}`
+        originalFloorPlan,
+        proposedFloorPlan,
+        `data:${mime};base64,${base64}`,
+        validChanges
       );
 
       return NextResponse.json({ success: true, result });
