@@ -54,7 +54,13 @@ function shouldRenderChange(change: RoomChange, before: any, after: any): boolea
 
   const typeChanged = String(before?.type || "").toLowerCase() !== String(after?.type || "").toLowerCase();
   const structuralChange = /split|merge|extend|partition|doorway|opening/.test(action);
-  return typeChanged || structuralChange;
+
+  // ConvertToEnsuite is intentionally allowed through even when the base room
+  // remains typed as bedroom. The ensuite is an added amenity, not a room-type
+  // replacement, and therefore must still appear on the proposed image.
+  const amenityChange = action === "converttoensuite" || action === "extendbathroom";
+
+  return typeChanged || structuralChange || amenityChange;
 }
 
 function fixtureOverlay(room: any, change: RoomChange): string {
@@ -68,24 +74,31 @@ function fixtureOverlay(room: any, change: RoomChange): string {
   if (!(w > 20 && h > 20)) return "";
 
   const parts: string[] = [];
+  const isWetRoom =
+    type.includes("bath") ||
+    type.includes("shower") ||
+    type.includes("ensuite") ||
+    /converttobathroom|converttoensuite|extendbathroom/.test(action);
 
-  // A WC/bathroom conversion should visibly read as a shower room rather than
-  // merely a coloured rectangle. Keep the existing plan underneath and draw
-  // lightweight, deterministic fixtures inside the real room bounds.
-  if (type.includes("bath") || type.includes("shower") || type.includes("ensuite") || /converttobathroom|converttoensuite|extendbathroom/.test(action)) {
+  if (isWetRoom) {
     const pad = Math.max(8, Math.min(w, h) * 0.08);
     const showerW = Math.max(24, Math.min(w * 0.42, h * 0.42));
     const showerH = showerW;
     const sx = x + w - showerW - pad;
     const sy = y + pad;
+
     parts.push(`<rect x="${sx}" y="${sy}" width="${showerW}" height="${showerH}" rx="4" fill="none" stroke="#047857" stroke-width="4"/>`);
     parts.push(`<circle cx="${sx + showerW / 2}" cy="${sy + showerH / 2}" r="${Math.max(4, showerW * 0.08)}" fill="none" stroke="#047857" stroke-width="3"/>`);
     parts.push(`<path d="M ${sx + showerW * 0.72} ${sy + showerH * 0.2} q ${showerW * 0.2} ${showerH * 0.15} 0 ${showerH * 0.35}" fill="none" stroke="#047857" stroke-width="3"/>`);
+
+    // Small WC/sink symbols make a converted shower room immediately legible
+    // without pretending to know exact fixture locations from the source plan.
+    const cx = x + pad + Math.min(w * 0.16, 34);
+    const cy = y + h - pad - Math.min(h * 0.18, 34);
+    parts.push(`<ellipse cx="${cx}" cy="${cy}" rx="${Math.max(8, w * 0.07)}" ry="${Math.max(11, h * 0.09)}" fill="none" stroke="#047857" stroke-width="3"/>`);
+    parts.push(`<circle cx="${x + pad + Math.min(w * 0.36, 60)}" cy="${y + h - pad - Math.min(h * 0.2, 38)}" r="${Math.max(6, Math.min(w, h) * 0.045)}" fill="white" stroke="#047857" stroke-width="3"/>`);
   }
 
-  // For an explicit room split, show the proposed new partition in the
-  // correct orientation. This is deliberately derived from the real room
-  // bounds; no invented global coordinates are used.
   if (action === "splitroom" && change.split) {
     if (change.split.direction === "vertical") {
       const px = x + w / 2;
@@ -103,7 +116,7 @@ function actionLabel(change: RoomChange, room: any): string {
   const action = normaliseAction(change.action);
   if (action === "converttobedroom") return change.newName || "Proposed Bedroom";
   if (action === "converttobathroom") return change.newName || "Proposed Shower Room";
-  if (action === "converttoensuite") return change.newName || "Proposed En-suite";
+  if (action === "converttoensuite") return change.newName || "Bedroom + En-suite";
   if (action === "splitroom") {
     const first = change.split?.firstName || "Room A";
     const second = change.split?.secondName || "Room B";
@@ -115,8 +128,8 @@ function actionLabel(change: RoomChange, room: any): string {
 /**
  * Render the immutable uploaded plan and annotate ONLY rooms referenced by
  * meaningful AI changes. The original walls remain visible underneath. The
- * renderer then adds deterministic proposed work markers: room conversion
- * labels, bathroom/shower fixtures, and explicit split partitions.
+ * renderer adds deterministic proposed-work markers for room conversions,
+ * shower/en-suite fixtures and explicit split partitions.
  */
 export function renderFloorPlan(
   original: FloorPlan,
@@ -158,6 +171,9 @@ export function renderFloorPlan(
     const fontSize = Math.max(12, Math.min(28, Math.min(room.width, room.height) / 7));
     const label = escapeXml(actionLabel(change, room));
     const fixture = fixtureOverlay(room, change);
+    const badgeWidth = Math.min(Math.max(room.width * 0.84, 120), 300);
+    const badgeX = room.x + room.width / 2 - badgeWidth / 2;
+    const badgeY = room.y + room.height / 2 - fontSize - 12;
 
     return `
       <rect
@@ -173,9 +189,9 @@ export function renderFloorPlan(
       />
       ${fixture}
       <rect
-        x="${room.x + room.width / 2 - Math.min(room.width * 0.42, 150)}"
-        y="${room.y + room.height / 2 - fontSize - 12}"
-        width="${Math.min(room.width * 0.84, 300)}"
+        x="${badgeX}"
+        y="${badgeY}"
+        width="${badgeWidth}"
         height="${fontSize + 24}"
         rx="8"
         fill="#111827"
