@@ -70,9 +70,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Uploaded floor plan not found." });
     }
 
-    // This is the immutable geometry source of truth. AI labels and proposed
-    // changes are always applied to clones so the renderer can never confuse
-    // room identification with an actual proposed change.
+    // Immutable geometry source of truth.
     const detectedFloors = await detectFloors(filePath);
     const detectedRooms = await detectRooms(filePath, detectedFloors);
     const originalFloorPlan = buildOriginalFloorPlan(detectedFloors, detectedRooms);
@@ -117,8 +115,9 @@ export async function POST(req: Request) {
       const roomLabels = Array.isArray(result.roomLabels) ? result.roomLabels : [];
       const changes = Array.isArray(result.changes) ? result.changes : [];
 
-      // Keep the detected geometry immutable. Labels are useful metadata for
-      // the report, but they are NOT visual room changes.
+      // Semantic baseline: same real geometry, now with the AI's room
+      // classifications. This is separate from result.originalFloorPlan so
+      // labels cannot masquerade as proposed construction work.
       const labelledFloorPlan = structuredClone(originalFloorPlan);
       applyRoomLabels(labelledFloorPlan, roomLabels);
       reconcileCurrentCounts(result, changes);
@@ -132,8 +131,8 @@ export async function POST(req: Request) {
         console.warn("Ignoring changes with unknown room IDs:", invalidChanges);
       }
 
-      // The proposed plan starts from the labelled geometry, then applies only
-      // explicit AI changes. No new coordinates are invented here.
+      // Apply only explicit proposed works to the semantic baseline. Geometry
+      // remains the detected geometry; no AI-generated coordinates are used.
       const proposedFloorPlan = applyRoomChanges(labelledFloorPlan, validChanges);
 
       result.originalFloorPlan = originalFloorPlan;
@@ -150,11 +149,11 @@ export async function POST(req: Request) {
         )
       );
 
-      // The renderer receives the explicit change list. It does NOT infer
-      // changes from room labels, which prevents every detected room being
-      // coloured simply because the AI classified it.
+      // Compare semantic room classifications, but always draw them over the
+      // untouched uploaded image. Therefore existing bedrooms remain untouched
+      // and only a genuine conversion (e.g. living room -> bedroom) is shown.
       result.generatedLayoutImage = renderFloorPlan(
-        originalFloorPlan,
+        labelledFloorPlan,
         proposedFloorPlan,
         `data:${mime};base64,${base64}`,
         validChanges
