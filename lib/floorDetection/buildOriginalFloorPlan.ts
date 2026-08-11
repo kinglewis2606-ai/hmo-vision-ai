@@ -1,4 +1,4 @@
-import { DetectedFloor, DetectedRoom } from "@/lib/types/floorPlan";
+import { DetectedFloor, DetectedRoom, FloorPlan } from "@/lib/types/floorPlan";
 
 function touching(a: DetectedRoom, b: DetectedRoom): boolean {
   const tolerance = 15;
@@ -38,10 +38,9 @@ function getAdjacentRooms(
 export function buildOriginalFloorPlan(
   floors: DetectedFloor[],
   rooms: DetectedRoom[]
-) {
+): FloorPlan {
   return {
     floors: floors.map((floor, floorIndex) => {
-
       const floorRooms = rooms.filter(
         room =>
           room.y >= floor.top &&
@@ -49,54 +48,31 @@ export function buildOriginalFloorPlan(
       );
 
       return {
-
         name: floor.name,
-
         level: floorIndex,
-
         rooms: floorRooms.map(room => ({
-
           id: room.id,
-
           name: "Unknown Room",
-
           type: "unknown",
-
           x: room.x,
-
           y: room.y,
-
           width: room.width,
-
           height: room.height,
-
           approxAreaSqm: Number(
             ((room.width * room.height) / 10000).toFixed(1)
           ),
-
           approxWidthM: Number(
             (room.width / 100).toFixed(1)
           ),
-
           approxDepthM: Number(
             (room.height / 100).toFixed(1)
           ),
-
           shape: "rectangle",
-
-          adjacentRooms: getAdjacentRooms(
-            room,
-            floorRooms
-          ),
-
+          adjacentRooms: getAdjacentRooms(room, floorRooms),
           doors: [],
-
           windows: [],
-
           notes: "",
-
           confidence: "Geometry Detection"
-
         }))
       };
     })
