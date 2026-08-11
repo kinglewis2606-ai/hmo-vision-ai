@@ -66,6 +66,51 @@ function reconcileCurrentCounts(result: any, changes: any[]): void {
   }
 }
 
+/**
+ * The detector owns geometry; the model owns semantic room identification.
+ * To make the mapping deterministic for vision, send the model a second copy
+ * of the uploaded image with the real detected room IDs drawn directly over
+ * their geometry. The original upload is never modified or stored as the
+ * proposed image.
+ */
+async function buildAnnotatedAnalysisImage(
+  filePath: string,
+  floorPlan: any
+): Promise<{ dataUri: string; mime: string }> {
+  const source = fs.readFileSync(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  let mime = "image/jpeg";
+  if (ext === ".png") mime = "image/png";
+  if (ext === ".webp") mime = "image/webp";
+
+  const width = floorPlan.metadata?.imageWidth ?? 1600;
+  const height = floorPlan.metadata?.imageHeight ?? 1200;
+  const labels = floorPlan.floors.flatMap((floor: any) =>
+    floor.rooms.map((room: any) => {
+      const cx = room.x + room.width / 2;
+      const cy = room.y + room.height / 2;
+      const fontSize = Math.max(18, Math.min(34, Math.min(room.width, room.height) / 5));
+      return `
+        <rect x="${room.x}" y="${room.y}" width="${room.width}" height="${room.height}"
+          fill="none" stroke="#ff0055" stroke-width="4" stroke-dasharray="10 6"/>
+        <rect x="${cx - 55}" y="${cy - fontSize - 8}" width="110" height="${fontSize + 16}"
+          rx="8" fill="#ff0055" fill-opacity="0.92"/>
+        <text x="${cx}" y="${cy + 2}" text-anchor="middle" dominant-baseline="middle"
+          font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="700" fill="white">${room.id}</text>
+      `;
+    })
+  ).join("\n");
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+    <rect width="100%" height="100%" fill="white"/>
+    <image href="data:${mime};base64,${source.toString("base64")}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/>
+    <g>${labels}</g>
+  </svg>`;
+
+  const annotated = await sharp(Buffer.from(svg)).png().toBuffer();
+  return { dataUri: `data:image/png;base64,${annotated.toString("base64")}`, mime: "image/png" };
+}
+
 export async function POST(req: Request) {
   console.log("=== ANALYSE ROUTE HIT ===");
   try {
@@ -76,7 +121,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Uploaded floor plan not found." });
     }
 
-    // Immutable geometry source of truth.
     const detectedFloors = await detectFloors(filePath);
     const detectedRooms = await detectRooms(filePath, detectedFloors);
     const originalFloorPlan = buildOriginalFloorPlan(detectedFloors, detectedRooms);
@@ -89,15 +133,12 @@ export async function POST(req: Request) {
     };
 
     const originalFloorPlanJson = JSON.stringify(originalFloorPlan, null, 2);
-    const image = fs.readFileSync(filePath);
-    const ext = path.extname(filename).toLowerCase();
-    let mime = "image/jpeg";
-    if (ext === ".png") mime = "image/png";
-    if (ext === ".webp") mime = "image/webp";
-    const base64 = image.toString("base64");
-
     const promptText = buildHMOAnalysisPrompt(address, propertyType)
       .replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", originalFloorPlanJson);
+
+    // Give vision an explicit visual ID map. This prevents room-5/room-6/etc.
+    // from being guessed from array order and fixes semantic-to-geometry drift.
+    const annotated = await buildAnnotatedAnalysisImage(filePath, originalFloorPlan);
 
     const response = await openai.responses.create({
       model: "gpt-5",
@@ -105,7 +146,7 @@ export async function POST(req: Request) {
         role: "user",
         content: [
           { type: "input_text", text: promptText },
-          { type: "input_image", image_url: `data:${mime};base64,${base64}`, detail: "high" },
+          { type: "input_image", image_url: annotated.dataUri, detail: "high" },
         ],
       }],
     });
@@ -121,9 +162,6 @@ export async function POST(req: Request) {
       const roomLabels = Array.isArray(result.roomLabels) ? result.roomLabels : [];
       const changes = Array.isArray(result.changes) ? result.changes : [];
 
-      // Semantic baseline: same real geometry, now with the AI's room
-      // classifications. This is separate from result.originalFloorPlan so
-      // labels cannot masquerade as proposed construction work.
       const labelledFloorPlan = structuredClone(originalFloorPlan);
       applyRoomLabels(labelledFloorPlan, roomLabels);
       reconcileCurrentCounts(result, changes);
@@ -137,33 +175,20 @@ export async function POST(req: Request) {
         console.warn("Ignoring changes with unknown room IDs:", invalidChanges);
       }
 
-      // Apply only explicit proposed works to the semantic baseline. Geometry
-      // remains the detected geometry; no AI-generated coordinates are used.
       const proposedFloorPlan = applyRoomChanges(labelledFloorPlan, validChanges);
 
       result.originalFloorPlan = originalFloorPlan;
       result.proposedFloorPlan = proposedFloorPlan;
+      result.generatedLayoutImage = renderFloorPlan(
+        labelledFloorPlan,
+        proposedFloorPlan,
+        `data:${(path.extname(filename).toLowerCase() === ".png" ? "image/png" : path.extname(filename).toLowerCase() === ".webp" ? "image/webp" : "image/jpeg")};base64,${fs.readFileSync(filePath).toString("base64")}`,
+        validChanges
+      );
 
       console.log("Detected rooms:", detectedRooms.length);
       console.log("AI room labels:", roomLabels.length);
       console.log("AI changes:", validChanges.length);
-      console.log(
-        "Proposed rooms:",
-        proposedFloorPlan.floors.reduce(
-          (total: number, floor: any) => total + floor.rooms.length,
-          0
-        )
-      );
-
-      // Compare semantic room classifications, but always draw them over the
-      // untouched uploaded image. Therefore existing bedrooms remain untouched
-      // and only a genuine conversion (e.g. living room -> bedroom) is shown.
-      result.generatedLayoutImage = renderFloorPlan(
-        labelledFloorPlan,
-        proposedFloorPlan,
-        `data:${mime};base64,${base64}`,
-        validChanges
-      );
 
       return NextResponse.json({ success: true, result });
     } catch (err: any) {
