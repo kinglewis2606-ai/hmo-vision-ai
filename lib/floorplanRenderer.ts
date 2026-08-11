@@ -50,18 +50,73 @@ function shouldRenderChange(change: RoomChange, before: any, after: any): boolea
   if (!action || action === "nochange") return false;
 
   const target = targetType(change);
-  if (target && isNoOpConversion(String(before?.type || ""), target)) {
-    return false;
+  if (target && isNoOpConversion(String(before?.type || ""), target)) return false;
+
+  const typeChanged = String(before?.type || "").toLowerCase() !== String(after?.type || "").toLowerCase();
+  const structuralChange = /split|merge|extend|partition|doorway|opening/.test(action);
+  return typeChanged || structuralChange;
+}
+
+function fixtureOverlay(room: any, change: RoomChange): string {
+  const action = normaliseAction(change.action);
+  const type = String(room.type || "").toLowerCase();
+  const x = Number(room.x);
+  const y = Number(room.y);
+  const w = Number(room.width);
+  const h = Number(room.height);
+
+  if (!(w > 20 && h > 20)) return "";
+
+  const parts: string[] = [];
+
+  // A WC/bathroom conversion should visibly read as a shower room rather than
+  // merely a coloured rectangle. Keep the existing plan underneath and draw
+  // lightweight, deterministic fixtures inside the real room bounds.
+  if (type.includes("bath") || type.includes("shower") || type.includes("ensuite") || /converttobathroom|converttoensuite|extendbathroom/.test(action)) {
+    const pad = Math.max(8, Math.min(w, h) * 0.08);
+    const showerW = Math.max(24, Math.min(w * 0.42, h * 0.42));
+    const showerH = showerW;
+    const sx = x + w - showerW - pad;
+    const sy = y + pad;
+    parts.push(`<rect x="${sx}" y="${sy}" width="${showerW}" height="${showerH}" rx="4" fill="none" stroke="#047857" stroke-width="4"/>`);
+    parts.push(`<circle cx="${sx + showerW / 2}" cy="${sy + showerH / 2}" r="${Math.max(4, showerW * 0.08)}" fill="none" stroke="#047857" stroke-width="3"/>`);
+    parts.push(`<path d="M ${sx + showerW * 0.72} ${sy + showerH * 0.2} q ${showerW * 0.2} ${showerH * 0.15} 0 ${showerH * 0.35}" fill="none" stroke="#047857" stroke-width="3"/>`);
   }
 
-  return true;
+  // For an explicit room split, show the proposed new partition in the
+  // correct orientation. This is deliberately derived from the real room
+  // bounds; no invented global coordinates are used.
+  if (action === "splitroom" && change.split) {
+    if (change.split.direction === "vertical") {
+      const px = x + w / 2;
+      parts.push(`<line x1="${px}" y1="${y}" x2="${px}" y2="${y + h}" stroke="#dc2626" stroke-width="6" stroke-dasharray="14 8"/>`);
+    } else {
+      const py = y + h / 2;
+      parts.push(`<line x1="${x}" y1="${py}" x2="${x + w}" y2="${py}" stroke="#dc2626" stroke-width="6" stroke-dasharray="14 8"/>`);
+    }
+  }
+
+  return parts.join("\n");
+}
+
+function actionLabel(change: RoomChange, room: any): string {
+  const action = normaliseAction(change.action);
+  if (action === "converttobedroom") return change.newName || "Proposed Bedroom";
+  if (action === "converttobathroom") return change.newName || "Proposed Shower Room";
+  if (action === "converttoensuite") return change.newName || "Proposed En-suite";
+  if (action === "splitroom") {
+    const first = change.split?.firstName || "Room A";
+    const second = change.split?.secondName || "Room B";
+    return `${first} + ${second}`;
+  }
+  return change.newName || room.name || room.type || "Proposed Room";
 }
 
 /**
- * Render the immutable uploaded plan and highlight ONLY rooms referenced by
- * meaningful AI changes. Room labels are deliberately excluded from the
- * change detection path so labelling every detected room cannot colour the
- * whole plan.
+ * Render the immutable uploaded plan and annotate ONLY rooms referenced by
+ * meaningful AI changes. The original walls remain visible underneath. The
+ * renderer then adds deterministic proposed work markers: room conversion
+ * labels, bathroom/shower fixtures, and explicit split partitions.
  */
 export function renderFloorPlan(
   original: FloorPlan,
@@ -82,7 +137,7 @@ export function renderFloorPlan(
     for (const room of floor.rooms) proposedRooms.set(room.id.trim().toLowerCase(), room);
   }
 
-  const changedRooms: any[] = [];
+  const changedRooms: Array<{ room: any; change: RoomChange }> = [];
   const seen = new Set<string>();
 
   for (const change of changes) {
@@ -94,21 +149,15 @@ export function renderFloorPlan(
     if (!before || !after) continue;
     if (!shouldRenderChange(change, before, after)) continue;
 
-    const action = normaliseAction(change.action);
-    const typeChanged = String(before.type || "").toLowerCase() !== String(after.type || "").toLowerCase();
-    const structuralChange = /split|merge|extend|partition|doorway|opening/.test(action);
-
-    if (!typeChanged && !structuralChange) continue;
-
     changedRooms.push({ room: after, change });
     seen.add(id);
   }
 
   const overlays = changedRooms.map(({ room, change }) => {
-    const label = escapeXml(room.name || room.type || "Proposed Room");
     const fill = roomFill(room.type || "");
-    const fontSize = Math.max(12, Math.min(30, Math.min(room.width, room.height) / 6));
-    const actionLabel = normaliseAction(change.action).includes("bedroom") ? "Proposed Bedroom" : label;
+    const fontSize = Math.max(12, Math.min(28, Math.min(room.width, room.height) / 7));
+    const label = escapeXml(actionLabel(change, room));
+    const fixture = fixtureOverlay(room, change);
 
     return `
       <rect
@@ -117,10 +166,20 @@ export function renderFloorPlan(
         width="${room.width}"
         height="${room.height}"
         fill="${fill}"
-        fill-opacity="0.32"
-        stroke="#2563eb"
+        fill-opacity="0.22"
+        stroke="#1d4ed8"
         stroke-width="5"
         stroke-dasharray="12 7"
+      />
+      ${fixture}
+      <rect
+        x="${room.x + room.width / 2 - Math.min(room.width * 0.42, 150)}"
+        y="${room.y + room.height / 2 - fontSize - 12}"
+        width="${Math.min(room.width * 0.84, 300)}"
+        height="${fontSize + 24}"
+        rx="8"
+        fill="#111827"
+        fill-opacity="0.86"
       />
       <text
         x="${room.x + room.width / 2}"
@@ -130,11 +189,8 @@ export function renderFloorPlan(
         font-weight="700"
         text-anchor="middle"
         dominant-baseline="middle"
-        fill="#111827"
-        stroke="white"
-        stroke-width="4"
-        paint-order="stroke"
-      >${escapeXml(actionLabel)}</text>
+        fill="white"
+      >${label}</text>
     `;
   }).join("\n");
 
