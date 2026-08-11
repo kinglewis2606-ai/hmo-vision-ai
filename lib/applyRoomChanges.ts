@@ -3,23 +3,17 @@ import { FloorPlan, RoomChange } from "@/lib/types/floorPlan";
 function actionType(action?: string): string | undefined {
   const value = (action || "").toLowerCase().replace(/\s+/g, "");
   switch (value) {
-    case "converttobedroom":
-      return "bedroom";
-    case "converttokitchen":
-      return "kitchen";
-    case "converttobathroom":
-      return "bathroom";
-    case "converttoensuite":
-      return "ensuite";
-    default:
-      return undefined;
+    case "converttobedroom": return "bedroom";
+    case "converttokitchen": return "kitchen";
+    case "converttobathroom": return "bathroom";
+    case "converttoensuite": return "ensuite";
+    default: return undefined;
   }
 }
 
 function isNoOpTypeChange(currentType: string, requestedType: string): boolean {
   const current = currentType.toLowerCase();
   const requested = requestedType.toLowerCase();
-
   if (requested === "bedroom") return current.includes("bedroom");
   if (requested === "bathroom") return current.includes("bathroom") || current.includes("shower") || current.includes("ensuite");
   if (requested === "kitchen") return current.includes("kitchen");
@@ -27,10 +21,7 @@ function isNoOpTypeChange(currentType: string, requestedType: string): boolean {
   return current === requested;
 }
 
-export function applyRoomChanges(
-  floorPlan: FloorPlan,
-  changes: RoomChange[]
-): FloorPlan {
+export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): FloorPlan {
   const updated = structuredClone(floorPlan);
 
   for (const change of changes || []) {
@@ -43,35 +34,29 @@ export function applyRoomChanges(
       const inferredType = actionType(change.action);
       const requestedType = String(change.newType || inferredType || "").trim().toLowerCase();
       const action = String(change.action || "").toLowerCase();
-      const isEnsuite = requestedType.includes("ensuite") || action.replace(/\s+/g, "") === "converttoensuite";
-      const isNoChange = !requestedType && action.replace(/\s+/g, "") === "nochange";
-
+      const normalisedAction = action.replace(/\s+/g, "");
+      const isEnsuite = requestedType.includes("ensuite") || normalisedAction === "converttoensuite";
+      const isNoChange = !requestedType && normalisedAction === "nochange";
       if (isNoChange) continue;
 
-      // A conversion to the room's existing semantic type is not a real
-      // proposal. Ignore it so unchanged rooms cannot acquire false overlays.
       const typeIsNoOp = requestedType.length > 0 && isNoOpTypeChange(room.type || "", requestedType);
 
-      if (!isEnsuite && requestedType && !typeIsNoOp) {
-        room.type = change.newType || inferredType!;
-      }
-
-      if (!typeIsNoOp && change.newName && !isEnsuite) {
-        room.name = change.newName;
-      } else if (!typeIsNoOp && inferredType === "bedroom" && !/bedroom/i.test(room.name)) {
-        room.name = "Proposed Bedroom";
-      }
-
+      // For an ensuite conversion the target must be a service room (normally
+      // an existing WC/shower/bathroom). We make the proposed geometry visibly
+      // represent the upgraded room instead of merely adding a text note.
       if (isEnsuite && !typeIsNoOp) {
-        room.notes = [room.notes, "Proposed En-suite"].filter(Boolean).join("; ");
+        room.type = "ensuite";
+        room.name = change.newName || "En-suite";
+        room.notes = [room.notes, "Proposed en-suite conversion"].filter(Boolean).join("; ");
+      } else if (requestedType && !typeIsNoOp) {
+        room.type = change.newType || inferredType!;
+        if (change.newName) room.name = change.newName;
+        else if (inferredType === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom";
       }
 
-      // Structural changes are recorded as planning annotations only. The
-      // application never invents new coordinates for these actions.
       if (change.action && /split|merge|extend|partition|doorway|opening/i.test(change.action)) {
         room.notes = [room.notes, change.action].filter(Boolean).join("; ");
       }
-
       if (change.reason && !typeIsNoOp) {
         room.notes = [room.notes, change.reason].filter(Boolean).join("; ");
       }
