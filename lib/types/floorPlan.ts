@@ -92,7 +92,15 @@ export interface FloorPlan {
 
 export interface RoomChange {
   roomId: string;
+  action?: string;
   newType?: string;
   newName?: string;
   reason?: string;
+  split?: {
+    firstName?: string;
+    firstType?: string;
+    secondName?: string;
+    secondType?: string;
+    direction?: "horizontal" | "vertical";
+  };
 }
