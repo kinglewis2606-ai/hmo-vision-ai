@@ -1,7 +1,8 @@
 import { FloorPlan, RoomChange } from "@/lib/types/floorPlan";
 
 function actionType(action?: string): string | undefined {
-  switch ((action || "").toLowerCase()) {
+  const value = (action || "").toLowerCase();
+  switch (value) {
     case "convert to bedroom":
     case "converttobedroom":
       return "bedroom";
@@ -10,9 +11,10 @@ function actionType(action?: string): string | undefined {
       return "kitchen";
     case "convert to bathroom":
     case "converttobathroom":
+      return "bathroom";
     case "convert to ensuite":
     case "converttoensuite":
-      return action.toLowerCase().includes("ensuite") ? "ensuite" : "bathroom";
+      return "ensuite";
     default:
       return undefined;
   }
@@ -46,9 +48,9 @@ export function applyRoomChanges(
         room.name = "Proposed En-suite";
       }
 
-      // These actions need new geometry (a split, merge, extension or a new
-      // partition). We deliberately do not invent coordinates here. Preserve
-      // the real detected geometry and record the planning action for the UI.
+      // Splits, merges, extensions and partition/door changes require actual
+      // geometry edits. Never invent coordinates here; retain the detected
+      // geometry and record the planning action instead.
       if (change.action && /split|merge|extend|partition|doorway|opening/i.test(change.action)) {
         room.notes = [room.notes, change.action].filter(Boolean).join("; ");
       }
