@@ -35,17 +35,30 @@ function getAdjacentRooms(
     .map(r => r.id);
 }
 
+function roomBelongsToFloor(room: DetectedRoom, floor: DetectedFloor): boolean {
+  const roomCenterX = room.x + room.width / 2;
+  const roomCenterY = room.y + room.height / 2;
+
+  const left = floor.left ?? 0;
+  const right = floor.right ?? Infinity;
+  const top = floor.top ?? 0;
+  const bottom = floor.bottom ?? Infinity;
+
+  return (
+    roomCenterX >= left &&
+    roomCenterX < right &&
+    roomCenterY >= top &&
+    roomCenterY < bottom
+  );
+}
+
 export function buildOriginalFloorPlan(
   floors: DetectedFloor[],
   rooms: DetectedRoom[]
 ): FloorPlan {
   return {
     floors: floors.map((floor, floorIndex) => {
-      const floorRooms = rooms.filter(
-        room =>
-          room.y >= floor.top &&
-          room.y < floor.bottom
-      );
+      const floorRooms = rooms.filter(room => roomBelongsToFloor(room, floor));
 
       return {
         name: floor.name,
@@ -58,15 +71,9 @@ export function buildOriginalFloorPlan(
           y: room.y,
           width: room.width,
           height: room.height,
-          approxAreaSqm: Number(
-            ((room.width * room.height) / 10000).toFixed(1)
-          ),
-          approxWidthM: Number(
-            (room.width / 100).toFixed(1)
-          ),
-          approxDepthM: Number(
-            (room.height / 100).toFixed(1)
-          ),
+          approxAreaSqm: Number(((room.width * room.height) / 10000).toFixed(1)),
+          approxWidthM: Number((room.width / 100).toFixed(1)),
+          approxDepthM: Number((room.height / 100).toFixed(1)),
           shape: "rectangle",
           adjacentRooms: getAdjacentRooms(room, floorRooms),
           doors: [],
