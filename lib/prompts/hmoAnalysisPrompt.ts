@@ -20,7 +20,7 @@ CRITICAL GEOMETRY RULES
 - Do NOT redesign the building from scratch.
 - You MUST identify the real detected rooms by their supplied roomId.
 - First return a roomLabels entry for EVERY detected room.
-- roomLabels is the bridge between the image and the deterministic geometry renderer.
+- roomLabels is ONLY the bridge between the image and the deterministic geometry model; roomLabels do not themselves create visual proposal overlays.
 - Every change.roomId MUST exactly match one roomLabels.roomId and one detected room id.
 - If you cannot confidently identify a room, label it "Unknown" rather than inventing a room id.
 
@@ -60,7 +60,15 @@ Find the maximum realistic HMO, but prefer a practical compliant layout over an 
 Consider converting suitable reception rooms/studies/oversized rooms into bedrooms.
 Consider realistic bathroom/shower/ensuite improvements.
 
-Every proposed bedroom conversion MUST reference the exact detected roomId.
+CHANGE LIST RULES — VERY IMPORTANT
+- The changes array is a list of ACTUAL proposed works only.
+- Do NOT put every detected room into changes.
+- Do NOT return NoChange entries.
+- Do NOT repeat existing bedrooms as ConvertToBedroom if they are already bedrooms.
+- Only include a room in changes when its use/type or physical planning treatment is genuinely changing.
+- A room that is merely being identified or labelled belongs in roomLabels, NOT changes.
+- Every proposed bedroom conversion MUST reference the exact detected roomId of the room being converted.
+
 Use actions:
 - ConvertToBedroom
 - ConvertToKitchen
@@ -69,16 +77,17 @@ Use actions:
 - ExtendBathroom
 - SplitRoom
 - MergeRoom
-- NoChange
+- NoChange (do not emit this action; omit unchanged rooms from changes)
 
 Do not return proposed coordinates. The application will preserve the real geometry.
 
 CONSISTENCY CHECK
 Before returning JSON:
 - every roomLabels.roomId exists in the detected plan
-- every change.roomId exists in roomLabels
+- every change.roomId exists in roomLabels and the detected plan
 - existing bedroom count is separate from proposed bedroom count
-- every proposed bedroom conversion is represented in changes
+- every proposed bedroom conversion is represented by exactly one relevant change
+- do not include unchanged rooms in changes
 - hmoScore, verdict, highestPossibleHMO and investorSummary agree on the same proposed bedroom count
 
 RESPONSE JSON ONLY:
@@ -97,7 +106,7 @@ RESPONSE JSON ONLY:
   "changes": [
     {
       "roomId": "",
-      "action": "ConvertToBedroom | ConvertToKitchen | ConvertToBathroom | ConvertToEnsuite | ExtendBathroom | SplitRoom | MergeRoom | NoChange",
+      "action": "ConvertToBedroom | ConvertToKitchen | ConvertToBathroom | ConvertToEnsuite | ExtendBathroom | SplitRoom | MergeRoom",
       "newName": "",
       "newType": "",
       "reason": ""
@@ -120,5 +129,5 @@ RESPONSE JSON ONLY:
   "investorSummary": ""
 }
 
-The application constructs the actual proposed floor plan from original geometry + roomLabels + changes. Return JSON only.`;
+The application constructs the actual proposed floor plan from the detected geometry + roomLabels + explicit changes. Return JSON only.`;
 }
