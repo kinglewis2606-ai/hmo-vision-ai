@@ -19,18 +19,35 @@ function isBedroomChange(change: any): boolean {
     type.includes("bedroom");
 }
 
-function reconcileCurrentBedroomCount(result: any, changes: any[]): void {
-  const potential = Number(result?.summary?.possibleHMOBedrooms);
-  const reportedCurrent = Number(result?.summary?.bedrooms);
-  const conversions = changes.filter(isBedroomChange).length;
+function isBathroomAddition(change: any): boolean {
+  const action = String(change?.action ?? "").toLowerCase();
+  return action.includes("convert to bathroom") ||
+    action.includes("converttobathroom") ||
+    action.includes("convert to ensuite") ||
+    action.includes("converttoensuite") ||
+    action.includes("extendbathroom");
+}
 
-  if (!Number.isFinite(potential) || !Number.isFinite(reportedCurrent)) return;
+function reconcileCurrentCounts(result: any, changes: any[]): void {
+  const potentialBedrooms = Number(result?.summary?.possibleHMOBedrooms);
+  const reportedBedrooms = Number(result?.summary?.bedrooms);
+  const bedroomConversions = changes.filter(isBedroomChange).length;
 
-  // Keep "Current Bedrooms" separate from the proposed HMO total. If the AI
-  // accidentally reports the proposed count as current and explicitly lists
-  // bedroom conversions, derive the current count from those same decisions.
-  if (conversions > 0 && reportedCurrent >= potential) {
-    result.summary.bedrooms = Math.max(0, potential - conversions);
+  if (Number.isFinite(potentialBedrooms) && Number.isFinite(reportedBedrooms)) {
+    // Keep current bedrooms separate from the proposed HMO total when the AI
+    // has accidentally copied the proposed total into the current field.
+    if (bedroomConversions > 0 && reportedBedrooms >= potentialBedrooms) {
+      result.summary.bedrooms = Math.max(0, potentialBedrooms - bedroomConversions);
+    }
+  }
+
+  const reportedBathrooms = Number(result?.summary?.bathrooms);
+  const bathroomAdditions = changes.filter(isBathroomAddition).length;
+
+  if (Number.isFinite(reportedBathrooms) && bathroomAdditions > 0 && reportedBathrooms >= bathroomAdditions) {
+    // Same protection for bathrooms: the report card is an existing-property
+    // metric, while proposed ensuites/showers belong to the works plan.
+    result.summary.bathrooms = Math.max(0, reportedBathrooms - bathroomAdditions);
   }
 }
 
@@ -89,7 +106,7 @@ export async function POST(req: Request) {
       result.originalFloorPlan = originalFloorPlan;
 
       const changes = Array.isArray(result.changes) ? result.changes : [];
-      reconcileCurrentBedroomCount(result, changes);
+      reconcileCurrentCounts(result, changes);
       result.proposedFloorPlan = applyRoomChanges(originalFloorPlan, changes);
 
       console.log("Detected rooms:", detectedRooms.length);
