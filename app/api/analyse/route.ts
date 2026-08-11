@@ -3,6 +3,7 @@ import { openai } from "@/lib/openai";
 import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
+import sharp from "sharp";
 import { detectWalls } from "@/lib/floorDetection/detectWalls";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
@@ -20,10 +21,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Uploaded floor plan not found." });
     }
 
+    const metadata = await sharp(filePath).metadata();
+    const imageWidth = metadata.width ?? 1600;
+    const imageHeight = metadata.height ?? 1200;
+
     const detectedFloors = await detectFloors(filePath);
     const detectedWalls = await detectWalls(filePath, detectedFloors);
     const detectedRooms = await detectRooms(detectedWalls, detectedFloors);
     const originalFloorPlan = buildOriginalFloorPlan(detectedFloors, detectedRooms);
+    originalFloorPlan.metadata = {
+      imageWidth,
+      imageHeight,
+      imageDpi: metadata.density,
+    };
 
     const originalFloorPlanJson = JSON.stringify(originalFloorPlan, null, 2);
     const image = fs.readFileSync(filePath);
