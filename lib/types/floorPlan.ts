@@ -86,6 +86,15 @@ export interface FloorPlan {
   };
 }
 
+// AI labels the real detected geometry. It does not create geometry.
+export interface RoomLabel {
+  roomId: string;
+  name: string;
+  type: string;
+  floor?: string;
+  confidence?: string;
+}
+
 // ============================================================================
 // LAYER 4: TRANSFORMATION MODEL
 // ============================================================================
