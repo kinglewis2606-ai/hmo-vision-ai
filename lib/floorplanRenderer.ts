@@ -54,10 +54,6 @@ function shouldRenderChange(change: RoomChange, before: any, after: any): boolea
 
   const typeChanged = String(before?.type || "").toLowerCase() !== String(after?.type || "").toLowerCase();
   const structuralChange = /split|merge|extend|partition|doorway|opening/.test(action);
-
-  // ConvertToEnsuite is intentionally allowed through even when the base room
-  // remains typed as bedroom. The ensuite is an added amenity, not a room-type
-  // replacement, and therefore must still appear on the proposed image.
   const amenityChange = action === "converttoensuite" || action === "extendbathroom";
 
   return typeChanged || structuralChange || amenityChange;
@@ -91,8 +87,6 @@ function fixtureOverlay(room: any, change: RoomChange): string {
     parts.push(`<circle cx="${sx + showerW / 2}" cy="${sy + showerH / 2}" r="${Math.max(4, showerW * 0.08)}" fill="none" stroke="#047857" stroke-width="3"/>`);
     parts.push(`<path d="M ${sx + showerW * 0.72} ${sy + showerH * 0.2} q ${showerW * 0.2} ${showerH * 0.15} 0 ${showerH * 0.35}" fill="none" stroke="#047857" stroke-width="3"/>`);
 
-    // Small WC/sink symbols make a converted shower room immediately legible
-    // without pretending to know exact fixture locations from the source plan.
     const cx = x + pad + Math.min(w * 0.16, 34);
     const cy = y + h - pad - Math.min(h * 0.18, 34);
     parts.push(`<ellipse cx="${cx}" cy="${cy}" rx="${Math.max(8, w * 0.07)}" ry="${Math.max(11, h * 0.09)}" fill="none" stroke="#047857" stroke-width="3"/>`);
@@ -125,12 +119,6 @@ function actionLabel(change: RoomChange, room: any): string {
   return change.newName || room.name || room.type || "Proposed Room";
 }
 
-/**
- * Render the immutable uploaded plan and annotate ONLY rooms referenced by
- * meaningful AI changes. The original walls remain visible underneath. The
- * renderer adds deterministic proposed-work markers for room conversions,
- * shower/en-suite fixtures and explicit split partitions.
- */
 export function renderFloorPlan(
   original: FloorPlan,
   proposed: FloorPlan,
@@ -164,6 +152,25 @@ export function renderFloorPlan(
 
     changedRooms.push({ room: after, change });
     seen.add(id);
+
+    // A real split creates a second proposed room. Render that second geometry
+    // too; otherwise the UI would claim two bedrooms while visually showing one.
+    if (normaliseAction(change.action) === "splitroom") {
+      const second = [...proposedRooms.values()].find((candidate: any) =>
+        String(candidate?.notes || "").includes(`Created by split of ${before.id}`)
+      );
+      if (second) {
+        changedRooms.push({
+          room: second,
+          change: {
+            ...change,
+            action: "ConvertToBedroom",
+            newName: change.split?.secondName || "Bedroom 2",
+            split: undefined,
+          },
+        });
+      }
+    }
   }
 
   const overlays = changedRooms.map(({ room, change }) => {
@@ -176,38 +183,13 @@ export function renderFloorPlan(
     const badgeY = room.y + room.height / 2 - fontSize - 12;
 
     return `
-      <rect
-        x="${room.x}"
-        y="${room.y}"
-        width="${room.width}"
-        height="${room.height}"
-        fill="${fill}"
-        fill-opacity="0.22"
-        stroke="#1d4ed8"
-        stroke-width="5"
-        stroke-dasharray="12 7"
-      />
+      <rect x="${room.x}" y="${room.y}" width="${room.width}" height="${room.height}"
+        fill="${fill}" fill-opacity="0.22" stroke="#1d4ed8" stroke-width="5" stroke-dasharray="12 7" />
       ${fixture}
-      <rect
-        x="${badgeX}"
-        y="${badgeY}"
-        width="${badgeWidth}"
-        height="${fontSize + 24}"
-        rx="8"
-        fill="#111827"
-        fill-opacity="0.86"
-      />
-      <text
-        x="${room.x + room.width / 2}"
-        y="${room.y + room.height / 2}"
-        font-family="Arial, sans-serif"
-        font-size="${fontSize}"
-        font-weight="700"
-        text-anchor="middle"
-        dominant-baseline="middle"
-        fill="white"
-      >${label}</text>
-    `;
+      <rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${fontSize + 24}" rx="8" fill="#111827" fill-opacity="0.86" />
+      <text x="${room.x + room.width / 2}" y="${room.y + room.height / 2}"
+        font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="700"
+        text-anchor="middle" dominant-baseline="middle" fill="white">${label}</text>`;
   }).join("\n");
 
   const emptyMessage = changedRooms.length === 0
