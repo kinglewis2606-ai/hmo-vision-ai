@@ -66,8 +66,11 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
       room.height = bedroomHeight;
       floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + bedroomHeight, originalWidth, ensuiteHeight));
     } else {
+      // When window detection is unavailable, default to the bedroom on the
+      // lower/external side and put the ensuite at the internal/top end.
+      room.y = room.y + ensuiteHeight;
       room.height = bedroomHeight;
-      floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + bedroomHeight, originalWidth, ensuiteHeight));
+      floor.rooms.push(makeSplitRoom(room, change, room.x, room.y - ensuiteHeight, originalWidth, ensuiteHeight));
     }
 
     room.type = change.split?.firstType || "bedroom";
@@ -126,7 +129,6 @@ function addEnsuite(floor: any, room: Room, change: RoomChange): void {
   const ratio = 0.28;
   let ensuite: Room;
 
-  // Always keep the bedroom on the window side and carve the ensuite from the opposite/internal side.
   if (windowWalls.has("bottom") && !windowWalls.has("top")) {
     const h = Math.max(1, Math.round(original.height * ratio));
     room.y = original.y;
@@ -148,7 +150,8 @@ function addEnsuite(floor: any, room: Room, change: RoomChange): void {
     room.width = original.width - w;
     ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x, width: w, windows: [] };
   } else {
-    // No reliable window wall: default to the top/internal end rather than inventing a window.
+    // No reliable window wall: keep the bedroom on the lower/external side
+    // and place the ensuite at the internal/top end.
     const h = Math.max(1, Math.round(original.height * ratio));
     room.y = original.y + h;
     room.height = original.height - h;
