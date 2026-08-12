@@ -28,6 +28,7 @@ For EVERY detected room return exactly one roomLabels item. Read the visible roo
 - WC / Toilet -> WC
 - Landing / Hall / Entrance / stairs -> circulation
 Every roomLabels.roomId must exist in the JSON and every roomLabels.floor must exactly match the JSON floor.
+If the plan visibly gives dimensions, also return the measured values in areaSqm, widthM and depthM. These are measurement evidence from the uploaded drawing and must not be guessed from pixel coordinates.
 
 MAXIMUM-VIABLE-HMO OPTIMISATION — HARD REQUIREMENT
 Do not simply choose the easiest low-work scheme. Evaluate the maximum sensible bedroom count first, then compare it with lower-count options for compliance, amenity, works and value.
@@ -49,7 +50,7 @@ This is a HARD RULE, not a suggestion.
 - If the property has 5 existing bedrooms and a suitable separate ground-floor lounge/reception, the default candidate is a 6-bed HMO using that lounge as Bedroom 6.
 - If the property has 4 existing bedrooms and a suitable lounge/reception, test the 5-bed option using that lounge.
 - If a separate dining room plus kitchen remains after converting the lounge, do NOT reject the lounge conversion merely because there is no lounge left. The dining/kitchen can provide communal amenity.
-- If a suitable lounge/reception exists, a 5-bed result when 6 is physically achievable is WRONG unless there is a concrete documented reason.
+- If a suitable lounge/reception exists, a lower-count result when the next bedroom is physically achievable is WRONG unless there is a concrete documented reason.
 - A valid rejection reason must be specific: measured area/dimensions, unacceptable communal provision, escape/fire route, planning/licensing constraint, or another actual geometry constraint visible in the plan.
 - “The lounge is better as communal space” is NOT sufficient where a separate usable dining/kitchen communal area remains.
 - The final verdict, score, highestPossibleHMO, rent, cost, investorSummary and changes MUST all describe the same selected candidate.
@@ -98,7 +99,7 @@ FINAL SELF-CHECK — MUST PASS BEFORE RETURNING JSON
 3. Verify proposed bedroom count equals existing bedrooms plus valid bedroom conversions, accounting for explicit splits/merges.
 4. Identify every ground-floor Lounge/Living Room/Reception and record whether it is a viable bedroom candidate.
 5. If a suitable ground-floor lounge/reception exists with separate kitchen/dining communal space, the selected scheme MUST include that conversion unless a concrete documented constraint rejects it.
-6. If 6 is rejected where 6 appears geometrically achievable, give the exact reason in highestPossibleHMO.reason and the verdict.
+6. If the maximum practical count is rejected, give the exact reason in highestPossibleHMO.reason and the verdict.
 7. For every bedroom around 18 sqm+, explicitly decide whether it gets an ensuite and state why.
 8. Every ID exists and every floor matches.
 9. Every proposed conversion appears exactly once.
@@ -108,7 +109,7 @@ FINAL SELF-CHECK — MUST PASS BEFORE RETURNING JSON
 
 RETURN JSON ONLY:
 {
-  "roomLabels": [{"roomId":"","name":"","type":"","floor":"","confidence":""}],
+  "roomLabels": [{"roomId":"","name":"","type":"","floor":"","confidence":"","areaSqm":0,"widthM":0,"depthM":0}],
   "summary": {"bedrooms":0,"bathrooms":0,"possibleHMOBedrooms":0,"kitchen":false,"livingRoom":false,"confidence":""},
   "changes": [{"roomId":"","action":"","newName":"","newType":"","reason":"","split":{"firstName":"","firstType":"","secondName":"","secondType":"","direction":"vertical","firstRatio":0.7}}],
   "hmoScore":0,
