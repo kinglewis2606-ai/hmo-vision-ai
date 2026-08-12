@@ -34,9 +34,23 @@ function clip(points: Point[] | undefined, axis: "x" | "y", threshold: number, g
   }
   return out.length >= 3 ? out : undefined;
 }
-function ratio(change: RoomChange): number {
+function requestedRatio(change: RoomChange): number {
   const r = Number(change.split?.firstRatio);
   return Number.isFinite(r) ? Math.min(.82, Math.max(.65, r)) : .72;
+}
+function safeRatio(room: Room, change: RoomChange): number | null {
+  const requested = requestedRatio(change);
+  const area = Number(room.approxAreaSqm || 0) || (room.width * room.height) / 10000;
+  if (!Number.isFinite(area) || area <= 0) return requested;
+  // Conservative planning gate: keep >=6.51m² bedroom and reserve >=2.5m²
+  // for a compact ensuite. If both cannot fit, do not draw an ensuite.
+  const minBedroomRatio = 6.51 / area;
+  const maxBedroomRatio = 1 - 2.5 / area;
+  if (minBedroomRatio > maxBedroomRatio || maxBedroomRatio < .65) return null;
+  const lower = Math.max(.65, minBedroomRatio);
+  const upper = Math.min(.82, maxBedroomRatio);
+  if (lower > upper) return null;
+  return Math.min(upper, Math.max(lower, requested));
 }
 function directionFor(room: Room, requested?: "horizontal" | "vertical"): "horizontal" | "vertical" {
   const walls = new Set((room.windows || []).map(w => w.wall));
@@ -48,99 +62,67 @@ function splitChild(source: Room, change: RoomChange, x: number, y: number, widt
   const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
   return {
     ...structuredClone(source),
-    id: `${source.id}-split-2`,
-    name: change.split?.secondName || (wet ? "En-suite" : "Bedroom 2"),
-    type: change.split?.secondType || "bedroom",
-    x, y, width, height, polygon,
-    windows: wet ? [] : structuredClone(source.windows || []),
-    doors: [], adjacentRooms: [source.id],
-    notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "),
-    confidence: "geometry-proposed",
+    id: `${source.id}-split-2`, name: change.split?.secondName || (wet ? "En-suite" : "Bedroom 2"), type: change.split?.secondType || "bedroom",
+    x, y, width, height, polygon, windows: wet ? [] : structuredClone(source.windows || []), doors: [], adjacentRooms: [source.id],
+    notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "), confidence: "geometry-proposed",
   };
 }
 function splitRoom(floor: any, room: Room, change: RoomChange): void {
   const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
+  const firstRatio = wet ? safeRatio(room, change) : requestedRatio(change);
+  if (firstRatio == null) return;
   const direction = wet ? directionFor(room, change.split?.direction) : (change.split?.direction || "vertical");
-  const firstRatio = ratio(change);
   const ox = room.x, oy = room.y, ow = room.width, oh = room.height;
   const originalPolygon = room.polygon ? structuredClone(room.polygon) : undefined;
   const windows = new Set((room.windows || []).map(w => w.wall));
 
   if (direction === "horizontal") {
-    const firstH = Math.max(1, Math.round(oh * firstRatio));
-    const secondH = oh - firstH;
+    const firstH = Math.max(1, Math.round(oh * firstRatio)), secondH = oh - firstH;
     if (secondH <= 1) return;
     const splitY = oy + firstH;
-    let bedroomY = oy, ensuiteY = oy + firstH;
+    let bedroomY = oy + secondH, ensuiteY = oy;
     let bedroomPoly: Point[] | undefined, secondPoly: Point[] | undefined;
-    if (wet && windows.has("bottom") && !windows.has("top")) {
-      // Bottom window => bedroom stays at the bottom, wet room goes to the top.
-      bedroomY = oy + secondH; ensuiteY = oy;
-      bedroomPoly = clip(originalPolygon, "y", oy + secondH, true);
-      secondPoly = clip(originalPolygon, "y", oy + secondH, false);
-    } else if (wet && windows.has("top") && !windows.has("bottom")) {
-      // Top window => bedroom stays at the top, wet room goes to the bottom.
+    if (wet && windows.has("top") && !windows.has("bottom")) {
       bedroomY = oy; ensuiteY = oy + firstH;
       bedroomPoly = clip(originalPolygon, "y", splitY, false);
       secondPoly = clip(originalPolygon, "y", splitY, true);
-    } else {
-      // Default UK-plan orientation: bedroom on the window-facing/lower portion,
-      // wet room at the internal upper end.
+    } else if (wet && windows.has("bottom") && !windows.has("top")) {
       bedroomY = oy + secondH; ensuiteY = oy;
       bedroomPoly = clip(originalPolygon, "y", oy + secondH, true);
       secondPoly = clip(originalPolygon, "y", oy + secondH, false);
+    } else {
+      bedroomPoly = clip(originalPolygon, "y", oy + secondH, true);
+      secondPoly = clip(originalPolygon, "y", oy + secondH, false);
     }
-    room.y = bedroomY;
-    room.height = firstH;
-    room.polygon = bedroomPoly || room.polygon;
+    room.y = bedroomY; room.height = firstH; room.polygon = bedroomPoly || room.polygon;
     floor.rooms.push(splitChild(room, change, ox, ensuiteY, ow, secondH, secondPoly));
   } else {
-    const firstW = Math.max(1, Math.round(ow * firstRatio));
-    const secondW = ow - firstW;
+    const firstW = Math.max(1, Math.round(ow * firstRatio)), secondW = ow - firstW;
     if (secondW <= 1) return;
     const splitX = ox + firstW;
-    let bedroomX = ox, ensuiteX = ox + firstW;
+    let bedroomX = ox + secondW, ensuiteX = ox;
     let bedroomPoly: Point[] | undefined, secondPoly: Point[] | undefined;
-    if (wet && windows.has("right") && !windows.has("left")) {
-      // Right window => bedroom stays right, wet room goes to the left/internal end.
-      bedroomX = ox + secondW; ensuiteX = ox;
-      bedroomPoly = clip(originalPolygon, "x", ox + secondW, true);
-      secondPoly = clip(originalPolygon, "x", ox + secondW, false);
-    } else if (wet && windows.has("left") && !windows.has("right")) {
-      // Left window => bedroom stays left, wet room goes to the right/internal end.
+    if (wet && windows.has("left") && !windows.has("right")) {
       bedroomX = ox; ensuiteX = ox + firstW;
       bedroomPoly = clip(originalPolygon, "x", splitX, false);
       secondPoly = clip(originalPolygon, "x", splitX, true);
-    } else {
+    } else if (wet && windows.has("right") && !windows.has("left")) {
       bedroomX = ox + secondW; ensuiteX = ox;
       bedroomPoly = clip(originalPolygon, "x", ox + secondW, true);
       secondPoly = clip(originalPolygon, "x", ox + secondW, false);
+    } else {
+      bedroomPoly = clip(originalPolygon, "x", ox + secondW, true);
+      secondPoly = clip(originalPolygon, "x", ox + secondW, false);
     }
-    room.x = bedroomX;
-    room.width = firstW;
-    room.polygon = bedroomPoly || room.polygon;
+    room.x = bedroomX; room.width = firstW; room.polygon = bedroomPoly || room.polygon;
     floor.rooms.push(splitChild(room, change, ensuiteX, oy, secondW, oh, secondPoly));
   }
   room.type = change.split?.firstType || "bedroom";
   room.name = change.split?.firstName || room.name || "Bedroom";
   room.notes = [room.notes, wet ? "Bedroom retains exterior opening wall; ensuite formed wholly inside original bedroom boundary" : "First portion of proposed room split"].filter(Boolean).join("; ");
 }
-
 function addEnsuite(floor: any, room: Room, change: RoomChange): void {
-  // Never maintain a second implementation of ensuite geometry. ConvertToEnsuite
-  // is normalised into the same validated split used by the planner.
-  splitRoom(floor, room, {
-    ...change,
-    action: "SplitRoom",
-    split: {
-      firstName: room.name,
-      firstType: "bedroom",
-      secondName: change.newName || "En-suite",
-      secondType: "ensuite",
-      direction: change.split?.direction,
-      firstRatio: change.split?.firstRatio ?? .72,
-    },
-  });
+  splitRoom(floor, room, { ...change, action: "SplitRoom", split: { firstName: room.name, firstType: "bedroom", secondName: change.newName || "En-suite", secondType: "ensuite", direction: change.split?.direction, firstRatio: change.split?.firstRatio ?? .72 } });
 }
 
 export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): FloorPlan {
@@ -150,8 +132,7 @@ export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): F
     for (const floor of updated.floors) {
       const room = floor.rooms.find(r => r.id === change.roomId);
       if (!room) continue;
-      const action = String(change.action || "").toLowerCase().replace(/\s+/g, "");
-      const inferred = actionType(change.action);
+      const action = String(change.action || "").toLowerCase().replace(/\s+/g, ""), inferred = actionType(change.action);
       const requested = String(change.newType || inferred || "").trim().toLowerCase();
       if (action === "nochange" && !requested) continue;
       if (action === "splitroom" || action === "split") { splitRoom(floor, room, change); continue; }
@@ -165,7 +146,7 @@ export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): F
         else if (inferred === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom";
       }
       if (change.action && /merge|extend|partition|doorway|opening/i.test(change.action)) room.notes = [room.notes, change.action].filter(Boolean).join("; ");
-      if (change.reason && !noOp(room.type || "", requested)) room.notes = [room.notes, change.reason].filter(Boolean).join("; ");
+      if (change.reason && requested && !noOp(room.type || "", requested)) room.notes = [room.notes, change.reason].filter(Boolean).join("; ");
     }
   }
   return updated;
