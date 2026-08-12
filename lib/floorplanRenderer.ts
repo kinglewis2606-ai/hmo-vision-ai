@@ -113,12 +113,8 @@ function actionLabel(change: RoomChange, room: any): string {
   const action = normaliseAction(change.action);
   if (action === "converttobedroom") return change.newName || "Proposed Bedroom";
   if (action === "converttobathroom") return change.newName || "Proposed Shower Room";
-  if (action === "converttoensuite") return change.newName || "Bedroom + En-suite";
-  if (action === "splitroom") {
-    const first = change.split?.firstName || "Room A";
-    const second = change.split?.secondName || "Room B";
-    return `${first} + ${second}`;
-  }
+  if (action === "converttoensuite") return change.newName || "En-suite";
+  if (action === "splitroom") return change.split?.firstName || room.name || "Bedroom";
   return change.newName || room.name || room.type || "Proposed Room";
 }
 
