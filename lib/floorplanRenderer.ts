@@ -94,11 +94,14 @@ function fixtureOverlay(room: any, change: RoomChange): string {
   }
 
   if (action === "splitroom" && change.split) {
+    const ratio = Number.isFinite(Number(change.split.firstRatio))
+      ? Math.min(0.9, Math.max(0.1, Number(change.split.firstRatio)))
+      : 0.5;
     if (change.split.direction === "vertical") {
-      const px = x + w / 2;
+      const px = x + w * ratio;
       parts.push(`<line x1="${px}" y1="${y}" x2="${px}" y2="${y + h}" stroke="#dc2626" stroke-width="6" stroke-dasharray="14 8"/>`);
     } else {
-      const py = y + h / 2;
+      const py = y + h * ratio;
       parts.push(`<line x1="${x}" y1="${py}" x2="${x + w}" y2="${py}" stroke="#dc2626" stroke-width="6" stroke-dasharray="14 8"/>`);
     }
   }
@@ -153,19 +156,20 @@ export function renderFloorPlan(
     changedRooms.push({ room: after, change });
     seen.add(id);
 
-    // A real split creates a second proposed room. Render that second geometry
-    // too; otherwise the UI would claim two bedrooms while visually showing one.
     if (normaliseAction(change.action) === "splitroom") {
       const second = [...proposedRooms.values()].find((candidate: any) =>
         String(candidate?.notes || "").includes(`Created by split of ${before.id}`)
       );
       if (second) {
+        const secondType = String(second.type || "").toLowerCase();
+        const secondIsEnsuite = secondType.includes("ensuite") || secondType.includes("bath") || secondType.includes("shower");
         changedRooms.push({
           room: second,
           change: {
             ...change,
-            action: "ConvertToBedroom",
-            newName: change.split?.secondName || "Bedroom 2",
+            action: secondIsEnsuite ? "ConvertToEnsuite" : "ConvertToBedroom",
+            newName: change.split?.secondName || (secondIsEnsuite ? "En-suite" : "Bedroom 2"),
+            newType: second.type,
             split: undefined,
           },
         });
