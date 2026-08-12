@@ -63,20 +63,11 @@ function splitChild(source: Room, change: RoomChange, x: number, y: number, widt
     adjacentRooms: [source.id], notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "), confidence: "geometry-proposed",
   };
 }
-
-/**
- * For an internal ensuite we want a corner, not a full-width strip. The
- * previous implementation cut the bedroom on one axis, which could place
- * the ensuite directly across the bedroom entrance. This chooses the corner
- * furthest from the known principal window wall and, where possible, away
- * from the known door wall, then clips that corner to the real room polygon.
- */
 function ensuiteCorner(room: Room): { sideX: "left" | "right"; sideY: "top" | "bottom" } | undefined {
   const windows = windowWalls(room);
   if (windows.length !== 1) return undefined;
   const window = windows[0];
   const doors = doorWalls(room);
-
   if (window === "bottom") {
     if (doors.includes("left") && !doors.includes("right")) return { sideX: "right", sideY: "top" };
     if (doors.includes("right") && !doors.includes("left")) return { sideX: "left", sideY: "top" };
@@ -99,45 +90,53 @@ function ensuiteCorner(room: Room): { sideX: "left" | "right"; sideY: "top" | "b
   }
   return undefined;
 }
-
+function isAxisAlignedRectangle(points: Point[]): boolean {
+  if (points.length !== 4) return false;
+  const xs = Array.from(new Set(points.map(p => p.x))).sort((a, b) => a - b);
+  const ys = Array.from(new Set(points.map(p => p.y))).sort((a, b) => a - b);
+  return xs.length === 2 && ys.length === 2;
+}
+function bedroomAfterCornerSplit(room: Room, corner: { sideX: "left" | "right"; sideY: "top" | "bottom" }, splitX: number, splitY: number): Point[] | undefined {
+  if (!room.polygon || !isAxisAlignedRectangle(room.polygon)) return undefined;
+  const left = room.x, right = room.x + room.width, top = room.y, bottom = room.y + room.height;
+  if (corner.sideX === "right" && corner.sideY === "top") return [
+    { x: left, y: top }, { x: splitX, y: top }, { x: splitX, y: splitY },
+    { x: right, y: splitY }, { x: right, y: bottom }, { x: left, y: bottom },
+  ];
+  if (corner.sideX === "left" && corner.sideY === "top") return [
+    { x: splitX, y: top }, { x: right, y: top }, { x: right, y: bottom },
+    { x: left, y: bottom }, { x: left, y: splitY }, { x: splitX, y: splitY },
+  ];
+  if (corner.sideX === "right" && corner.sideY === "bottom") return [
+    { x: left, y: top }, { x: right, y: top }, { x: right, y: bottom },
+    { x: splitX, y: bottom }, { x: splitX, y: splitY }, { x: left, y: splitY },
+  ];
+  return [
+    { x: left, y: top }, { x: right, y: top }, { x: right, y: bottom },
+    { x: splitX, y: bottom }, { x: splitX, y: splitY }, { x: left, y: splitY },
+  ];
+}
 function splitEnsuiteCorner(floor: any, room: Room, change: RoomChange): boolean {
   const corner = ensuiteCorner(room);
   if (!corner || !room.polygon || room.polygon.length < 3) return false;
-
-  // Keep a practical ensuite footprint while leaving the majority of the
-  // source room as the bedroom. The rectangle is clipped to the actual room
-  // polygon, so irregular rooms cannot be expanded outside their walls.
   const ensuiteWidth = Math.max(1, room.width * 0.42);
   const ensuiteHeight = Math.max(1, room.height * 0.32);
   const minX = corner.sideX === "right" ? room.x + room.width - ensuiteWidth : room.x;
   const maxX = corner.sideX === "right" ? room.x + room.width : room.x + ensuiteWidth;
   const minY = corner.sideY === "bottom" ? room.y + room.height - ensuiteHeight : room.y;
   const maxY = corner.sideY === "bottom" ? room.y + room.height : room.y + ensuiteHeight;
-
   const sourcePolygon = structuredClone(room.polygon);
   const ensuitePoly = clipRect(sourcePolygon, minX, maxX, minY, maxY);
   if (!ensuitePoly || ensuitePoly.length < 3) return false;
-
-  const bedroomPoly = sourcePolygon;
-  // Subtract the corner rectangle from the source polygon. For the detected
-  // floor plans this is normally a rectangle; if clipping cannot represent a
-  // clean remainder, refuse rather than drawing outside the real room.
-  const bedroomClipX = corner.sideX === "right" ? maxX : minX;
-  const bedroomClipY = corner.sideY === "bottom" ? minY : maxY;
-  let remainder: Point[] | undefined;
-  if (corner.sideX === "right") remainder = clip(bedroomPoly, "x", bedroomClipX, false);
-  else remainder = clip(bedroomPoly, "x", bedroomClipX, true);
-  if (!remainder || remainder.length < 3) return false;
-  if (corner.sideY === "top") remainder = clip(remainder, "y", bedroomClipY, true);
-  else remainder = clip(remainder, "y", bedroomClipY, false);
-  if (!remainder || remainder.length < 3) return false;
+  const bedroomPoly = bedroomAfterCornerSplit(room, corner, corner.sideX === "right" ? minX : maxX, corner.sideY === "bottom" ? minY : maxY);
+  if (!bedroomPoly || bedroomPoly.length < 3) return false;
 
   const bedroom = structuredClone(room);
-  bedroom.polygon = remainder;
-  bedroom.x = Math.min(...remainder.map(p => p.x));
-  bedroom.y = Math.min(...remainder.map(p => p.y));
-  bedroom.width = Math.max(...remainder.map(p => p.x)) - bedroom.x;
-  bedroom.height = Math.max(...remainder.map(p => p.y)) - bedroom.y;
+  bedroom.polygon = bedroomPoly;
+  bedroom.x = Math.min(...bedroomPoly.map(p => p.x));
+  bedroom.y = Math.min(...bedroomPoly.map(p => p.y));
+  bedroom.width = Math.max(...bedroomPoly.map(p => p.x)) - bedroom.x;
+  bedroom.height = Math.max(...bedroomPoly.map(p => p.y)) - bedroom.y;
   bedroom.type = change.split?.firstType || "bedroom";
   bedroom.name = change.split?.firstName || bedroom.name || "Bedroom";
   bedroom.notes = [bedroom.notes, "Bedroom retains principal external opening wall; internal ensuite occupies an opposite corner and does not span the entrance wall"].filter(Boolean).join("; ");
@@ -163,24 +162,18 @@ function splitEnsuiteCorner(floor: any, room: Room, change: RoomChange): boolean
   floor.rooms.push(child);
   return true;
 }
-
 function splitRoom(floor: any, room: Room, change: RoomChange): void {
   const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
   const walls = windowWalls(room);
   if (wet) {
     if (splitEnsuiteCorner(floor, room, change)) return;
-    // A safe ensuite requires a single known principal opening wall and a real
-    // polygon. Refuse the transformation rather than generating a misleading
-    // visual proposal when the geometry/opening evidence is insufficient.
     return;
   }
   if (!room.polygon || room.polygon.length < 3) return;
-
   const direction = directionFor(room, change.split?.direction);
   const firstRatio = requestedRatio(change);
   const ox = room.x, oy = room.y, ow = room.width, oh = room.height;
   const originalPolygon = structuredClone(room.polygon);
-
   if (direction === "horizontal") {
     const firstH = Math.max(1, Math.round(oh * firstRatio)), secondH = oh - firstH;
     if (secondH <= 1) return;
