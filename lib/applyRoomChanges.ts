@@ -55,10 +55,7 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
     room.name = change.split?.firstName || room.name || "Bedroom 1";
     room.type = change.split?.firstType || "bedroom";
     room.notes = [room.notes, "First portion of proposed room split"].filter(Boolean).join("; ");
-
-    if (secondHeight > 1) {
-      floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + firstHeight, originalWidth, secondHeight));
-    }
+    if (secondHeight > 1) floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + firstHeight, originalWidth, secondHeight));
   } else {
     const firstWidth = Math.max(1, Math.round(originalWidth * ratio));
     const secondWidth = originalWidth - firstWidth;
@@ -66,11 +63,50 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
     room.name = change.split?.firstName || room.name || "Bedroom 1";
     room.type = change.split?.firstType || "bedroom";
     room.notes = [room.notes, "First portion of proposed room split"].filter(Boolean).join("; ");
-
-    if (secondWidth > 1) {
-      floor.rooms.push(makeSplitRoom(room, change, room.x + firstWidth, room.y, secondWidth, originalHeight));
-    }
+    if (secondWidth > 1) floor.rooms.push(makeSplitRoom(room, change, room.x + firstWidth, room.y, secondWidth, originalHeight));
   }
+}
+
+/**
+ * Create a real proposed ensuite sub-room while keeping the parent bedroom a bedroom.
+ * The ensuite is deliberately placed away from the bedroom's external window wall.
+ */
+function addEnsuite(floor: any, room: Room, change: RoomChange): void {
+  if (floor.rooms.some((candidate: Room) => candidate.id === `${room.id}-ensuite`)) return;
+
+  const original = structuredClone(room);
+  const preferred = original.windows?.[0]?.wall;
+  const ratio = 0.28;
+  let ensuite: Room;
+
+  if (preferred === "bottom") {
+    const h = Math.max(1, Math.round(original.height * ratio));
+    room.height = original.height - h;
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: original.y + room.height, height: h };
+  } else if (preferred === "top") {
+    const h = Math.max(1, Math.round(original.height * ratio));
+    room.y = original.y + h;
+    room.height = original.height - h;
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", height: h };
+  } else if (preferred === "right") {
+    const w = Math.max(1, Math.round(original.width * ratio));
+    room.width = original.width - w;
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x + room.width, width: w };
+  } else {
+    const w = Math.max(1, Math.round(original.width * ratio));
+    room.x = original.x + w;
+    room.width = original.width - w;
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", width: w };
+  }
+
+  room.type = "bedroom";
+  room.name = original.name;
+  room.notes = [room.notes, "Bedroom retained with external window preserved; ensuite formed internally"].filter(Boolean).join("; ");
+  room.adjacentRooms = Array.from(new Set([...(room.adjacentRooms || []), ensuite.id]));
+  ensuite.adjacentRooms = Array.from(new Set([...(ensuite.adjacentRooms || []), room.id]));
+  ensuite.notes = [original.notes, `Proposed ensuite for ${original.id}`, `Placed away from ${preferred || "external window"} wall`].filter(Boolean).join("; ");
+  ensuite.confidence = "geometry-proposed";
+  floor.rooms.push(ensuite);
 }
 
 export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): FloorPlan {
@@ -97,23 +133,21 @@ export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): F
         continue;
       }
 
-      const typeIsNoOp = requestedType.length > 0 && isNoOpTypeChange(room.type || "", requestedType);
-
-      if (isEnsuite && !typeIsNoOp) {
-        room.type = "ensuite";
-        room.name = change.newName || "En-suite";
-        room.notes = [room.notes, "Proposed en-suite conversion"].filter(Boolean).join("; ");
-      } else if (requestedType && !typeIsNoOp) {
-        room.type = change.newType || inferredType!;
-        if (change.newName) room.name = change.newName;
-        else if (inferredType === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom";
-      }
-
-      if (change.action && /merge|extend|partition|doorway|opening/i.test(change.action)) {
-        room.notes = [room.notes, change.action].filter(Boolean).join("; ");
-      }
-      if (change.reason && !typeIsNoOp) {
-        room.notes = [room.notes, change.reason].filter(Boolean).join("; ");
+      if (isEnsuite) {
+        // An ensuite is an amenity carved out of a bedroom, not a replacement of the bedroom.
+        if (!String(room.type || "").toLowerCase().includes("bedroom")) continue;
+        addEnsuite(floor, room, change);
+      } else {
+        const typeIsNoOp = requestedType.length > 0 && isNoOpTypeChange(room.type || "", requestedType);
+        if (requestedType && !typeIsNoOp) {
+          room.type = change.newType || inferredType!;
+          if (change.newName) room.name = change.newName;
+          else if (inferredType === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom";
+        }
+        if (change.action && /merge|extend|partition|doorway|opening/i.test(change.action)) {
+          room.notes = [room.notes, change.action].filter(Boolean).join("; ");
+        }
+        if (change.reason && !typeIsNoOp) room.notes = [room.notes, change.reason].filter(Boolean).join("; ");
       }
     }
   }
