@@ -31,6 +31,7 @@ function makeSplitRoom(source: Room, change: RoomChange, secondX: number, second
     y: secondY,
     width: secondWidth,
     height: secondHeight,
+    windows: [],
     adjacentRooms: [source.id],
     notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "),
   };
@@ -51,27 +52,26 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
   const isEnsuiteSplit = secondType.includes("ensuite") || secondType.includes("bath") || secondType.includes("shower");
   const windowWalls = new Set((room.windows || []).map(window => window.wall));
 
-  // For a bedroom + ensuite split, the bedroom must retain its external window wall.
-  // This is deterministic: the AI chooses the split orientation/ratio, but the renderer
-  // places the ensuite on the internal side rather than taking the window side.
   if (isEnsuiteSplit && direction === "horizontal") {
     const bedroomHeight = Math.max(1, Math.round(originalHeight * ratio));
     const ensuiteHeight = originalHeight - bedroomHeight;
-    const bedroomAtBottom = windowWalls.has("bottom") && !windowWalls.has("top");
-    const ensuiteAtTop = bedroomAtBottom || (!windowWalls.has("top") && windowWalls.has("bottom"));
+    const bedroomKeepsBottom = windowWalls.has("bottom") && !windowWalls.has("top");
+    const bedroomKeepsTop = windowWalls.has("top") && !windowWalls.has("bottom");
 
-    if (ensuiteAtTop) {
+    if (bedroomKeepsBottom) {
       room.y = room.y + ensuiteHeight;
       room.height = bedroomHeight;
-      room.type = change.split?.firstType || "bedroom";
-      room.name = change.split?.firstName || room.name || "Bedroom";
       floor.rooms.push(makeSplitRoom(room, change, room.x, room.y - ensuiteHeight, originalWidth, ensuiteHeight));
+    } else if (bedroomKeepsTop) {
+      room.height = bedroomHeight;
+      floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + bedroomHeight, originalWidth, ensuiteHeight));
     } else {
       room.height = bedroomHeight;
-      room.type = change.split?.firstType || "bedroom";
-      room.name = change.split?.firstName || room.name || "Bedroom";
       floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + bedroomHeight, originalWidth, ensuiteHeight));
     }
+
+    room.type = change.split?.firstType || "bedroom";
+    room.name = change.split?.firstName || room.name || "Bedroom";
     room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite placed internally"].filter(Boolean).join("; ");
     return;
   }
@@ -79,21 +79,23 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
   if (isEnsuiteSplit && direction === "vertical") {
     const bedroomWidth = Math.max(1, Math.round(originalWidth * ratio));
     const ensuiteWidth = originalWidth - bedroomWidth;
-    const bedroomAtRight = windowWalls.has("right") && !windowWalls.has("left");
-    const ensuiteAtLeft = bedroomAtRight || (!windowWalls.has("left") && windowWalls.has("right"));
+    const bedroomKeepsRight = windowWalls.has("right") && !windowWalls.has("left");
+    const bedroomKeepsLeft = windowWalls.has("left") && !windowWalls.has("right");
 
-    if (ensuiteAtLeft) {
+    if (bedroomKeepsRight) {
       room.x = room.x + ensuiteWidth;
       room.width = bedroomWidth;
-      room.type = change.split?.firstType || "bedroom";
-      room.name = change.split?.firstName || room.name || "Bedroom";
       floor.rooms.push(makeSplitRoom(room, change, room.x - ensuiteWidth, room.y, ensuiteWidth, originalHeight));
+    } else if (bedroomKeepsLeft) {
+      room.width = bedroomWidth;
+      floor.rooms.push(makeSplitRoom(room, change, room.x + bedroomWidth, room.y, ensuiteWidth, originalHeight));
     } else {
       room.width = bedroomWidth;
-      room.type = change.split?.firstType || "bedroom";
-      room.name = change.split?.firstName || room.name || "Bedroom";
       floor.rooms.push(makeSplitRoom(room, change, room.x + bedroomWidth, room.y, ensuiteWidth, originalHeight));
     }
+
+    room.type = change.split?.firstType || "bedroom";
+    room.name = change.split?.firstName || room.name || "Bedroom";
     room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite placed internally"].filter(Boolean).join("; ");
     return;
   }
@@ -120,28 +122,37 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
 function addEnsuite(floor: any, room: Room, change: RoomChange): void {
   if (floor.rooms.some((candidate: Room) => candidate.id === `${room.id}-ensuite`)) return;
   const original = structuredClone(room);
-  const preferred = original.windows?.[0]?.wall;
+  const windowWalls = new Set((original.windows || []).map(window => window.wall));
   const ratio = 0.28;
   let ensuite: Room;
 
-  if (preferred === "bottom") {
+  // Always keep the bedroom on the window side and carve the ensuite from the opposite/internal side.
+  if (windowWalls.has("bottom") && !windowWalls.has("top")) {
     const h = Math.max(1, Math.round(original.height * ratio));
+    room.y = original.y;
     room.height = original.height - h;
-    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: original.y + room.height, height: h };
-  } else if (preferred === "top") {
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: original.y + room.height, height: h, windows: [] };
+  } else if (windowWalls.has("top") && !windowWalls.has("bottom")) {
     const h = Math.max(1, Math.round(original.height * ratio));
     room.y = original.y + h;
     room.height = original.height - h;
-    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", height: h };
-  } else if (preferred === "right") {
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: original.y, height: h, windows: [] };
+  } else if (windowWalls.has("right") && !windowWalls.has("left")) {
     const w = Math.max(1, Math.round(original.width * ratio));
+    room.x = original.x;
     room.width = original.width - w;
-    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x + room.width, width: w };
-  } else {
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x + room.width, width: w, windows: [] };
+  } else if (windowWalls.has("left") && !windowWalls.has("right")) {
     const w = Math.max(1, Math.round(original.width * ratio));
     room.x = original.x + w;
     room.width = original.width - w;
-    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", width: w };
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x, width: w, windows: [] };
+  } else {
+    // No reliable window wall: default to the top/internal end rather than inventing a window.
+    const h = Math.max(1, Math.round(original.height * ratio));
+    room.y = original.y + h;
+    room.height = original.height - h;
+    ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: original.y, height: h, windows: [] };
   }
 
   room.type = "bedroom";
@@ -149,20 +160,18 @@ function addEnsuite(floor: any, room: Room, change: RoomChange): void {
   room.notes = [room.notes, "Bedroom retained with external window preserved; ensuite formed internally"].filter(Boolean).join("; ");
   room.adjacentRooms = Array.from(new Set([...(room.adjacentRooms || []), ensuite.id]));
   ensuite.adjacentRooms = Array.from(new Set([...(ensuite.adjacentRooms || []), room.id]));
-  ensuite.notes = [original.notes, `Proposed ensuite for ${original.id}`, `Placed away from ${preferred || "external window"} wall`].filter(Boolean).join("; ");
+  ensuite.notes = [original.notes, `Proposed ensuite for ${original.id}`, "Placed on internal side away from bedroom window"].filter(Boolean).join("; ");
   ensuite.confidence = "geometry-proposed";
   floor.rooms.push(ensuite);
 }
 
 export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): FloorPlan {
   const updated = structuredClone(floorPlan);
-
   for (const change of changes || []) {
     if (!change?.roomId) continue;
     for (const floor of updated.floors) {
       const room = floor.rooms.find(candidate => candidate.id === change.roomId);
       if (!room) continue;
-
       const inferredType = actionType(change.action);
       const requestedType = String(change.newType || inferredType || "").trim().toLowerCase();
       const action = String(change.action || "").toLowerCase();
@@ -171,12 +180,7 @@ export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): F
       const isSplit = normalisedAction === "splitroom" || normalisedAction === "split";
       const isNoChange = !requestedType && normalisedAction === "nochange";
       if (isNoChange) continue;
-
-      if (isSplit) {
-        splitRoom(floor, room, change);
-        continue;
-      }
-
+      if (isSplit) { splitRoom(floor, room, change); continue; }
       if (isEnsuite) {
         if (!String(room.type || "").toLowerCase().includes("bedroom")) continue;
         addEnsuite(floor, room, change);
