@@ -92,7 +92,7 @@ function annotatedImage(filePath: string, plan: any): Promise<string> {
   const labels = plan.floors.flatMap((f: any) => f.rooms.map((r: any) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="none" stroke="#ff0055" stroke-width="6"/><text x="${r.x + r.width / 2}" y="${r.y + r.height / 2}" text-anchor="middle" font-size="28" font-weight="800" fill="#ff0055" stroke="white" stroke-width="5" paint-order="stroke">${r.id}</text>`)).join("\n");
   const mime = path.extname(filePath).toLowerCase() === ".png" ? "image/png" : "image/jpeg";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><image href="data:${mime};base64,${source.toString("base64")}" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${labels}</g></svg>`;
-  return sharp(Buffer.from(svg)).png().then(b => `data:image/png;base64,${b.toString("base64")}`);
+  return sharp(Buffer.from(svg)).png().toBuffer().then(b => `data:image/png;base64,${b.toString("base64")}`);
 }
 
 export async function POST(req: Request) {
