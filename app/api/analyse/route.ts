@@ -73,16 +73,19 @@ function addSafeEnsuites(plan: any, labels: RoomLabel[], changes: any[]): any[] 
   const byId = new Map<string, RoomLabel>(); for (const l of labels) byId.set(String(l.roomId ?? ""), l);
   for (const floor of plan.floors) for (const room of floor.rooms) {
     const label = byId.get(room.id); if (!label || !isBedroom(label.type)) continue;
-    const area = Number(label.areaSqm || room.approxAreaSqm || 0); if (area < 18) continue;
+    // Bedroom 1/4 in typical HMO conversions can legitimately be around
+    // 15-17 sqm. The old 18 sqm gate silently discarded exactly those rooms,
+    // leaving the written analysis claiming an ensuite that the renderer never
+    // received. Geometry validation is handled by applyRoomChanges instead.
+    const area = Number(label.areaSqm || room.approxAreaSqm || 0); if (area < 12) continue;
     if (output.some(c => String(c.roomId) === room.id && (norm(c.action) === "splitroom" || norm(c.action) === "converttoensuite"))) continue;
     const windows: WallSide[] = Array.isArray(label.windows) ? label.windows : [];
-    if (windows.length === 0) continue;
     const hasTop = windows.includes("top"), hasBottom = windows.includes("bottom"), hasLeft = windows.includes("left"), hasRight = windows.includes("right");
     let direction: "horizontal" | "vertical";
     if (hasTop !== hasBottom) direction = "horizontal";
     else if (hasLeft !== hasRight) direction = "vertical";
-    else continue;
-    output.push({ roomId: room.id, action: "SplitRoom", reason: `Internal ensuite for ${label.name || room.id}; detected window wall ${windows.join(", ")} is retained with the bedroom and the ensuite is placed at the opposite/internal end.`, split: { firstName: label.name || room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction, firstRatio: 0.72 } });
+    else direction = room.width >= room.height ? "horizontal" : "vertical";
+    output.push({ roomId: room.id, action: "SplitRoom", reason: windows.length ? `Internal ensuite for ${label.name || room.id}; detected window wall ${windows.join(", ")} is retained with the bedroom and the ensuite is placed at the opposite/internal end.` : `Internal ensuite for ${label.name || room.id}; compact corner geometry will be validated against the detected bedroom polygon.`, split: { firstName: label.name || room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction, firstRatio: 0.72 } });
   }
   return output;
 }
