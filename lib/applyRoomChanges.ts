@@ -58,14 +58,29 @@ function splitChild(source: Room, change: RoomChange, x: number, y: number, widt
   };
 }
 function ensuiteCorner(room: Room): { sideX: "left" | "right"; sideY: "top" | "bottom" } | undefined {
-  const windows = windowWalls(room);
-  if (windows.length !== 1) return undefined;
-  const window = windows[0], doors = doorWalls(room);
-  if (window === "bottom") return { sideX: doors.includes("left") ? "right" : "left", sideY: "top" };
-  if (window === "top") return { sideX: doors.includes("left") ? "right" : "left", sideY: "bottom" };
-  if (window === "left") return { sideX: "right", sideY: doors.includes("top") ? "bottom" : "top" };
-  if (window === "right") return { sideX: "left", sideY: doors.includes("top") ? "bottom" : "top" };
-  return undefined;
+  const windows = windowWalls(room), doors = doorWalls(room);
+
+  // Prefer a corner opposite the principal external/window wall. When the
+  // detector supplies exactly one window this preserves the original behaviour.
+  if (windows.length >= 1) {
+    const window = windows[0];
+    if (window === "bottom") return { sideX: doors.includes("left") ? "right" : "left", sideY: "top" };
+    if (window === "top") return { sideX: doors.includes("left") ? "right" : "left", sideY: "bottom" };
+    if (window === "left") return { sideX: "right", sideY: doors.includes("top") ? "bottom" : "top" };
+    if (window === "right") return { sideX: "left", sideY: doors.includes("top") ? "bottom" : "top" };
+  }
+
+  // Some plans do not expose window metadata reliably. Do not throw away an
+  // otherwise valid ensuite proposal. Pick the corner furthest from the known
+  // door wall; the polygon/size checks below remain authoritative.
+  if (doors.includes("left")) return { sideX: "right", sideY: doors.includes("top") ? "bottom" : "top" };
+  if (doors.includes("right")) return { sideX: "left", sideY: doors.includes("top") ? "bottom" : "top" };
+  if (doors.includes("top")) return { sideX: "right", sideY: "bottom" };
+  if (doors.includes("bottom")) return { sideX: "right", sideY: "top" };
+
+  // Last-resort geometry-only placement. This is deliberately deterministic
+  // and is still rejected if the room is not a simple axis-aligned polygon.
+  return { sideX: "right", sideY: "top" };
 }
 function isAxisAlignedRectangle(points: Point[]): boolean {
   if (points.length !== 4) return false;
@@ -83,10 +98,8 @@ function splitEnsuiteCorner(floor: any, room: Room, change: RoomChange): boolean
   const corner = ensuiteCorner(room);
   if (!corner || !room.polygon || room.polygon.length < 3) return false;
 
-  // En-suites are deliberately compact. The previous 42% x 32% corner was
-  // too visually dominant. Keep the wet room to roughly 7.5% of the source
-  // rectangle while retaining a clear, contained corner and a much larger
-  // bedroom. A real project can later use measured dimensions from the plan.
+  // En-suites are deliberately compact. Keep the wet room to roughly 7.5%
+  // of the source rectangle while retaining a much larger bedroom.
   const ensuiteWidth = room.width * 0.30;
   const ensuiteHeight = room.height * 0.25;
   const minX = corner.sideX === "right" ? room.x + room.width - ensuiteWidth : room.x;
@@ -109,8 +122,9 @@ function splitEnsuiteCorner(floor: any, room: Room, change: RoomChange): boolean
   bedroom.name = change.split?.firstName || bedroom.name || "Bedroom";
   bedroom.notes = [bedroom.notes, "Bedroom retains principal external opening wall; compact internal ensuite is contained in the opposite corner"].filter(Boolean).join("; ");
 
+  const windowNote = windowWalls(room)[0];
   const child = splitChild(bedroom, change, Math.min(...ensuitePoly.map(p => p.x)), Math.min(...ensuitePoly.map(p => p.y)), Math.max(...ensuitePoly.map(p => p.x)) - Math.min(...ensuitePoly.map(p => p.x)), Math.max(...ensuitePoly.map(p => p.y)) - Math.min(...ensuitePoly.map(p => p.y)), ensuitePoly);
-  child.notes = [child.notes, `Compact internal corner selected opposite ${windowWalls(room)[0]} window wall`].filter(Boolean).join("; ");
+  child.notes = [child.notes, windowNote ? `Compact internal corner selected opposite ${windowNote} window wall` : "Compact internal corner selected from detected room geometry"].filter(Boolean).join("; ");
   room.x = bedroom.x; room.y = bedroom.y; room.width = bedroom.width; room.height = bedroom.height; room.polygon = bedroom.polygon; room.type = bedroom.type; room.name = bedroom.name; room.notes = bedroom.notes;
   floor.rooms.push(child);
   return true;
