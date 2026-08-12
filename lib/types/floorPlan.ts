@@ -94,12 +94,18 @@ export interface FloorPlan {
 }
 
 // AI labels the real detected geometry. It does not create geometry.
+// Openings are returned because they are hard constraints for proposed works.
 export interface RoomLabel {
   roomId: string;
   name: string;
   type: string;
   floor?: string;
   confidence?: string;
+  areaSqm?: number;
+  widthM?: number;
+  depthM?: number;
+  windows?: Array<"top" | "bottom" | "left" | "right">;
+  doors?: Array<"top" | "bottom" | "left" | "right">;
 }
 
 // ============================================================================
