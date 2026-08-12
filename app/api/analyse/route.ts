@@ -52,7 +52,6 @@ function reconcileCurrentCounts(result: any, changes: any[]): void {
   const detectedBathrooms = labels.filter((label: any) => isBathroomType(label?.type)).length;
 
   if (!result.summary || typeof result.summary !== "object") result.summary = {};
-  // Counts come from the room labels, never from the model's free-form summary.
   result.summary.bedrooms = detectedBedrooms;
   result.summary.bathrooms = detectedBathrooms;
 
@@ -67,6 +66,46 @@ function reconcileCurrentCounts(result: any, changes: any[]): void {
   if (!Number.isFinite(proposedBedrooms) || proposedBedrooms < minimumProposed) {
     result.summary.possibleHMOBedrooms = minimumProposed;
   }
+}
+
+function ensureLargeBedroomEnsuites(floorPlan: any, labels: any[], changes: any[], result: any): any[] {
+  const output = [...changes];
+  const selectedBedrooms = Number(result?.summary?.possibleHMOBedrooms);
+  if (!Number.isFinite(selectedBedrooms) || selectedBedrooms < 4) return output;
+
+  const labelById = new Map<string, any>();
+  for (const label of labels) labelById.set(String(label?.roomId ?? ""), label);
+
+  for (const floor of floorPlan.floors) {
+    for (const room of floor.rooms) {
+      const label = labelById.get(room.id);
+      if (!label || !isBedroomType(label.type)) continue;
+
+      const area = Number(room.approxAreaSqm || 0);
+      if (!Number.isFinite(area) || area < 18) continue;
+      if (output.some(change => String(change?.roomId ?? "") === room.id && (
+        normaliseType(change?.action) === "splitroom" || normaliseType(change?.action) === "converttoensuite"
+      ))) continue;
+
+      const direction = Number(room.width) >= Number(room.height) ? "horizontal" : "vertical";
+      const remainingRatio = 0.72;
+      output.push({
+        roomId: room.id,
+        action: "SplitRoom",
+        reason: `Large bedroom (${area.toFixed(1)} sqm) is a strong internal ensuite candidate. Retain approximately ${(remainingRatio * area).toFixed(1)} sqm as bedroom and place the compact ensuite on the internal side, preserving the bedroom's external window wall.`,
+        split: {
+          firstName: label.name || room.name || "Bedroom",
+          firstType: "bedroom",
+          secondName: "En-suite",
+          secondType: "ensuite",
+          direction,
+          firstRatio: remainingRatio,
+        },
+      });
+    }
+  }
+
+  return output;
 }
 
 function isNoOpChange(change: any, floorPlan: any): boolean {
@@ -217,14 +256,32 @@ export async function POST(req: Request) {
         return true;
       });
 
-      result.changes = validChanges;
-      reconcileCurrentCounts(result, validChanges);
-      const proposedFloorPlan = applyRoomChanges(labelledFloorPlan, validChanges);
+      // The model can identify the best scheme but may still omit an obvious
+      // high-value ensuite. Large bedrooms are deterministic opportunities:
+      // if the selected scheme has 4+ beds and a bedroom has >=18 sqm, test an
+      // internal ensuite automatically rather than relying on prose alone.
+      const finalChanges = ensureLargeBedroomEnsuites(labelledFloorPlan, roomLabels, validChanges, result);
+      result.changes = finalChanges;
+      reconcileCurrentCounts(result, finalChanges);
+
+      const ensuiteChanges = finalChanges.filter((change: any) => normaliseType(change?.action) === "splitroom" && normaliseType(change?.split?.secondType).includes("ensuite"));
+      if (ensuiteChanges.length > 0) {
+        const names = ensuiteChanges.map((change: any) => {
+          const label = labelsById.get(String(change.roomId));
+          return label?.name || change.roomId;
+        });
+        const note = `Internal ensuite opportunities added for ${names.join(" and ")}; bedroom window walls are retained.`;
+        result.recommendations = [note, ...(Array.isArray(result.recommendations) ? result.recommendations : [])];
+        result.conversionSteps = [note, ...(Array.isArray(result.conversionSteps) ? result.conversionSteps : [])];
+        result.investorSummary = `${String(result.investorSummary || "").trim()} ${note}`.trim();
+      }
+
+      const proposedFloorPlan = applyRoomChanges(labelledFloorPlan, finalChanges);
       result.originalFloorPlan = originalFloorPlan;
       result.proposedFloorPlan = proposedFloorPlan;
-      result.generatedLayoutImage = renderFloorPlan(labelledFloorPlan, proposedFloorPlan, `data:${extToMime(filename)};base64,${fs.readFileSync(filePath).toString("base64")}`, validChanges);
+      result.generatedLayoutImage = renderFloorPlan(labelledFloorPlan, proposedFloorPlan, `data:${extToMime(filename)};base64,${fs.readFileSync(filePath).toString("base64")}`, finalChanges);
 
-      console.log("Analyse complete", { detectedRooms: detectedRooms.length, roomLabels: roomLabels.length, changesRequested: requestedChanges.length, changesApplied: validChanges.length, bedrooms: result.summary.bedrooms, bathrooms: result.summary.bathrooms, proposedBedrooms: result.summary.possibleHMOBedrooms });
+      console.log("Analyse complete", { detectedRooms: detectedRooms.length, roomLabels: roomLabels.length, changesRequested: requestedChanges.length, changesApplied: finalChanges.length, bedrooms: result.summary.bedrooms, bathrooms: result.summary.bathrooms, proposedBedrooms: result.summary.possibleHMOBedrooms, automaticEnsuites: ensuiteChanges.length });
       return NextResponse.json({ success: true, result });
     } catch (err: any) {
       console.error("JSON ERROR:", err?.message);
