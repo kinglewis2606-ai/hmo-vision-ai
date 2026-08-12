@@ -68,6 +68,14 @@ For EVERY existing bedroom and every proposed bedroom that is large enough, ask:
 3. Would the remaining bedroom still comfortably meet the applicable minimum area after the ensuite is carved out?
 4. Does the room have a sensible access/door position for the ensuite without compromising the bedroom or escape route?
 
+WINDOW AND NATURAL-LIGHT RULE — CRITICAL
+An ensuite must NOT take over, block, or isolate the bedroom's external window wall where the window is the bedroom's principal natural-light/ventilation source.
+- Preserve the bedroom portion containing the external window.
+- Prefer the ensuite on the internal side of the bedroom, away from the external window wall.
+- If the only practical ensuite arrangement would remove the bedroom's usable window, materially reduce natural light/ventilation, compromise the bedroom's escape route, or create an awkward access arrangement, DO NOT recommend that ensuite.
+- If a bedroom has a window at the bottom wall, the preferred internal ensuite position is normally toward the top/internal end; if the window is at the top, prefer the bottom/internal end. Likewise left/right windows should remain with the bedroom portion.
+- Do not describe an ensuite as "next to the window" as a benefit. The objective is to retain the window for the bedroom.
+
 A large bedroom can be split into BEDROOM + ENSUITE even when no separate room currently exists for the ensuite. This is a proposed internal partition, not an assertion that an existing ensuite already exists.
 
 WHEN AN INTERNAL ENSUITE IS PROPOSED:
@@ -76,7 +84,8 @@ WHEN AN INTERNAL ENSUITE IS PROPOSED:
 - split.secondType MUST be "ensuite".
 - split.secondName MUST be "En-suite" or similar.
 - Use split.firstRatio to allocate the bedroom portion. For a compact ensuite, normally allocate about 0.65-0.75 to the bedroom and 0.25-0.35 to the ensuite. Never use a 50/50 split unless geometry genuinely requires it.
-- Choose horizontal or vertical based on the actual room shape and access shown on the plan.
+- Choose horizontal or vertical based on the actual room shape, window position and access shown on the plan.
+- The bedroom portion must retain the external window wall.
 - The reason MUST state the approximate remaining bedroom area and why the ensuite is practical.
 - Do NOT also emit a separate ConvertToEnsuite for the same room; the SplitRoom itself creates the ensuite geometry.
 
@@ -85,12 +94,12 @@ WHEN A SEPARATE EXISTING WC/BATHROOM IS CONVERTED:
 - Do not pretend it is an ensuite if it remains shared.
 
 IMPORTANT EXAMPLE:
-If the plan contains a large Bedroom 4 on the second floor with enough floor area to carve out a compact ensuite, do NOT automatically reject the ensuite because there is no separate room labelled ensuite. Propose a SplitRoom on Bedroom 4 with the majority remaining as Bedroom 4 and a smaller second portion as En-suite, provided the resulting bedroom remains a sensible size and access is practical.
+If the plan contains a large Bedroom 4 on the second floor with enough floor area to carve out a compact ensuite, do NOT automatically reject the ensuite because there is no separate room labelled ensuite. Propose a SplitRoom on Bedroom 4 with the majority remaining as Bedroom 4 and a smaller second portion as En-suite, provided the resulting bedroom remains a sensible size, the bedroom retains its window, and access/plumbing are practical.
 
 A claimed ensuite MUST therefore have either:
 - an explicit ConvertToEnsuite change for an existing bathroom/WC, OR
 - an explicit SplitRoom change whose secondType is "ensuite" for an internal bedroom ensuite.
-If no ensuite is feasible for a candidate, state the specific geometric/area/access reason.
+If no ensuite is feasible for a candidate, state the specific geometric/area/access/window reason.
 
 DECISION RULE
 Compare 4/5/6/7-bed candidates on works, rent, amenities and compliance. For each serious candidate, include practical ensuite opportunities before deciding that the candidate is weaker. Select the highest-value genuinely practical option, not merely the option with the fewest changes. Do not optimise for minimum work. hmoScore, verdict, highestPossibleHMO, investorSummary, rent and cost MUST all describe the same selected option.
@@ -102,7 +111,7 @@ For example, if the plan contains four labelled bedrooms plus a ground-floor Liv
 CHANGES
 The changes array contains ACTUAL proposed works only. Do not emit NoChange. Do not repeat existing bedrooms as ConvertToBedroom. Every proposed bedroom conversion must reference the exact physical roomId and correct floor. Every ensuite/bathroom claim needs an explicit corresponding change. Do not propose an upstairs communal kitchen.
 Allowed actions: ConvertToBedroom, ConvertToKitchen, ConvertToBathroom, ConvertToEnsuite, ExtendBathroom, SplitRoom, MergeRoom.
-For SplitRoom, the split object may include firstRatio between 0.1 and 0.9. Use approximately 0.65-0.75 when creating a compact ensuite inside a large bedroom, leaving approximately 25-35% of that room for the ensuite.
+For SplitRoom, the split object may include firstRatio between 0.1 and 0.9. Use approximately 0.65-0.75 when creating a compact ensuite inside a large bedroom, leaving approximately 25-35% of that room for the ensuite. For an ensuite split, the application will preserve the bedroom's external window wall.
 Do not return invented coordinates; the application owns geometry.
 
 FINAL CHECK BEFORE RETURNING JSON
@@ -114,8 +123,9 @@ FINAL CHECK BEFORE RETURNING JSON
 6. Every selected bedroom conversion appears exactly once.
 7. Every claimed ensuite/bathroom upgrade appears as a change.
 8. For an internal ensuite, verify SplitRoom.secondType = ensuite and firstRatio leaves a genuinely usable bedroom.
-9. Rejected higher candidates have concrete reasons.
-10. hmoScore/verdict/highestPossibleHMO/investorSummary agree.
+9. Verify the bedroom portion retains its external window and that the ensuite is on the internal side wherever possible.
+10. Rejected higher candidates have concrete reasons.
+11. hmoScore/verdict/highestPossibleHMO/investorSummary agree.
 
 RETURN JSON ONLY:
 {
