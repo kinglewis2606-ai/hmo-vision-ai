@@ -68,6 +68,14 @@ For EVERY existing bedroom and every proposed bedroom that is large enough, ask:
 3. Would the remaining bedroom still comfortably meet the applicable minimum area after the ensuite is carved out?
 4. Does the room have a sensible access/door position for the ensuite without compromising the bedroom or escape route?
 
+LARGE-BEDROOM ENSUITE PRIORITY — MANDATORY
+- Treat an existing bedroom of approximately 18 sqm or more as a strong ensuite candidate unless there is a concrete geometry, access, window, drainage or compliance reason not to do it.
+- If a bedroom is approximately 20 sqm or larger and has a clear internal end/corner, actively prefer a compact internal ensuite when comparing schemes with the same bedroom count.
+- Do not reject an ensuite simply because no separate ensuite room is labelled on the original plan: the ensuite may be created by an internal partition.
+- If two bedrooms are both clearly large enough for internal ensuites, evaluate BOTH. Do not arbitrarily select only one to minimise work.
+- For a large second-floor bedroom such as a room visibly around 16-17 ft by 14-15 ft, an internal ensuite is normally a high-value option. If its window is on the external/bottom wall, place the proposed ensuite at the internal/top end and keep the window entirely within the bedroom.
+- The final scheme should include every clearly practical ensuite that materially improves the HMO unless there is a stated concrete reason to omit it.
+
 WINDOW AND NATURAL-LIGHT RULE — CRITICAL
 An ensuite must NOT take over, block, or isolate the bedroom's external window wall where the window is the bedroom's principal natural-light/ventilation source.
 - Preserve the bedroom portion containing the external window.
@@ -79,7 +87,7 @@ An ensuite must NOT take over, block, or isolate the bedroom's external window w
 A large bedroom can be split into BEDROOM + ENSUITE even when no separate room currently exists for the ensuite. This is a proposed internal partition, not an assertion that an existing ensuite already exists.
 
 WHEN AN INTERNAL ENSUITE IS PROPOSED:
-- Use action: "SplitRoom" against the REAL bedroom roomId.
+- Use action: "SplitRoom" against the REAL bedroom roomId. NEVER use ConvertToEnsuite against a bedroom that does not already contain a separately detected wet room.
 - split.firstType MUST be "bedroom".
 - split.secondType MUST be "ensuite".
 - split.secondName MUST be "En-suite" or similar.
@@ -124,8 +132,9 @@ FINAL CHECK BEFORE RETURNING JSON
 7. Every claimed ensuite/bathroom upgrade appears as a change.
 8. For an internal ensuite, verify SplitRoom.secondType = ensuite and firstRatio leaves a genuinely usable bedroom.
 9. Verify the bedroom portion retains its external window and that the ensuite is on the internal side wherever possible.
-10. Rejected higher candidates have concrete reasons.
-11. hmoScore/verdict/highestPossibleHMO/investorSummary agree.
+10. If any bedroom is approximately 18 sqm or larger, explicitly record why it does or does not receive an ensuite in the selected scheme.
+11. Rejected higher candidates have concrete reasons.
+12. hmoScore/verdict/highestPossibleHMO/investorSummary agree.
 
 RETURN JSON ONLY:
 {
