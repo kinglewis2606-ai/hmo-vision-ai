@@ -29,12 +29,18 @@ export interface WallLine {
   y2: number;
 }
 
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export interface DetectedRoom {
   id: string;
   x: number;
   y: number;
   width: number;
   height: number;
+  polygon?: Point[];
 }
 
 // ============================================================================
@@ -62,6 +68,7 @@ export interface Room {
   shape: string;
   doors: Door[];
   windows: Window[];
+  polygon?: Point[];
   approxAreaSqm?: number;
   approxWidthM?: number;
   approxDepthM?: number;
