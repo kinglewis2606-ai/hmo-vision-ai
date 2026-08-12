@@ -10,6 +10,12 @@ The application has already detected floor-plan geometry. The JSON geometry is a
 Detected floor plan JSON:
 [FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]
 
+IMPORTANT NARRATIVE NAMING RULE
+- roomId values such as room-5 and room-7 are INTERNAL IDENTIFIERS only.
+- NEVER describe these identifiers to the user as “Bedroom 5”, “Bedroom 7”, “room 5”, “room 7”, etc.
+- In verdicts, recommendations, conversion steps, investor summaries and explanations, ALWAYS use the human room name from roomLabels, e.g. “Bedroom 1” or “Bedroom 4”.
+- If an internal identifier must be mentioned for debugging, write it after the human name: “Bedroom 1 (room-5)”.
+
 EXISTING STATE VS PROPOSED STATE — CRITICAL
 - roomLabels describe the property BEFORE works.
 - summary.bedrooms and summary.bathrooms are EXISTING counts only.
@@ -106,6 +112,7 @@ FINAL SELF-CHECK — MUST PASS BEFORE RETURNING JSON
 10. Bedroom windows remain with the bedroom portion after ensuite splits.
 11. hmoScore, verdict, highestPossibleHMO, investorSummary, rent, cost and changes describe the SAME selected option.
 12. The proposed layout must contain genuine SplitRoom/ConvertToBedroom/ConvertToBathroom/etc. changes when works are proposed; do not output a relabel-only redesign.
+13. Narrative must use Bedroom 1/Bedroom 4-style names, never raw room numbers as if they were bedroom numbers.
 
 RETURN JSON ONLY:
 {
