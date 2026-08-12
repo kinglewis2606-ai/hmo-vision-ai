@@ -13,7 +13,8 @@ import { applyRoomChanges } from "@/lib/applyRoomChanges";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-type RoomLabel = { roomId?: string; name?: string; type?: string; floor?: string; confidence?: string; areaSqm?: number; widthM?: number; depthM?: number; [key: string]: unknown };
+type WallSide = "top" | "bottom" | "left" | "right";
+type RoomLabel = { roomId?: string; name?: string; type?: string; floor?: string; confidence?: string; areaSqm?: number; widthM?: number; depthM?: number; windows?: WallSide[]; doors?: WallSide[]; [key: string]: unknown };
 
 function norm(v: unknown): string { return String(v ?? "").toLowerCase().replace(/[^a-z]/g, ""); }
 function isBedroom(v: unknown): boolean { return norm(v).includes("bedroom"); }
@@ -22,7 +23,14 @@ function isBedroomChange(c: any): boolean { return norm(c?.action) === "convertt
 
 function applyLabels(plan: any, labels: RoomLabel[]): void {
   const byId = new Map<string, any>(); for (const f of plan.floors) for (const r of f.rooms) byId.set(r.id, r);
-  for (const l of labels) { const r = byId.get(String(l.roomId ?? "")); if (!r) continue; if (l.name) r.name = String(l.name); if (l.type) r.type = String(l.type); if (l.confidence) r.confidence = String(l.confidence); }
+  for (const l of labels) {
+    const r = byId.get(String(l.roomId ?? "")); if (!r) continue;
+    if (l.name) r.name = String(l.name);
+    if (l.type) r.type = String(l.type);
+    if (l.confidence) r.confidence = String(l.confidence);
+    if (Array.isArray(l.windows)) r.windows = l.windows.filter((w): w is WallSide => ["top", "bottom", "left", "right"].includes(w));
+    if (Array.isArray(l.doors)) r.doors = l.doors.filter((d): d is WallSide => ["top", "bottom", "left", "right"].includes(d)).map(wall => ({ wall }));
+  }
 }
 
 function noOpChange(c: any, plan: any): boolean {
@@ -60,17 +68,21 @@ function addBestRoomConversions(plan: any, labels: RoomLabel[], changes: any[], 
   return output;
 }
 
-function addSafeEnsuites(plan: any, labels: RoomLabel[], changes: any[], result: any): any[] {
+function addSafeEnsuites(plan: any, labels: RoomLabel[], changes: any[]): any[] {
   const output = [...changes];
   const byId = new Map<string, RoomLabel>(); for (const l of labels) byId.set(String(l.roomId ?? ""), l);
   for (const floor of plan.floors) for (const room of floor.rooms) {
     const label = byId.get(room.id); if (!label || !isBedroom(label.type)) continue;
     const area = Number(label.areaSqm || room.approxAreaSqm || 0); if (area < 18) continue;
     if (output.some(c => String(c.roomId) === room.id && (norm(c.action) === "splitroom" || norm(c.action) === "converttoensuite"))) continue;
-    const openings = Array.isArray(room.windows) ? room.windows : [];
-    if (openings.length === 0) continue;
-    const direction = Number(room.width) >= Number(room.height) ? "vertical" : "horizontal";
-    output.push({ roomId: room.id, action: "SplitRoom", reason: `Internal ensuite for ${label.name || room.id}; preserve the known external opening wall and place the ensuite on the internal side.`, split: { firstName: label.name || room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction, firstRatio: 0.72 } });
+    const windows: WallSide[] = Array.isArray(label.windows) ? label.windows : [];
+    if (windows.length === 0) continue;
+    const hasTop = windows.includes("top"), hasBottom = windows.includes("bottom"), hasLeft = windows.includes("left"), hasRight = windows.includes("right");
+    let direction: "horizontal" | "vertical";
+    if (hasTop !== hasBottom) direction = "horizontal";
+    else if (hasLeft !== hasRight) direction = "vertical";
+    else continue;
+    output.push({ roomId: room.id, action: "SplitRoom", reason: `Internal ensuite for ${label.name || room.id}; detected window wall ${windows.join(", ")} is retained with the bedroom and the ensuite is placed at the opposite/internal end.`, split: { firstName: label.name || room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction, firstRatio: 0.72 } });
   }
   return output;
 }
@@ -103,7 +115,7 @@ export async function POST(req: Request) {
     const requested = Array.isArray(result.changes) ? result.changes : [];
     const valid = requested.filter((c: any) => { const id = String(c?.roomId || ""); if (!roomsById.has(id) || noOpChange(c, labelled)) return false; const l = labelsById.get(id); if (l?.floor && String(l.floor).toLowerCase() !== String(roomsById.get(id)!.floor).toLowerCase()) return false; return true; });
     const withConversions = addBestRoomConversions(labelled, labels, valid, result);
-    const finalChanges = addSafeEnsuites(labelled, labels, withConversions, result);
+    const finalChanges = addSafeEnsuites(labelled, labels, withConversions);
     const proposed = applyRoomChanges(labelled, finalChanges);
     const appliedChanges = finalChanges.filter((c: any) => { const before = roomsById.get(String(c.roomId))?.room; if (!before) return false; if (norm(c.action) === "splitroom" || norm(c.action) === "converttoensuite") return proposed.floors.some((f: any) => f.rooms.some((r: any) => r.id === `${before.id}-split-2`)); const after = proposed.floors.flatMap((f: any) => f.rooms).find((r: any) => r.id === before.id); return !!after && (after.type !== before.type || after.name !== before.name); });
     result.changes = appliedChanges; result.originalFloorPlan = original; result.proposedFloorPlan = proposed;
