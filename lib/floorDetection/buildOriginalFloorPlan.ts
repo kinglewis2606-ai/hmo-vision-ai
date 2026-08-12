@@ -8,19 +8,13 @@ function touching(a: DetectedRoom, b: DetectedRoom): boolean {
   const horizontalOverlap = a.x < b.x + b.width && a.x + a.width > b.x;
   return (horizontal && verticalOverlap) || (vertical && horizontalOverlap);
 }
-
 function getAdjacentRooms(room: DetectedRoom, rooms: DetectedRoom[]): string[] {
   return rooms.filter(r => r.id !== room.id).filter(r => touching(room, r)).map(r => r.id);
 }
-
 function roomBelongsToFloor(room: DetectedRoom, floor: DetectedFloor): boolean {
-  const roomCenterX = room.x + room.width / 2;
-  const roomCenterY = room.y + room.height / 2;
-  const left = floor.left ?? 0;
-  const right = floor.right ?? Infinity;
-  const top = floor.top ?? 0;
-  const bottom = floor.bottom ?? Infinity;
-  return roomCenterX >= left && roomCenterX < right && roomCenterY >= top && roomCenterY < bottom;
+  const cx = room.x + room.width / 2, cy = room.y + room.height / 2;
+  const left = floor.left ?? 0, right = floor.right ?? Infinity, top = floor.top ?? 0, bottom = floor.bottom ?? Infinity;
+  return cx >= left && cx < right && cy >= top && cy < bottom;
 }
 
 export function buildOriginalFloorPlan(floors: DetectedFloor[], rooms: DetectedRoom[]): FloorPlan {
@@ -45,7 +39,7 @@ export function buildOriginalFloorPlan(floors: DetectedFloor[], rooms: DetectedR
           shape: room.polygon && room.polygon.length > 4 ? "polygon" : "rectangle",
           adjacentRooms: getAdjacentRooms(room, floorRooms),
           doors: [],
-          windows: [],
+          windows: (room.openingWalls || []).map(wall => ({ wall })),
           notes: "",
           confidence: "Geometry Detection"
         }))
