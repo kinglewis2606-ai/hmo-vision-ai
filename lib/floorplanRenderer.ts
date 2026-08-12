@@ -77,7 +77,7 @@ function makeClipPath(id: string, room: any): string {
   if (points) return `<clipPath id="${id}"><polygon points="${points}"/></clipPath>`;
   return `<clipPath id="${id}"><rect x="${Number(room?.x)}" y="${Number(room?.y)}" width="${Number(room?.width)}" height="${Number(room?.height)}"/></clipPath>`;
 }
-function maskOriginalRoom(room: any, clipId: string): string {
+function maskOriginalRoom(room: any): string {
   const points = polygonPoints(room?.polygon);
   if (points) return `<polygon points="${points}" fill="white" fill-opacity="0.72" stroke="#111827" stroke-width="3"/>`;
   return `<rect x="${Number(room?.x)}" y="${Number(room?.y)}" width="${Number(room?.width)}" height="${Number(room?.height)}" fill="white" fill-opacity="0.72" stroke="#111827" stroke-width="3"/>`;
@@ -90,27 +90,35 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
   for (const floor of original.floors) for (const room of floor.rooms) originals.set(room.id.trim().toLowerCase(), room);
   for (const floor of proposed.floors) for (const room of floor.rooms) proposedRooms.set(room.id.trim().toLowerCase(), room);
 
-  const defs: string[] = [], overlays: string[] = [], rendered = new Set<string>();
-
+  const defs: string[] = [], overlays: string[] = [];
+  const byRoom = new Map<string, RoomChange[]>();
   for (const change of changes) {
     const id = String(change?.roomId || "").trim().toLowerCase();
-    if (!id || rendered.has(id)) continue;
-    const before = originals.get(id), after = proposedRooms.get(id);
-    if (!before || !after || !shouldRender(change, before, after)) continue;
+    if (!id) continue;
+    const list = byRoom.get(id) || [];
+    list.push(change);
+    byRoom.set(id, list);
+  }
+
+  // A room can legitimately have multiple transformations: e.g. convert the
+  // room to a bedroom AND then carve an internal en-suite from that bedroom.
+  // The old renderer marked the room as rendered after the first change and
+  // silently skipped the second one. That was the reason the report could say
+  // "Bedroom 1 with en-suite" while the picture showed only Bedroom 1.
+  for (const [id, roomChanges] of byRoom) {
+    const before = originals.get(id);
+    const after = proposedRooms.get(id);
+    if (!before || !after) continue;
+    const splitChange = roomChanges.find(c => normaliseAction(c.action) === "splitroom");
+    const change = splitChange || roomChanges.find(c => shouldRender(c, before, after));
+    if (!change || !shouldRender(change, before, after)) continue;
 
     const clipId = `clip-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
     defs.push(makeClipPath(clipId, before));
     const action = normaliseAction(change.action);
-
-    // First hide the original linework inside the changed room. This is
-    // important: a proposed HMO plan must visibly replace the old room use,
-    // rather than merely drawing a faint colour over the old plan.
-    overlays.push(`<g clip-path="url(#${clipId})">${maskOriginalRoom(before, clipId)}</g>`);
+    overlays.push(`<g clip-path="url(#${clipId})">${maskOriginalRoom(before)}</g>`);
 
     if (action === "splitroom") {
-      // Draw the two resulting room polygons independently. The geometry is
-      // already clipped to the source room by applyRoomChanges, and this
-      // second clip is a final safety boundary for the visual output.
       overlays.push(renderRoom(after, change.split?.firstName || after.name || "Bedroom", false, clipId, true));
       const second = [...proposedRooms.values()].find((candidate: any) => String(candidate?.notes || "").includes(`Created by split of ${before.id}`));
       if (second) {
@@ -124,17 +132,9 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
           ? (change.newName || "SHOWER ROOM")
           : after.name || after.type || "PROPOSED ROOM";
       overlays.push(renderRoom(after, label, false, clipId));
-      if (action === "converttoensuite") {
-        const ensuite = proposedRooms.get(`${id}-ensuite`);
-        if (ensuite) overlays.push(renderRoom(ensuite, "EN-SUITE", true, clipId, true));
-      }
     }
-    rendered.add(id);
   }
 
-  // Always make the proposed image self-identifying. This also makes it clear
-  // when there are no valid geometry changes instead of silently showing a
-  // copy of the original plan.
   const banner = `<g><rect x="0" y="0" width="${Math.min(width, 330)}" height="48" fill="#111827" fill-opacity="0.94"/><text x="18" y="32" font-family="Arial,sans-serif" font-size="22" font-weight="800" fill="white">PROPOSED HMO LAYOUT</text></g>`;
   const emptyWarning = overlays.length === 0
     ? `<g><rect x="20" y="60" width="${Math.min(width - 40, 520)}" height="54" rx="8" fill="#b91c1c" fill-opacity="0.94"/><text x="40" y="94" font-family="Arial,sans-serif" font-size="20" font-weight="800" fill="white">NO VALID GEOMETRY CHANGES RENDERED</text></g>`
