@@ -113,7 +113,7 @@ export async function POST(req: Request) {
     const result = JSON.parse(cleaned), labels = Array.isArray(result.roomLabels) ? result.roomLabels : [];
     const labelled = structuredClone(original); applyLabels(labelled, labels);
     const roomsById = new Map<string, any>(); for (const f of original.floors) for (const r of f.rooms) roomsById.set(r.id, { room: r, floor: f.name });
-    const labelsById = new Map(labels.map((l: any) => [String(l?.roomId), l]));
+    const labelsById = new Map<string, any>(labels.map((l: any) => [String(l?.roomId), l]));
     const requested = Array.isArray(result.changes) ? result.changes : [];
     const valid = requested.filter((c: any) => { const id = String(c?.roomId || ""); if (!roomsById.has(id) || noOpChange(c, labelled)) return false; const l = labelsById.get(id); if (l?.floor && String(l.floor).toLowerCase() !== String(roomsById.get(id).floor).toLowerCase()) return false; return true; });
     const withConversions = addBestRoomConversions(labelled, labels, valid, result);
