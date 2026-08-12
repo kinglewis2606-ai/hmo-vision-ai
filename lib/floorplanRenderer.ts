@@ -1,6 +1,8 @@
-import { FloorPlan, RoomChange } from "@/lib/types/floorPlan";
+import { FloorPlan, RoomChange, Point } from "@/lib/types/floorPlan";
 
-function escapeXml(text: string): string { return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;"); }
+function escapeXml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+}
 function normaliseAction(action?: string): string { return String(action || "").toLowerCase().replace(/[^a-z]/g, ""); }
 function targetType(change: RoomChange): string {
   const explicit = String(change.newType || "").trim().toLowerCase();
@@ -35,19 +37,46 @@ function fill(type: string): string {
   if (t.includes("kitchen")) return "#f59e0b";
   return "#a78bfa";
 }
+function polygonPoints(points?: Point[]): string | null {
+  if (!points || points.length < 3) return null;
+  return points.map(point => `${Number(point.x)},${Number(point.y)}`).join(" ");
+}
+function roomCenter(room: any): { x: number; y: number } {
+  const points = room.polygon as Point[] | undefined;
+  if (!points || points.length < 3) return { x: Number(room.x) + Number(room.width) / 2, y: Number(room.y) + Number(room.height) / 2 };
+  let area2 = 0, cx = 0, cy = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    const cross = a.x * b.y - b.x * a.y;
+    area2 += cross;
+    cx += (a.x + b.x) * cross;
+    cy += (a.y + b.y) * cross;
+  }
+  if (Math.abs(area2) < 1e-6) return { x: Number(room.x) + Number(room.width) / 2, y: Number(room.y) + Number(room.height) / 2 };
+  return { x: cx / (3 * area2), y: cy / (3 * area2) };
+}
 function renderRoom(room: any, label: string, isEnsuite = false, clipId?: string): string {
   const x = Number(room.x), y = Number(room.y), w = Number(room.width), h = Number(room.height);
   if (!(w > 0 && h > 0)) return "";
-  const badgeW = Math.max(1, Math.min(w - 6, Math.min(220, Math.max(48, w * 0.72))));
-  const badgeH = Math.max(18, Math.min(h - 6, 24));
-  const bx = x + (w - badgeW) / 2, by = y + (h - badgeH) / 2;
+  const points = polygonPoints(room.polygon);
+  const shape = points
+    ? `<polygon points="${points}" fill="${fill(room.type || "")}" fill-opacity="0.22" stroke="${isEnsuite ? "#047857" : "#1d4ed8"}" stroke-width="3" stroke-dasharray="8 5"/>`
+    : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill(room.type || "")}" fill-opacity="0.22" stroke="${isEnsuite ? "#047857" : "#1d4ed8"}" stroke-width="3" stroke-dasharray="8 5"/>`;
+  const center = roomCenter(room);
+  const badgeW = Math.max(48, Math.min(220, w * 0.72));
+  const badgeH = Math.max(18, Math.min(24, h - 6));
+  const bx = center.x - badgeW / 2, by = center.y - badgeH / 2;
   const font = Math.max(8, Math.min(16, Math.min(w, h) / 7));
   const clip = clipId ? ` clip-path="url(#${clipId})"` : "";
-  return `<g${clip}>
-    <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill(room.type || "")}" fill-opacity="0.22" stroke="${isEnsuite ? "#047857" : "#1d4ed8"}" stroke-width="3" stroke-dasharray="8 5"/>
+  return `<g${clip}>${shape}
     <rect x="${bx}" y="${by}" width="${badgeW}" height="${badgeH}" rx="4" fill="#111827" fill-opacity="0.92"/>
-    <text x="${x + w / 2}" y="${y + h / 2 + font * 0.34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${font}" font-weight="700" fill="white">${escapeXml(label)}</text>
+    <text x="${center.x}" y="${center.y + font * 0.34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${font}" font-weight="700" fill="white">${escapeXml(label)}</text>
   </g>`;
+}
+function makeClipPath(id: string, room: any): string {
+  const points = polygonPoints(room?.polygon);
+  if (points) return `<clipPath id="${id}"><polygon points="${points}"/></clipPath>`;
+  return `<clipPath id="${id}"><rect x="${Number(room?.x)}" y="${Number(room?.y)}" width="${Number(room?.width)}" height="${Number(room?.height)}"/></clipPath>`;
 }
 export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, originalImageDataUri: string, changes: RoomChange[] = []): string {
   const width = original.metadata?.imageWidth ?? proposed.metadata?.imageWidth ?? 1600;
@@ -62,7 +91,7 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
     const before = originals.get(id), after = proposedRooms.get(id);
     if (!before || !after || !shouldRender(change, before, after)) continue;
     const clipId = `clip-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-    defs.push(`<clipPath id="${clipId}"><rect x="${Number(before.x)}" y="${Number(before.y)}" width="${Number(before.width)}" height="${Number(before.height)}"/></clipPath>`);
+    defs.push(makeClipPath(clipId, before));
     const action = normaliseAction(change.action);
     const label = action === "converttobedroom" ? (change.newName || "Bedroom") : action === "converttobathroom" ? (change.newName || "Shower Room") : action === "splitroom" ? (change.split?.firstName || after.name || "Bedroom") : after.name || after.type || "Proposed Room";
     overlays.push(renderRoom(after, label, false, clipId));
