@@ -38,10 +38,11 @@ function requestedRatio(change: RoomChange): number {
   const r = Number(change.split?.firstRatio);
   return Number.isFinite(r) ? Math.min(.82, Math.max(.65, r)) : .72;
 }
+function windowWalls(room: Room): string[] { return Array.from(new Set((room.windows || []).map(w => w.wall))); }
 function directionFor(room: Room, requested?: "horizontal" | "vertical"): "horizontal" | "vertical" {
-  const walls = new Set((room.windows || []).map(w => w.wall));
-  if (walls.has("top") || walls.has("bottom")) return "horizontal";
-  if (walls.has("left") || walls.has("right")) return "vertical";
+  const walls = windowWalls(room);
+  if (walls.includes("top") || walls.includes("bottom")) return "horizontal";
+  if (walls.includes("left") || walls.includes("right")) return "vertical";
   return requested || "horizontal";
 }
 function splitChild(source: Room, change: RoomChange, x: number, y: number, width: number, height: number, polygon?: Point[]): Room {
@@ -55,56 +56,65 @@ function splitChild(source: Room, change: RoomChange, x: number, y: number, widt
 }
 function splitRoom(floor: any, room: Room, change: RoomChange): void {
   const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
+  const walls = windowWalls(room);
+  // A safe ensuite requires a known principal external opening wall. If the
+  // source room has no opening data, or has windows on multiple walls, a simple
+  // one-axis split cannot guarantee that the wet room will stay off the windows.
+  // Refuse the transformation instead of generating a visually plausible but
+  // invalid proposal.
+  if (wet && (walls.length !== 1 || !room.polygon || room.polygon.length < 3)) return;
+
   const direction = wet ? directionFor(room, change.split?.direction) : (change.split?.direction || "vertical");
   const firstRatio = requestedRatio(change);
   const ox = room.x, oy = room.y, ow = room.width, oh = room.height;
   const originalPolygon = room.polygon ? structuredClone(room.polygon) : undefined;
-  const windows = new Set((room.windows || []).map(w => w.wall));
 
   if (direction === "horizontal") {
     const firstH = Math.max(1, Math.round(oh * firstRatio)), secondH = oh - firstH;
     if (secondH <= 1) return;
+    let bedroomY: number, ensuiteY: number, bedroomPoly: Point[] | undefined, secondPoly: Point[] | undefined;
     const splitY = oy + firstH;
-    let bedroomY = oy + secondH, ensuiteY = oy;
-    let bedroomPoly: Point[] | undefined, secondPoly: Point[] | undefined;
-    if (wet && windows.has("top") && !windows.has("bottom")) {
+    if (wet && walls[0] === "top") {
       bedroomY = oy; ensuiteY = oy + firstH;
       bedroomPoly = clip(originalPolygon, "y", splitY, false);
       secondPoly = clip(originalPolygon, "y", splitY, true);
-    } else if (wet && windows.has("bottom") && !windows.has("top")) {
+    } else if (wet && walls[0] === "bottom") {
       bedroomY = oy + secondH; ensuiteY = oy;
       bedroomPoly = clip(originalPolygon, "y", oy + secondH, true);
       secondPoly = clip(originalPolygon, "y", oy + secondH, false);
     } else {
-      bedroomPoly = clip(originalPolygon, "y", oy + secondH, true);
-      secondPoly = clip(originalPolygon, "y", oy + secondH, false);
+      bedroomY = oy; ensuiteY = oy + firstH;
+      bedroomPoly = clip(originalPolygon, "y", splitY, false);
+      secondPoly = clip(originalPolygon, "y", splitY, true);
     }
-    room.y = bedroomY; room.height = firstH; room.polygon = bedroomPoly || room.polygon;
+    if (!bedroomPoly || !secondPoly) return;
+    room.y = bedroomY; room.height = firstH; room.polygon = bedroomPoly;
     floor.rooms.push(splitChild(room, change, ox, ensuiteY, ow, secondH, secondPoly));
   } else {
     const firstW = Math.max(1, Math.round(ow * firstRatio)), secondW = ow - firstW;
     if (secondW <= 1) return;
+    let bedroomX: number, ensuiteX: number, bedroomPoly: Point[] | undefined, secondPoly: Point[] | undefined;
     const splitX = ox + firstW;
-    let bedroomX = ox + secondW, ensuiteX = ox;
-    let bedroomPoly: Point[] | undefined, secondPoly: Point[] | undefined;
-    if (wet && windows.has("left") && !windows.has("right")) {
+    if (wet && walls[0] === "left") {
       bedroomX = ox; ensuiteX = ox + firstW;
       bedroomPoly = clip(originalPolygon, "x", splitX, false);
       secondPoly = clip(originalPolygon, "x", splitX, true);
-    } else if (wet && windows.has("right") && !windows.has("left")) {
+    } else if (wet && walls[0] === "right") {
       bedroomX = ox + secondW; ensuiteX = ox;
       bedroomPoly = clip(originalPolygon, "x", ox + secondW, true);
       secondPoly = clip(originalPolygon, "x", ox + secondW, false);
     } else {
-      bedroomPoly = clip(originalPolygon, "x", ox + secondW, true);
-      secondPoly = clip(originalPolygon, "x", ox + secondW, false);
+      bedroomX = ox; ensuiteX = ox + firstW;
+      bedroomPoly = clip(originalPolygon, "x", splitX, false);
+      secondPoly = clip(originalPolygon, "x", splitX, true);
     }
-    room.x = bedroomX; room.width = firstW; room.polygon = bedroomPoly || room.polygon;
+    if (!bedroomPoly || !secondPoly) return;
+    room.x = bedroomX; room.width = firstW; room.polygon = bedroomPoly;
     floor.rooms.push(splitChild(room, change, ensuiteX, oy, secondW, oh, secondPoly));
   }
   room.type = change.split?.firstType || "bedroom";
   room.name = change.split?.firstName || room.name || "Bedroom";
-  room.notes = [room.notes, wet ? "Bedroom retains exterior opening wall; ensuite formed wholly inside original bedroom boundary" : "First portion of proposed room split"].filter(Boolean).join("; ");
+  room.notes = [room.notes, wet ? "Bedroom retains its known external opening wall; ensuite is a contained internal polygon split" : "First portion of proposed room split"].filter(Boolean).join("; ");
 }
 function addEnsuite(floor: any, room: Room, change: RoomChange): void {
   splitRoom(floor, room, { ...change, action: "SplitRoom", split: { firstName: room.name, firstType: "bedroom", secondName: change.newName || "En-suite", secondType: "ensuite", direction: change.split?.direction, firstRatio: change.split?.firstRatio ?? .72 } });
