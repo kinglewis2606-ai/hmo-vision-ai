@@ -80,7 +80,6 @@ function addSafeEnsuites(plan: any, labels: any[], changes: any[], result: any):
     if (!label || !isBedroom(label.type) || Number(room.approxAreaSqm || 0) < 18) continue;
     if (out.some((c: any) => String(c?.roomId) === room.id && (norm(c?.action) === "splitroom" || norm(c?.action) === "converttoensuite"))) continue;
     const walls = Array.from(new Set((room.windows || []).map((w: any) => w.wall)));
-    // A one-axis split is only safe when exactly one principal external wall is known.
     if (walls.length !== 1) continue;
     const horizontal = walls[0] === "top" || walls[0] === "bottom";
     out.push({ roomId: room.id, action: "SplitRoom", reason: `Large ${label.name || "bedroom"} (${Number(room.approxAreaSqm).toFixed(1)} sqm): create a compact internal ensuite while retaining the ${walls[0]} external opening wall with the bedroom.`, split: { firstName: label.name || room.name, firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction: horizontal ? "horizontal" : "vertical", firstRatio: 0.72 } });
@@ -119,8 +118,6 @@ export async function POST(req: Request) {
     const withConversions = addBestRoomConversions(labelled, labels, valid, result);
     const finalChanges = addSafeEnsuites(labelled, labels, withConversions, result);
     const proposed = applyRoomChanges(labelled, finalChanges);
-
-    // A transformation is only reported if it actually changed the canonical geometry.
     const appliedChanges = finalChanges.filter((c: any) => {
       const before = roomsById.get(String(c.roomId))?.room;
       if (!before) return false;
