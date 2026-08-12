@@ -38,20 +38,6 @@ function requestedRatio(change: RoomChange): number {
   const r = Number(change.split?.firstRatio);
   return Number.isFinite(r) ? Math.min(.82, Math.max(.65, r)) : .72;
 }
-function safeRatio(room: Room, change: RoomChange): number | null {
-  const requested = requestedRatio(change);
-  const area = Number(room.approxAreaSqm || 0) || (room.width * room.height) / 10000;
-  if (!Number.isFinite(area) || area <= 0) return requested;
-  // Conservative planning gate: keep >=6.51m² bedroom and reserve >=2.5m²
-  // for a compact ensuite. If both cannot fit, do not draw an ensuite.
-  const minBedroomRatio = 6.51 / area;
-  const maxBedroomRatio = 1 - 2.5 / area;
-  if (minBedroomRatio > maxBedroomRatio || maxBedroomRatio < .65) return null;
-  const lower = Math.max(.65, minBedroomRatio);
-  const upper = Math.min(.82, maxBedroomRatio);
-  if (lower > upper) return null;
-  return Math.min(upper, Math.max(lower, requested));
-}
 function directionFor(room: Room, requested?: "horizontal" | "vertical"): "horizontal" | "vertical" {
   const walls = new Set((room.windows || []).map(w => w.wall));
   if (walls.has("top") || walls.has("bottom")) return "horizontal";
@@ -61,17 +47,16 @@ function directionFor(room: Room, requested?: "horizontal" | "vertical"): "horiz
 function splitChild(source: Room, change: RoomChange, x: number, y: number, width: number, height: number, polygon?: Point[]): Room {
   const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
   return {
-    ...structuredClone(source),
-    id: `${source.id}-split-2`, name: change.split?.secondName || (wet ? "En-suite" : "Bedroom 2"), type: change.split?.secondType || "bedroom",
-    x, y, width, height, polygon, windows: wet ? [] : structuredClone(source.windows || []), doors: [], adjacentRooms: [source.id],
-    notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "), confidence: "geometry-proposed",
+    ...structuredClone(source), id: `${source.id}-split-2`,
+    name: change.split?.secondName || (wet ? "En-suite" : "Bedroom 2"), type: change.split?.secondType || "bedroom",
+    x, y, width, height, polygon, windows: wet ? [] : structuredClone(source.windows || []), doors: [],
+    adjacentRooms: [source.id], notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "), confidence: "geometry-proposed",
   };
 }
 function splitRoom(floor: any, room: Room, change: RoomChange): void {
   const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
-  const firstRatio = wet ? safeRatio(room, change) : requestedRatio(change);
-  if (firstRatio == null) return;
   const direction = wet ? directionFor(room, change.split?.direction) : (change.split?.direction || "vertical");
+  const firstRatio = requestedRatio(change);
   const ox = room.x, oy = room.y, ow = room.width, oh = room.height;
   const originalPolygon = room.polygon ? structuredClone(room.polygon) : undefined;
   const windows = new Set((room.windows || []).map(w => w.wall));
