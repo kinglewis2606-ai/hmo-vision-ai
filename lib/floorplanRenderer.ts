@@ -52,17 +52,14 @@ function shouldRenderChange(change: RoomChange, before: any, after: any): boolea
 function fixtureOverlay(room: any): string {
   const type = String(room.type || "").toLowerCase();
   if (!(type.includes("bath") || type.includes("shower") || type.includes("ensuite"))) return "";
-
   const x = Number(room.x), y = Number(room.y), w = Number(room.width), h = Number(room.height);
   if (!(w > 20 && h > 20)) return "";
-
   const pad = Math.max(6, Math.min(w, h) * 0.10);
   const shower = Math.max(18, Math.min(w, h) * 0.38);
   const sx = x + w - shower - pad;
   const sy = y + pad;
   const cx = x + pad + Math.min(w * 0.18, 26);
   const cy = y + h - pad - Math.min(h * 0.22, 26);
-
   return `
     <rect x="${sx}" y="${sy}" width="${shower}" height="${shower}" rx="4" fill="none" stroke="#047857" stroke-width="3"/>
     <circle cx="${sx + shower / 2}" cy="${sy + shower / 2}" r="${Math.max(3, shower * 0.08)}" fill="none" stroke="#047857" stroke-width="2"/>
@@ -75,7 +72,7 @@ function actionLabel(change: RoomChange, room: any): string {
   if (action === "converttobedroom") return change.newName || "Bedroom";
   if (action === "converttobathroom") return change.newName || "Shower Room";
   if (action === "converttoensuite") return "Bedroom + En-suite";
-  if (action === "splitroom") return change.split?.firstName || room.name || "Bedroom";
+  if (action === "splitroom") return change.newName || change.split?.firstName || room.name || "Bedroom";
   return change.newName || room.name || room.type || "Proposed Room";
 }
 
@@ -89,7 +86,6 @@ function renderRoomOverlay(room: any, change: RoomChange, isEnsuite = false): st
   const badgeX = x + (w - badgeWidth) / 2;
   const badgeY = y + (h - badgeHeight) / 2;
   const fixture = isEnsuite ? fixtureOverlay(room) : "";
-
   return `
     <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" fill-opacity="0.18" stroke="${isEnsuite ? "#047857" : "#1d4ed8"}" stroke-width="4" stroke-dasharray="10 7"/>
     ${fixture}
@@ -103,7 +99,6 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
 
   const originalRooms = new Map<string, any>();
   for (const floor of original.floors) for (const room of floor.rooms) originalRooms.set(room.id.trim().toLowerCase(), room);
-
   const proposedRooms = new Map<string, any>();
   for (const floor of proposed.floors) for (const room of floor.rooms) proposedRooms.set(room.id.trim().toLowerCase(), room);
 
@@ -123,15 +118,20 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
 
     if (action === "converttoensuite") {
       const ensuite = proposedRooms.get(`${id}-ensuite`);
-      if (ensuite) {
-        overlays.push(renderRoomOverlay(ensuite, { ...change, action: "ConvertToEnsuite", newName: "En-suite" }, true));
-      }
+      if (ensuite) overlays.push(renderRoomOverlay(ensuite, { ...change, action: "ConvertToEnsuite", newName: "En-suite" }, true));
     }
 
     if (action === "splitroom") {
       const second = [...proposedRooms.values()].find((candidate: any) => String(candidate?.notes || "").includes(`Created by split of ${before.id}`));
       if (second) {
-        overlays.push(renderRoomOverlay(second, { ...change, action: "ConvertToBedroom", newName: change.split?.secondName || "Bedroom 2", split: undefined }));
+        const secondIsEnsuite = /ensuite|bath|shower/i.test(String(second.type || ""));
+        overlays.push(renderRoomOverlay(second, {
+          ...change,
+          action: secondIsEnsuite ? "ConvertToEnsuite" : "ConvertToBedroom",
+          newName: secondIsEnsuite ? "En-suite" : (change.split?.secondName || "Bedroom 2"),
+          newType: second.type,
+          split: undefined,
+        }, secondIsEnsuite));
       }
     }
   }
@@ -145,6 +145,5 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
     <g>${overlays.join("\n")}</g>
     ${emptyMessage}
   </svg>`;
-
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
