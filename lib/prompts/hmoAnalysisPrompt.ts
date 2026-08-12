@@ -29,20 +29,36 @@ For EVERY detected room return exactly one roomLabels item. Read the visible roo
 - Landing / Hall / Entrance / stairs -> circulation
 Every roomLabels.roomId must exist in the JSON and every roomLabels.floor must exactly match the JSON floor.
 
-MAXIMUM-VIABLE-HMO OPTIMISATION — DO NOT STOP AT THE FIRST SAFE OPTION
-You must explicitly evaluate baseline, +1 bedroom, +2 bedrooms and higher candidates while suitable rooms remain. Compare bedroom count, room sizes, communal amenity, bathrooms, escape/access, planning/licensing risk, works, rent and value.
+MAXIMUM-VIABLE-HMO OPTIMISATION — HARD REQUIREMENT
+Do not simply choose the easiest low-work scheme. Evaluate the maximum sensible bedroom count first, then compare it with lower-count options for compliance, amenity, works and value.
 
-GROUND-FLOOR LOUNGE / RECEPTION — MANDATORY 6-BED TEST
-A separate ground-floor Lounge, Living Room or Reception is a mandatory bedroom candidate whenever its detected geometry is large enough to remain a sensible single-occupancy bedroom (normally at least 6.51 sqm, subject to applicable local standards) AND a separate kitchen/dining area can remain as usable communal space.
-- Do NOT reject a 6-bed scheme merely because a 5-bed scheme is easier.
-- If four existing bedrooms plus a suitable ground-floor lounge/reception exist, you MUST explicitly test the 6-bed candidate: the four existing bedrooms + the lounge conversion + any other valid bedroom conversion required by the candidate.
-- If the plan has both a lounge and a separate dining/kitchen area, preserve the kitchen/dining as communal space and test the lounge as a bedroom.
-- If the lounge is suitable, the 6-bed candidate must be compared against the 5-bed candidate and should normally be selected when it provides materially higher rent without a concrete compliance/planning/amenity reason to reject it.
-- A 5-bed result is only permitted when the 6-bed lounge conversion has a concrete documented reason for rejection: insufficient area/dimensions, loss of required communal amenity, unacceptable access/escape, fire safety, planning/licensing constraint, or other clear geometry constraint.
-- The final verdict, score, highestPossibleHMO, rent, cost, investorSummary and changes MUST all agree with the selected candidate.
+You MUST explicitly test these candidates in order:
+1. Existing bedrooms retained.
+2. Existing bedrooms + every viable living/reception/lounge conversion.
+3. Higher-count options using viable room splits where the geometry genuinely supports them.
+4. Ensuite upgrades to large bedrooms as a separate amenity optimisation.
+
+The selected option must be the highest practical option unless a concrete geometry, amenity, fire/escape, planning/licensing or room-size constraint rules it out. “Easier”, “minimal works”, or “lower cost” alone is NOT a valid reason to reject a materially better HMO.
+
+GROUND-FLOOR LOUNGE / RECEPTION — MANDATORY TEST
+Every separate ground-floor Lounge, Living Room or Reception MUST be tested as a bedroom candidate when:
+- its visible/detected geometry is large enough for a sensible single-occupancy bedroom (normally >= 6.51 sqm, subject to the applicable local standard), AND
+- a separate kitchen and/or dining area remains usable as communal amenity.
+
+This is a HARD RULE, not a suggestion.
+- If the property has 5 existing bedrooms and a suitable separate ground-floor lounge/reception, the default candidate is a 6-bed HMO using that lounge as Bedroom 6.
+- If the property has 4 existing bedrooms and a suitable lounge/reception, test the 5-bed option using that lounge.
+- If a separate dining room plus kitchen remains after converting the lounge, do NOT reject the lounge conversion merely because there is no lounge left. The dining/kitchen can provide communal amenity.
+- If a suitable lounge/reception exists, a 5-bed result when 6 is physically achievable is WRONG unless there is a concrete documented reason.
+- A valid rejection reason must be specific: measured area/dimensions, unacceptable communal provision, escape/fire route, planning/licensing constraint, or another actual geometry constraint visible in the plan.
+- “The lounge is better as communal space” is NOT sufficient where a separate usable dining/kitchen communal area remains.
+- The final verdict, score, highestPossibleHMO, rent, cost, investorSummary and changes MUST all describe the same selected candidate.
+
+IMPORTANT: DO NOT CONFUSE ROOM COUNT WITH ROOM USE
+A ground-floor plan may contain Dining Room + Kitchen + Lounge + Living Room/reception. Do not automatically preserve every one as communal space. Preserve the kitchen and enough communal dining/amenity, then test whether a distinct lounge/reception can become a lettable bedroom. Use the actual room labels and geometry, not a generic house template.
 
 COMMUNAL SPACE RULE
-Do not sacrifice the only kitchen. Do not sacrifice all meaningful communal dining/lounge space just to create a marginal bedroom. However, where a distinct kitchen + dining area remains, a separate lounge/reception is a legitimate bedroom candidate. Do not assume a lounge must be retained when another usable communal area remains.
+Do not sacrifice the only kitchen. Do not sacrifice all meaningful communal dining/amenity just to create a marginal bedroom. However, where a distinct kitchen + dining area remains, a separate lounge/reception is a legitimate bedroom candidate and should normally be converted when it is large enough.
 
 ENSUITE OPTIMISATION — MANDATORY
 For every existing OR proposed bedroom large enough for an internal ensuite, actively test an ensuite before rejecting it.
@@ -60,13 +76,15 @@ Always preserve the bedroom's external window wall. Put an internal ensuite at t
 BATHROOM / WC
 A separate existing WC may be upgraded to a shower room with ConvertToBathroom. An existing bathroom/WC may be converted to an ensuite only when it is genuinely being allocated to a specific bedroom. Shared bathrooms remain shared. Do not claim an ensuite without an explicit corresponding change.
 
-CHANGES
+CHANGES MUST BE REAL WORKS
 Changes are actual proposed works only. Allowed actions: ConvertToBedroom, ConvertToKitchen, ConvertToBathroom, ConvertToEnsuite, ExtendBathroom, SplitRoom, MergeRoom.
 - Every bedroom conversion must reference the exact physical roomId.
+- Every lounge/reception bedroom conversion must reference that lounge/reception roomId.
 - Every ensuite claim must have either ConvertToEnsuite on an actual wet room or SplitRoom with secondType ensuite on the actual bedroom.
 - Do not invent coordinates; the application owns geometry.
 - Do not return NoChange.
 - Do not propose an upstairs communal kitchen.
+- A proposal that merely relabels existing bedrooms is incomplete when a viable conversion or split exists.
 
 COUNTING RULES
 summary.bedrooms = current bedroom labels only.
@@ -74,17 +92,19 @@ summary.bathrooms = current bathrooms/shower rooms/WCs only.
 summary.possibleHMOBedrooms = final proposed bedroom count.
 If a lounge is converted, it contributes +1 only to possibleHMOBedrooms.
 
-FINAL SELF-CHECK
+FINAL SELF-CHECK — MUST PASS BEFORE RETURNING JSON
 1. Count current bedrooms from current labels only.
 2. Count proposed bedroom conversions separately.
 3. Verify proposed bedroom count equals existing bedrooms plus valid bedroom conversions, accounting for explicit splits/merges.
-4. If a suitable ground-floor lounge/reception exists and separate kitchen/dining remains, explicitly test the 6-bed candidate.
-5. If 6 is rejected, give a concrete reason in highestPossibleHMO.reason and the verdict.
-6. For every bedroom around 18 sqm+, explicitly decide whether it gets an ensuite and state why.
-7. Every ID exists and every floor matches.
-8. Every proposed conversion appears exactly once.
-9. Bedroom windows remain with the bedroom portion after ensuite splits.
-10. hmoScore, verdict, highestPossibleHMO, investorSummary, rent, cost and changes describe the SAME selected option.
+4. Identify every ground-floor Lounge/Living Room/Reception and record whether it is a viable bedroom candidate.
+5. If a suitable ground-floor lounge/reception exists with separate kitchen/dining communal space, the selected scheme MUST include that conversion unless a concrete documented constraint rejects it.
+6. If 6 is rejected where 6 appears geometrically achievable, give the exact reason in highestPossibleHMO.reason and the verdict.
+7. For every bedroom around 18 sqm+, explicitly decide whether it gets an ensuite and state why.
+8. Every ID exists and every floor matches.
+9. Every proposed conversion appears exactly once.
+10. Bedroom windows remain with the bedroom portion after ensuite splits.
+11. hmoScore, verdict, highestPossibleHMO, investorSummary, rent, cost and changes describe the SAME selected option.
+12. The proposed layout must contain genuine SplitRoom/ConvertToBedroom/ConvertToBathroom/etc. changes when works are proposed; do not output a relabel-only redesign.
 
 RETURN JSON ONLY:
 {
