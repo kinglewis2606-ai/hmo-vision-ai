@@ -54,6 +54,76 @@ function reconcileCurrentCounts(result: any, changes: any[]): void {
   if (!Number.isFinite(proposedBedrooms) || proposedBedrooms < minimumProposed) result.summary.possibleHMOBedrooms = minimumProposed;
 }
 
+function ensureMaximumPracticalBedrooms(floorPlan: any, labels: any[], changes: any[], result: any): any[] {
+  const output = [...changes];
+  const labelById = new Map<string, any>();
+  for (const label of labels) labelById.set(String(label?.roomId ?? ""), label);
+  const existingBedrooms = labels.filter((label: any) => isBedroomType(label?.type)).length;
+  const alreadyConverted = new Set(output.filter(isBedroomChange).map((change: any) => String(change?.roomId ?? "")));
+  const rooms = floorPlan.floors.flatMap((floor: any) => floor.rooms.map((room: any) => ({ room, floorName: floor.name })));
+
+  // A generic HMO rule: a distinct living/reception room is a bedroom candidate
+  // when it is large enough for a single occupant and another meaningful communal
+  // space remains. This is deliberately based on the detected labels/geometry,
+  // never on hard-coded room IDs from one test property.
+  const candidates = rooms
+    .map(({ room, floorName }: any) => ({ room, floorName, label: labelById.get(room.id) }))
+    .filter(({ label }: any) => label && !isBedroomType(label.type))
+    .filter(({ label }: any) => {
+      const type = normaliseType(label.type);
+      return type.includes("lounge") || type.includes("living") || type.includes("reception");
+    })
+    .filter(({ room }: any) => Number(room.approxAreaSqm || 0) >= 6.51 && Number(room.approxWidthM || 0) >= 2.1 && Number(room.approxDepthM || 0) >= 2.1)
+    .filter(({ room }: any) => !alreadyConverted.has(room.id))
+    .sort((a: any, b: any) => {
+      const aGround = normaliseType(a.floorName).includes("ground") ? 1 : 0;
+      const bGround = normaliseType(b.floorName).includes("ground") ? 1 : 0;
+      if (aGround !== bGround) return bGround - aGround;
+      return Number(b.room.approxAreaSqm || 0) - Number(a.room.approxAreaSqm || 0);
+    });
+
+  const communalLabels = labels.filter((label: any) => {
+    const type = normaliseType(label.type);
+    return type.includes("dining") || type.includes("lounge") || type.includes("living") || type.includes("reception");
+  });
+  const hasKitchen = labels.some((label: any) => normaliseType(label.type).includes("kitchen"));
+  const hasSeparateDining = labels.some((label: any) => normaliseType(label.type).includes("dining"));
+  const target = Math.min(6, existingBedrooms + output.filter(isBedroomChange).filter((change: any) => !isBedroomType(labelById.get(String(change.roomId))?.type)).length + candidates.length);
+  let proposed = existingBedrooms + output.filter((change: any) => {
+    if (!isBedroomChange(change)) return false;
+    const label = labelById.get(String(change?.roomId ?? ""));
+    return label && !isBedroomType(label.type);
+  }).length;
+
+  for (const candidate of candidates) {
+    if (proposed >= target) break;
+    // Never consume the final meaningful communal room. A kitchen plus a separate
+    // dining room is enough to make a ground-floor lounge a valid bedroom candidate.
+    const remainingCommunal = communalLabels.filter((label: any) => !alreadyConverted.has(String(label.roomId)) && label.roomId !== candidate.room.id);
+    const communalSafe = hasKitchen && (hasSeparateDining || remainingCommunal.length > 0);
+    if (!communalSafe) continue;
+    output.push({
+      roomId: candidate.room.id,
+      action: "ConvertToBedroom",
+      newType: "bedroom",
+      newName: `Bedroom ${existingBedrooms + output.filter(isBedroomChange).length + 1}`,
+      reason: `Maximum-practical HMO test: ${candidate.label.name || candidate.room.id} is a detected ${candidate.label.type} of approximately ${Number(candidate.room.approxAreaSqm).toFixed(1)} sqm, large enough for a single-occupancy bedroom. Kitchen${hasSeparateDining ? " and separate dining" : " plus remaining communal space"} is retained, so this conversion is preferred over leaving a viable room unused.`,
+    });
+    alreadyConverted.add(candidate.room.id);
+    proposed++;
+  }
+
+  if (proposed >= 6 && existingBedrooms >= 4) {
+    const convertedNames = output.filter(isBedroomChange).map((change: any) => labelById.get(String(change.roomId))?.name || change.roomId);
+    result.summary = { ...(result.summary || {}), possibleHMOBedrooms: proposed };
+    result.highestPossibleHMO = { bedrooms: proposed, score: Number(result.hmoScore || 0), reason: `Maximum-practical candidate selected using detected geometry. Converted suitable non-bedroom rooms: ${convertedNames.join(", ")}.` };
+    const headline = `Proceed with a ${proposed}-bed HMO using every detected bedroom plus the viable additional living/reception room conversions while retaining kitchen and communal dining space.`;
+    result.verdict = headline;
+    result.investorSummary = `${headline} The selected layout is based on this uploaded plan's detected room geometry rather than a fixed room-number template.`;
+  }
+  return output;
+}
+
 function ensureLargeBedroomEnsuites(floorPlan: any, labels: any[], changes: any[], result: any): any[] {
   const output = [...changes];
   const selectedBedrooms = Number(result?.summary?.possibleHMOBedrooms);
@@ -187,7 +257,10 @@ export async function POST(req: Request) {
         return true;
       });
 
-      const finalChanges = ensureLargeBedroomEnsuites(labelledFloorPlan, roomLabels, validChanges, result);
+      // First enforce the maximum practical bedroom test from this plan's own
+      // detected geometry; then add ensuites to genuinely large bedrooms.
+      const maxBedroomChanges = ensureMaximumPracticalBedrooms(labelledFloorPlan, roomLabels, validChanges, result);
+      const finalChanges = ensureLargeBedroomEnsuites(labelledFloorPlan, roomLabels, maxBedroomChanges, result);
       result.changes = finalChanges;
       reconcileCurrentCounts(result, finalChanges);
 
