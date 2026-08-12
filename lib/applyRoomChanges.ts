@@ -101,7 +101,8 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
       ensuitePolygon = clipPolygon(originalPolygon, "y", splitY, false);
     }
     room.polygon = bedroomPolygon || room.polygon;
-    floor.rooms.push(makeSplitRoom(room, change, room.x, room.y - (bedroomKeepsTop ? 0 : ensuiteHeight), originalWidth, ensuiteHeight, ensuitePolygon));
+    const secondY = bedroomKeepsTop ? room.y + bedroomHeight : room.y - ensuiteHeight;
+    floor.rooms.push(makeSplitRoom(room, change, room.x, secondY, originalWidth, ensuiteHeight, ensuitePolygon));
     room.type = change.split?.firstType || "bedroom";
     room.name = change.split?.firstName || room.name || "Bedroom";
     room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite placed internally"].filter(Boolean).join("; ");
@@ -113,7 +114,6 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
     const ensuiteWidth = originalWidth - bedroomWidth;
     const splitX = room.x + bedroomWidth;
     const bedroomKeepsRight = windowWalls.has("right") && !windowWalls.has("left");
-    const bedroomKeepsLeft = windowWalls.has("left") && !windowWalls.has("right");
     let bedroomPolygon: Point[] | undefined;
     let ensuitePolygon: Point[] | undefined;
 
@@ -125,11 +125,9 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
     } else {
       bedroomPolygon = clipPolygon(originalPolygon, "x", splitX, false);
       ensuitePolygon = clipPolygon(originalPolygon, "x", splitX, true);
-      if (bedroomKeepsLeft) room.width = bedroomWidth;
-      else room.width = bedroomWidth;
+      room.width = bedroomWidth;
     }
-    if (bedroomKeepsRight) room.polygon = bedroomPolygon || room.polygon;
-    else room.polygon = bedroomPolygon || room.polygon;
+    room.polygon = bedroomPolygon || room.polygon;
     const ensuiteX = bedroomKeepsRight ? room.x - ensuiteWidth : room.x + bedroomWidth;
     floor.rooms.push(makeSplitRoom(room, change, ensuiteX, room.y, ensuiteWidth, originalHeight, ensuitePolygon));
     room.type = change.split?.firstType || "bedroom";
