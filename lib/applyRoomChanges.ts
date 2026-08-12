@@ -1,8 +1,7 @@
-import { FloorPlan, RoomChange, Room } from "@/lib/types/floorPlan";
+import { FloorPlan, Room, RoomChange, Point } from "@/lib/types/floorPlan";
 
 function actionType(action?: string): string | undefined {
-  const value = (action || "").toLowerCase().replace(/\s+/g, "");
-  switch (value) {
+  switch ((action || "").toLowerCase().replace(/\s+/g, "")) {
     case "converttobedroom": return "bedroom";
     case "converttokitchen": return "kitchen";
     case "converttobathroom": return "bathroom";
@@ -10,230 +9,138 @@ function actionType(action?: string): string | undefined {
     default: return undefined;
   }
 }
-
-function isNoOpTypeChange(currentType: string, requestedType: string): boolean {
-  const current = currentType.toLowerCase();
-  const requested = requestedType.toLowerCase();
-  if (requested === "bedroom") return current.includes("bedroom");
-  if (requested === "bathroom") return current.includes("bathroom") || current.includes("shower") || current.includes("ensuite");
-  if (requested === "kitchen") return current.includes("kitchen");
-  if (requested === "ensuite") return current.includes("ensuite");
-  return current === requested;
+function noOp(current: string, requested: string): boolean {
+  const c = current.toLowerCase(), r = requested.toLowerCase();
+  if (r === "bedroom") return c.includes("bedroom");
+  if (r === "bathroom") return c.includes("bathroom") || c.includes("shower") || c.includes("ensuite");
+  if (r === "kitchen") return c.includes("kitchen");
+  if (r === "ensuite") return c.includes("ensuite");
+  return c === r;
 }
-
-type Point = { x: number; y: number };
-
-function clipPolygon(points: Point[] | undefined, axis: "x" | "y", threshold: number, keepGreater: boolean): Point[] | undefined {
+function clip(points: Point[] | undefined, axis: "x" | "y", threshold: number, greater: boolean): Point[] | undefined {
   if (!points || points.length < 3) return points;
-  const inside = (p: Point) => keepGreater ? p[axis] >= threshold : p[axis] <= threshold;
-  const intersect = (a: Point, b: Point): Point => {
-    const da = b[axis] - a[axis];
-    const ratio = Math.abs(da) < 1e-9 ? 0 : (threshold - a[axis]) / da;
-    return { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio };
+  const inside = (p: Point) => greater ? p[axis] >= threshold : p[axis] <= threshold;
+  const intersection = (a: Point, b: Point): Point => {
+    const d = b[axis] - a[axis];
+    const t = Math.abs(d) < 1e-9 ? 0 : (threshold - a[axis]) / d;
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
   };
-  const result: Point[] = [];
+  const out: Point[] = [];
   for (let i = 0; i < points.length; i++) {
-    const current = points[i];
-    const previous = points[(i - 1 + points.length) % points.length];
-    const currentInside = inside(current);
-    const previousInside = inside(previous);
-    if (currentInside !== previousInside) result.push(intersect(previous, current));
-    if (currentInside) result.push(current);
+    const a = points[(i - 1 + points.length) % points.length], b = points[i];
+    const ai = inside(a), bi = inside(b);
+    if (ai !== bi) out.push(intersection(a, b));
+    if (bi) out.push(b);
   }
-  return result.length >= 3 ? result : undefined;
+  return out.length >= 3 ? out : undefined;
 }
-
-function preferredEnsuiteDirection(room: Room, requested?: "horizontal" | "vertical"): "horizontal" | "vertical" {
-  const walls = new Set((room.windows || []).map(window => window.wall));
+function ratio(change: RoomChange): number {
+  const r = Number(change.split?.firstRatio);
+  return Number.isFinite(r) ? Math.min(.82, Math.max(.65, r)) : .72;
+}
+function directionFor(room: Room, requested?: "horizontal" | "vertical"): "horizontal" | "vertical" {
+  const walls = new Set((room.windows || []).map(w => w.wall));
   if (walls.has("top") || walls.has("bottom")) return "horizontal";
   if (walls.has("left") || walls.has("right")) return "vertical";
-  // Without reliable opening metadata, prefer a horizontal internal split. This
-  // keeps the proposal away from the common front/rear window wall on UK rooms.
   return requested || "horizontal";
 }
-
-function splitRatio(change: RoomChange): number {
-  const raw = Number(change.split?.firstRatio);
-  if (!Number.isFinite(raw)) return 0.72;
-  return Math.min(0.82, Math.max(0.65, raw));
-}
-
-function makeSplitRoom(source: Room, change: RoomChange, secondX: number, secondY: number, secondWidth: number, secondHeight: number, polygon?: Point[]): Room {
-  const isEnsuite = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
+function splitChild(source: Room, change: RoomChange, x: number, y: number, width: number, height: number, polygon?: Point[]): Room {
+  const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
   return {
     ...structuredClone(source),
     id: `${source.id}-split-2`,
-    name: change.split?.secondName || (isEnsuite ? "En-suite" : "Bedroom 2"),
+    name: change.split?.secondName || (wet ? "En-suite" : "Bedroom 2"),
     type: change.split?.secondType || "bedroom",
-    x: secondX,
-    y: secondY,
-    width: secondWidth,
-    height: secondHeight,
-    polygon,
-    windows: isEnsuite ? [] : structuredClone(source.windows || []),
-    doors: [],
-    adjacentRooms: [source.id],
+    x, y, width, height, polygon,
+    windows: wet ? [] : structuredClone(source.windows || []),
+    doors: [], adjacentRooms: [source.id],
     notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "),
+    confidence: "geometry-proposed",
   };
 }
-
 function splitRoom(floor: any, room: Room, change: RoomChange): void {
-  const secondType = String(change.split?.secondType || "").toLowerCase();
-  const isEnsuiteSplit = secondType.includes("ensuite") || secondType.includes("bath") || secondType.includes("shower");
-  const direction = isEnsuiteSplit ? preferredEnsuiteDirection(room, change.split?.direction) : (change.split?.direction || "vertical");
-  const ratio = splitRatio(change);
-  const originalWidth = room.width;
-  const originalHeight = room.height;
+  const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
+  const direction = wet ? directionFor(room, change.split?.direction) : (change.split?.direction || "vertical");
+  const firstRatio = ratio(change);
+  const ox = room.x, oy = room.y, ow = room.width, oh = room.height;
   const originalPolygon = room.polygon ? structuredClone(room.polygon) : undefined;
-  const windowWalls = new Set((room.windows || []).map(window => window.wall));
-
-  if (isEnsuiteSplit && direction === "horizontal") {
-    const bedroomHeight = Math.max(1, Math.round(originalHeight * ratio));
-    const ensuiteHeight = originalHeight - bedroomHeight;
-    if (ensuiteHeight <= 1 || bedroomHeight <= 1) return;
-    const splitY = room.y + bedroomHeight;
-    const keepBottom = windowWalls.has("bottom") && !windowWalls.has("top");
-    const keepTop = windowWalls.has("top") && !windowWalls.has("bottom");
-
-    let bedroomPolygon: Point[] | undefined;
-    let ensuitePolygon: Point[] | undefined;
-    if (keepBottom) {
-      bedroomPolygon = clipPolygon(originalPolygon, "y", splitY, true);
-      ensuitePolygon = clipPolygon(originalPolygon, "y", splitY, false);
-      room.y = room.y + ensuiteHeight;
-      room.height = bedroomHeight;
-    } else if (keepTop) {
-      bedroomPolygon = clipPolygon(originalPolygon, "y", splitY, false);
-      ensuitePolygon = clipPolygon(originalPolygon, "y", splitY, true);
-      room.height = bedroomHeight;
-    } else {
-      // Default: bedroom occupies the lower/window-facing portion and ensuite
-      // occupies the upper/internal portion.
-      room.y = room.y + ensuiteHeight;
-      room.height = bedroomHeight;
-      bedroomPolygon = clipPolygon(originalPolygon, "y", splitY, true);
-      ensuitePolygon = clipPolygon(originalPolygon, "y", splitY, false);
-    }
-    room.polygon = bedroomPolygon || room.polygon;
-    const secondY = keepTop ? room.y + bedroomHeight : room.y - ensuiteHeight;
-    floor.rooms.push(makeSplitRoom(room, change, room.x, secondY, originalWidth, ensuiteHeight, ensuitePolygon));
-    room.type = change.split?.firstType || "bedroom";
-    room.name = change.split?.firstName || room.name || "Bedroom";
-    room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite formed at internal end"].filter(Boolean).join("; ");
-    return;
-  }
-
-  if (isEnsuiteSplit && direction === "vertical") {
-    const bedroomWidth = Math.max(1, Math.round(originalWidth * ratio));
-    const ensuiteWidth = originalWidth - bedroomWidth;
-    if (ensuiteWidth <= 1 || bedroomWidth <= 1) return;
-    const splitX = room.x + bedroomWidth;
-    const keepRight = windowWalls.has("right") && !windowWalls.has("left");
-    const keepLeft = windowWalls.has("left") && !windowWalls.has("right");
-    let bedroomPolygon: Point[] | undefined;
-    let ensuitePolygon: Point[] | undefined;
-
-    if (keepRight) {
-      bedroomPolygon = clipPolygon(originalPolygon, "x", splitX, true);
-      ensuitePolygon = clipPolygon(originalPolygon, "x", splitX, false);
-      room.x = room.x + ensuiteWidth;
-      room.width = bedroomWidth;
-    } else if (keepLeft) {
-      bedroomPolygon = clipPolygon(originalPolygon, "x", splitX, false);
-      ensuitePolygon = clipPolygon(originalPolygon, "x", splitX, true);
-      room.width = bedroomWidth;
-    } else {
-      room.x = room.x + ensuiteWidth;
-      room.width = bedroomWidth;
-      bedroomPolygon = clipPolygon(originalPolygon, "x", splitX, true);
-      ensuitePolygon = clipPolygon(originalPolygon, "x", splitX, false);
-    }
-    room.polygon = bedroomPolygon || room.polygon;
-    const ensuiteX = keepRight ? room.x - ensuiteWidth : room.x + bedroomWidth;
-    floor.rooms.push(makeSplitRoom(room, change, ensuiteX, room.y, ensuiteWidth, originalHeight, ensuitePolygon));
-    room.type = change.split?.firstType || "bedroom";
-    room.name = change.split?.firstName || room.name || "Bedroom";
-    room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite formed at internal end"].filter(Boolean).join("; ");
-    return;
-  }
+  const windows = new Set((room.windows || []).map(w => w.wall));
 
   if (direction === "horizontal") {
-    const firstHeight = Math.max(1, Math.round(originalHeight * ratio));
-    const secondHeight = originalHeight - firstHeight;
-    const splitY = room.y + firstHeight;
-    room.height = firstHeight;
-    room.polygon = clipPolygon(originalPolygon, "y", splitY, false) || room.polygon;
-    room.name = change.split?.firstName || room.name || "Bedroom 1";
-    room.type = change.split?.firstType || "bedroom";
-    room.notes = [room.notes, "First portion of proposed room split"].filter(Boolean).join("; ");
-    if (secondHeight > 1) floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + firstHeight, originalWidth, secondHeight, clipPolygon(originalPolygon, "y", splitY, true)));
+    const firstH = Math.max(1, Math.round(oh * firstRatio));
+    const secondH = oh - firstH;
+    if (secondH <= 1) return;
+    const splitY = oy + firstH;
+    let bedroomY = oy, ensuiteY = oy + firstH;
+    let bedroomPoly: Point[] | undefined, secondPoly: Point[] | undefined;
+    if (wet && windows.has("bottom") && !windows.has("top")) {
+      // Bottom window => bedroom stays at the bottom, wet room goes to the top.
+      bedroomY = oy + secondH; ensuiteY = oy;
+      bedroomPoly = clip(originalPolygon, "y", oy + secondH, true);
+      secondPoly = clip(originalPolygon, "y", oy + secondH, false);
+    } else if (wet && windows.has("top") && !windows.has("bottom")) {
+      // Top window => bedroom stays at the top, wet room goes to the bottom.
+      bedroomY = oy; ensuiteY = oy + firstH;
+      bedroomPoly = clip(originalPolygon, "y", splitY, false);
+      secondPoly = clip(originalPolygon, "y", splitY, true);
+    } else {
+      // Default UK-plan orientation: bedroom on the window-facing/lower portion,
+      // wet room at the internal upper end.
+      bedroomY = oy + secondH; ensuiteY = oy;
+      bedroomPoly = clip(originalPolygon, "y", oy + secondH, true);
+      secondPoly = clip(originalPolygon, "y", oy + secondH, false);
+    }
+    room.y = bedroomY;
+    room.height = firstH;
+    room.polygon = bedroomPoly || room.polygon;
+    floor.rooms.push(splitChild(room, change, ox, ensuiteY, ow, secondH, secondPoly));
   } else {
-    const firstWidth = Math.max(1, Math.round(originalWidth * ratio));
-    const secondWidth = originalWidth - firstWidth;
-    const splitX = room.x + firstWidth;
-    room.width = firstWidth;
-    room.polygon = clipPolygon(originalPolygon, "x", splitX, false) || room.polygon;
-    room.name = change.split?.firstName || room.name || "Bedroom 1";
-    room.type = change.split?.firstType || "bedroom";
-    room.notes = [room.notes, "First portion of proposed room split"].filter(Boolean).join("; ");
-    if (secondWidth > 1) floor.rooms.push(makeSplitRoom(room, change, room.x + firstWidth, room.y, secondWidth, originalHeight, clipPolygon(originalPolygon, "x", splitX, true)));
+    const firstW = Math.max(1, Math.round(ow * firstRatio));
+    const secondW = ow - firstW;
+    if (secondW <= 1) return;
+    const splitX = ox + firstW;
+    let bedroomX = ox, ensuiteX = ox + firstW;
+    let bedroomPoly: Point[] | undefined, secondPoly: Point[] | undefined;
+    if (wet && windows.has("right") && !windows.has("left")) {
+      // Right window => bedroom stays right, wet room goes to the left/internal end.
+      bedroomX = ox + secondW; ensuiteX = ox;
+      bedroomPoly = clip(originalPolygon, "x", ox + secondW, true);
+      secondPoly = clip(originalPolygon, "x", ox + secondW, false);
+    } else if (wet && windows.has("left") && !windows.has("right")) {
+      // Left window => bedroom stays left, wet room goes to the right/internal end.
+      bedroomX = ox; ensuiteX = ox + firstW;
+      bedroomPoly = clip(originalPolygon, "x", splitX, false);
+      secondPoly = clip(originalPolygon, "x", splitX, true);
+    } else {
+      bedroomX = ox + secondW; ensuiteX = ox;
+      bedroomPoly = clip(originalPolygon, "x", ox + secondW, true);
+      secondPoly = clip(originalPolygon, "x", ox + secondW, false);
+    }
+    room.x = bedroomX;
+    room.width = firstW;
+    room.polygon = bedroomPoly || room.polygon;
+    floor.rooms.push(splitChild(room, change, ensuiteX, oy, secondW, oh, secondPoly));
   }
+  room.type = change.split?.firstType || "bedroom";
+  room.name = change.split?.firstName || room.name || "Bedroom";
+  room.notes = [room.notes, wet ? "Bedroom retains exterior opening wall; ensuite formed wholly inside original bedroom boundary" : "First portion of proposed room split"].filter(Boolean).join("; ");
 }
 
 function addEnsuite(floor: any, room: Room, change: RoomChange): void {
-  if (floor.rooms.some((candidate: Room) => candidate.id === `${room.id}-ensuite`)) return;
-  const original = structuredClone(room);
-  const originalPolygon = original.polygon ? structuredClone(original.polygon) : undefined;
-  const windowWalls = new Set((original.windows || []).map(window => window.wall));
-  const ratio = 0.28;
-  let ensuite: Room;
-  const direction = preferredEnsuiteDirection(original, "horizontal");
-
-  if (direction === "horizontal") {
-    const h = Math.max(1, Math.round(original.height * ratio));
-    const keepBottom = windowWalls.has("bottom") && !windowWalls.has("top");
-    const keepTop = windowWalls.has("top") && !windowWalls.has("bottom");
-    const splitY = keepBottom ? original.y + original.height - h : original.y + h;
-    if (keepBottom) {
-      room.y = original.y;
-      room.height = original.height - h;
-      room.polygon = clipPolygon(originalPolygon, "y", splitY, false) || room.polygon;
-      ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: splitY, height: h, polygon: clipPolygon(originalPolygon, "y", splitY, true), windows: [], doors: [] };
-    } else {
-      room.y = splitY;
-      room.height = original.height - h;
-      room.polygon = clipPolygon(originalPolygon, "y", splitY, true) || room.polygon;
-      ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: original.y, height: h, polygon: clipPolygon(originalPolygon, "y", splitY, false), windows: [], doors: [] };
-      if (keepTop) {
-        room.y = original.y + h;
-        room.height = original.height - h;
-      }
-    }
-  } else {
-    const w = Math.max(1, Math.round(original.width * ratio));
-    const keepRight = windowWalls.has("right") && !windowWalls.has("left");
-    const splitX = keepRight ? original.x + original.width - w : original.x + w;
-    if (keepRight) {
-      room.x = original.x;
-      room.width = original.width - w;
-      room.polygon = clipPolygon(originalPolygon, "x", splitX, false) || room.polygon;
-      ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: splitX, width: w, polygon: clipPolygon(originalPolygon, "x", splitX, true), windows: [], doors: [] };
-    } else {
-      room.x = splitX;
-      room.width = original.width - w;
-      room.polygon = clipPolygon(originalPolygon, "x", splitX, true) || room.polygon;
-      ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x, width: w, polygon: clipPolygon(originalPolygon, "x", splitX, false), windows: [], doors: [] };
-    }
-  }
-
-  room.type = "bedroom";
-  room.name = original.name;
-  room.notes = [room.notes, "Bedroom retained with external window preserved; ensuite formed internally"].filter(Boolean).join("; ");
-  room.adjacentRooms = Array.from(new Set([...(room.adjacentRooms || []), ensuite.id]));
-  ensuite.adjacentRooms = Array.from(new Set([...(ensuite.adjacentRooms || []), room.id]));
-  ensuite.notes = [original.notes, `Proposed ensuite for ${original.id}`, "Placed at the internal end away from the bedroom window"].filter(Boolean).join("; ");
-  ensuite.confidence = "geometry-proposed";
-  floor.rooms.push(ensuite);
+  // Never maintain a second implementation of ensuite geometry. ConvertToEnsuite
+  // is normalised into the same validated split used by the planner.
+  splitRoom(floor, room, {
+    ...change,
+    action: "SplitRoom",
+    split: {
+      firstName: room.name,
+      firstType: "bedroom",
+      secondName: change.newName || "En-suite",
+      secondType: "ensuite",
+      direction: change.split?.direction,
+      firstRatio: change.split?.firstRatio ?? .72,
+    },
+  });
 }
 
 export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): FloorPlan {
@@ -241,30 +148,24 @@ export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): F
   for (const change of changes || []) {
     if (!change?.roomId) continue;
     for (const floor of updated.floors) {
-      const room = floor.rooms.find(candidate => candidate.id === change.roomId);
+      const room = floor.rooms.find(r => r.id === change.roomId);
       if (!room) continue;
-      const inferredType = actionType(change.action);
-      const requestedType = String(change.newType || inferredType || "").trim().toLowerCase();
-      const action = String(change.action || "").toLowerCase();
-      const normalisedAction = action.replace(/\s+/g, "");
-      const isEnsuite = requestedType.includes("ensuite") || normalisedAction === "converttoensuite";
-      const isSplit = normalisedAction === "splitroom" || normalisedAction === "split";
-      const isNoChange = !requestedType && normalisedAction === "nochange";
-      if (isNoChange) continue;
-      if (isSplit) { splitRoom(floor, room, change); continue; }
-      if (isEnsuite) {
-        if (!String(room.type || "").toLowerCase().includes("bedroom")) continue;
-        addEnsuite(floor, room, change);
-      } else {
-        const typeIsNoOp = requestedType.length > 0 && isNoOpTypeChange(room.type || "", requestedType);
-        if (requestedType && !typeIsNoOp) {
-          room.type = change.newType || inferredType!;
-          if (change.newName) room.name = change.newName;
-          else if (inferredType === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom";
-        }
-        if (change.action && /merge|extend|partition|doorway|opening/i.test(change.action)) room.notes = [room.notes, change.action].filter(Boolean).join("; ");
-        if (change.reason && !typeIsNoOp) room.notes = [room.notes, change.reason].filter(Boolean).join("; ");
+      const action = String(change.action || "").toLowerCase().replace(/\s+/g, "");
+      const inferred = actionType(change.action);
+      const requested = String(change.newType || inferred || "").trim().toLowerCase();
+      if (action === "nochange" && !requested) continue;
+      if (action === "splitroom" || action === "split") { splitRoom(floor, room, change); continue; }
+      if (requested.includes("ensuite") || action === "converttoensuite") {
+        if (String(room.type || "").toLowerCase().includes("bedroom")) addEnsuite(floor, room, change);
+        continue;
       }
+      if (requested && !noOp(room.type || "", requested)) {
+        room.type = change.newType || inferred || room.type;
+        if (change.newName) room.name = change.newName;
+        else if (inferred === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom";
+      }
+      if (change.action && /merge|extend|partition|doorway|opening/i.test(change.action)) room.notes = [room.notes, change.action].filter(Boolean).join("; ");
+      if (change.reason && !noOp(room.type || "", requested)) room.notes = [room.notes, change.reason].filter(Boolean).join("; ");
     }
   }
   return updated;
