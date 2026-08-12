@@ -111,5 +111,7 @@ export interface RoomChange {
     secondName?: string;
     secondType?: string;
     direction?: "horizontal" | "vertical";
+    /** Fraction of the original room allocated to the first room (0.1-0.9). */
+    firstRatio?: number;
   };
 }
