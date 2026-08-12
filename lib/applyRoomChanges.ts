@@ -36,29 +36,36 @@ function makeSplitRoom(source: Room, change: RoomChange, secondX: number, second
   };
 }
 
+function splitRatio(change: RoomChange): number {
+  const raw = Number(change.split?.firstRatio);
+  if (!Number.isFinite(raw)) return 0.5;
+  return Math.min(0.9, Math.max(0.1, raw));
+}
+
 function splitRoom(floor: any, room: Room, change: RoomChange): void {
   const direction = change.split?.direction || "vertical";
+  const ratio = splitRatio(change);
   const originalWidth = room.width;
   const originalHeight = room.height;
 
   if (direction === "horizontal") {
-    const firstHeight = Math.max(1, Math.floor(originalHeight / 2));
+    const firstHeight = Math.max(1, Math.round(originalHeight * ratio));
     const secondHeight = originalHeight - firstHeight;
     room.height = firstHeight;
     room.name = change.split?.firstName || room.name || "Bedroom 1";
     room.type = change.split?.firstType || "bedroom";
-    room.notes = [room.notes, "First half of proposed room split"].filter(Boolean).join("; ");
+    room.notes = [room.notes, "First portion of proposed room split"].filter(Boolean).join("; ");
 
     if (secondHeight > 1) {
       floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + firstHeight, originalWidth, secondHeight));
     }
   } else {
-    const firstWidth = Math.max(1, Math.floor(originalWidth / 2));
+    const firstWidth = Math.max(1, Math.round(originalWidth * ratio));
     const secondWidth = originalWidth - firstWidth;
     room.width = firstWidth;
     room.name = change.split?.firstName || room.name || "Bedroom 1";
     room.type = change.split?.firstType || "bedroom";
-    room.notes = [room.notes, "First half of proposed room split"].filter(Boolean).join("; ");
+    room.notes = [room.notes, "First portion of proposed room split"].filter(Boolean).join("; ");
 
     if (secondWidth > 1) {
       floor.rooms.push(makeSplitRoom(room, change, room.x + firstWidth, room.y, secondWidth, originalHeight));
