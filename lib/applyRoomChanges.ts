@@ -1,4 +1,4 @@
-import { FloorPlan, RoomChange } from "@/lib/types/floorPlan";
+import { FloorPlan, RoomChange, Room } from "@/lib/types/floorPlan";
 
 function actionType(action?: string): string | undefined {
   const value = (action || "").toLowerCase().replace(/\s+/g, "");
@@ -21,6 +21,51 @@ function isNoOpTypeChange(currentType: string, requestedType: string): boolean {
   return current === requested;
 }
 
+function makeSplitRoom(source: Room, change: RoomChange, secondX: number, secondY: number, secondWidth: number, secondHeight: number): Room {
+  return {
+    ...structuredClone(source),
+    id: `${source.id}-split-2`,
+    name: change.split?.secondName || "Bedroom 2",
+    type: change.split?.secondType || "bedroom",
+    x: secondX,
+    y: secondY,
+    width: secondWidth,
+    height: secondHeight,
+    adjacentRooms: [source.id],
+    notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "),
+  };
+}
+
+function splitRoom(floor: any, room: Room, change: RoomChange): void {
+  const direction = change.split?.direction || "vertical";
+  const originalWidth = room.width;
+  const originalHeight = room.height;
+
+  if (direction === "horizontal") {
+    const firstHeight = Math.max(1, Math.floor(originalHeight / 2));
+    const secondHeight = originalHeight - firstHeight;
+    room.height = firstHeight;
+    room.name = change.split?.firstName || room.name || "Bedroom 1";
+    room.type = change.split?.firstType || "bedroom";
+    room.notes = [room.notes, "First half of proposed room split"].filter(Boolean).join("; ");
+
+    if (secondHeight > 1) {
+      floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + firstHeight, originalWidth, secondHeight));
+    }
+  } else {
+    const firstWidth = Math.max(1, Math.floor(originalWidth / 2));
+    const secondWidth = originalWidth - firstWidth;
+    room.width = firstWidth;
+    room.name = change.split?.firstName || room.name || "Bedroom 1";
+    room.type = change.split?.firstType || "bedroom";
+    room.notes = [room.notes, "First half of proposed room split"].filter(Boolean).join("; ");
+
+    if (secondWidth > 1) {
+      floor.rooms.push(makeSplitRoom(room, change, room.x + firstWidth, room.y, secondWidth, originalHeight));
+    }
+  }
+}
+
 export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): FloorPlan {
   const updated = structuredClone(floorPlan);
 
@@ -36,14 +81,17 @@ export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): F
       const action = String(change.action || "").toLowerCase();
       const normalisedAction = action.replace(/\s+/g, "");
       const isEnsuite = requestedType.includes("ensuite") || normalisedAction === "converttoensuite";
+      const isSplit = normalisedAction === "splitroom" || normalisedAction === "split";
       const isNoChange = !requestedType && normalisedAction === "nochange";
       if (isNoChange) continue;
 
+      if (isSplit) {
+        splitRoom(floor, room, change);
+        continue;
+      }
+
       const typeIsNoOp = requestedType.length > 0 && isNoOpTypeChange(room.type || "", requestedType);
 
-      // For an ensuite conversion the target must be a service room (normally
-      // an existing WC/shower/bathroom). We make the proposed geometry visibly
-      // represent the upgraded room instead of merely adding a text note.
       if (isEnsuite && !typeIsNoOp) {
         room.type = "ensuite";
         room.name = change.newName || "En-suite";
@@ -54,7 +102,7 @@ export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): F
         else if (inferredType === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom";
       }
 
-      if (change.action && /split|merge|extend|partition|doorway|opening/i.test(change.action)) {
+      if (change.action && /merge|extend|partition|doorway|opening/i.test(change.action)) {
         room.notes = [room.notes, change.action].filter(Boolean).join("; ");
       }
       if (change.reason && !typeIsNoOp) {
