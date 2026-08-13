@@ -1,145 +1,70 @@
 import { FloorPlan, RoomChange, Point } from "@/lib/types/floorPlan";
 
 function escapeXml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
 }
-function normaliseAction(action?: string): string { return String(action || "").toLowerCase().replace(/[^a-z]/g, ""); }
-function targetType(change: RoomChange): string {
-  const explicit = String(change.newType || "").trim().toLowerCase();
-  if (explicit) return explicit;
-  const action = normaliseAction(change.action);
-  if (action === "converttobedroom") return "bedroom";
-  if (action === "converttokitchen") return "kitchen";
-  if (action === "converttobathroom") return "bathroom";
-  if (action === "converttoensuite") return "ensuite";
-  return "";
-}
-function isNoOp(before: string, target: string): boolean {
-  const b = before.toLowerCase(), t = target.toLowerCase();
-  if (!t) return true;
-  if (t.includes("bedroom")) return b.includes("bedroom");
-  if (t.includes("bathroom")) return b.includes("bathroom") || b.includes("shower") || b.includes("ensuite");
-  if (t.includes("kitchen")) return b.includes("kitchen");
-  if (t.includes("ensuite")) return b.includes("ensuite");
-  return b === t;
-}
-function shouldRender(change: RoomChange, before: any, after: any): boolean {
-  const action = normaliseAction(change.action);
-  if (!action || action === "nochange") return false;
-  if (action === "splitroom") return true;
-  const target = targetType(change);
-  if (target && isNoOp(String(before?.type || ""), target) && action !== "converttoensuite") return false;
-  return true;
-}
-function fill(type: string): string {
-  const t = type.toLowerCase();
-  if (t.includes("bed")) return "#2563eb";
-  if (t.includes("bath") || t.includes("shower") || t.includes("ensuite")) return "#059669";
-  if (t.includes("kitchen")) return "#d97706";
-  return "#7c3aed";
-}
-function polygonPoints(points?: Point[]): string | null {
-  if (!points || points.length < 3) return null;
-  return points.map(point => `${Number(point.x)},${Number(point.y)}`).join(" ");
-}
+function norm(value: unknown): string { return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
+function isBedroom(room: any): boolean { return norm(room?.type).includes("bedroom") || norm(room?.name).includes("bedroom"); }
+function isEnsuite(room: any): boolean { return /ensuite|en-suite/i.test(`${room?.type || ""} ${room?.name || ""}`); }
+function polygonPoints(points?: Point[]): string | null { if (!points || points.length < 3) return null; return points.map(p => `${Number(p.x)},${Number(p.y)}`).join(" "); }
 function roomCenter(room: any): { x: number; y: number } {
-  const points = room.polygon as Point[] | undefined;
+  const points = room?.polygon as Point[] | undefined;
   if (!points || points.length < 3) return { x: Number(room.x) + Number(room.width) / 2, y: Number(room.y) + Number(room.height) / 2 };
   let area2 = 0, cx = 0, cy = 0;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i], b = points[(i + 1) % points.length];
-    const cross = a.x * b.y - b.x * a.y;
-    area2 += cross;
-    cx += (a.x + b.x) * cross;
-    cy += (a.y + b.y) * cross;
-  }
+  for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; const cross = a.x * b.y - b.x * a.y; area2 += cross; cx += (a.x + b.x) * cross; cy += (a.y + b.y) * cross; }
   if (Math.abs(area2) < 1e-6) return { x: Number(room.x) + Number(room.width) / 2, y: Number(room.y) + Number(room.height) / 2 };
   return { x: cx / (3 * area2), y: cy / (3 * area2) };
 }
-function renderRoom(room: any, label: string, isEnsuite = false, clipId?: string, splitPart = false): string {
-  const x = Number(room.x), y = Number(room.y), w = Number(room.width), h = Number(room.height);
-  if (!(w > 0 && h > 0)) return "";
-  const points = polygonPoints(room.polygon);
-  const stroke = isEnsuite ? "#047857" : "#1d4ed8";
-  const shape = points
-    ? `<polygon points="${points}" fill="${fill(room.type || "")}" fill-opacity="0.52" stroke="${stroke}" stroke-width="${splitPart ? 5 : 7}" stroke-dasharray="${splitPart ? "12 7" : "none"}" vector-effect="non-scaling-stroke"/>`
-    : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill(room.type || "")}" fill-opacity="0.52" stroke="${stroke}" stroke-width="${splitPart ? 5 : 7}" stroke-dasharray="${splitPart ? "12 7" : "none"}/>`;
-  const center = roomCenter(room);
-  const badgeW = Math.max(70, Math.min(260, Math.max(w * 0.7, label.length * 14)));
-  const badgeH = Math.max(26, Math.min(46, h * 0.22));
-  const bx = center.x - badgeW / 2, by = center.y - badgeH / 2;
-  const font = Math.max(11, Math.min(24, Math.min(w, h) / 5));
+function roomFill(room: any): string { if (isEnsuite(room)) return "#38bdf8"; if (isBedroom(room)) return "#8b5cf6"; return "#64748b"; }
+function renderRoom(room: any, label: string, kind: "bedroom" | "ensuite", clipId?: string): string {
+  const x = Number(room?.x), y = Number(room?.y), w = Number(room?.width), h = Number(room?.height); if (!(w > 0 && h > 0)) return "";
+  const points = polygonPoints(room?.polygon), fill = roomFill(room), stroke = kind === "ensuite" ? "#075985" : "#6d28d9";
+  const shape = points ? `<polygon points="${points}" fill="${fill}" fill-opacity="0.55" stroke="${stroke}" stroke-width="6" vector-effect="non-scaling-stroke"/>` : `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" fill-opacity="0.55" stroke="${stroke}" stroke-width="6"/>`;
+  const center = roomCenter(room), font = Math.max(11, Math.min(22, Math.min(w, h) / 5)), badge = label.length > 12 ? 150 : 120, badgeH = Math.max(25, Math.min(42, h * 0.2)), bx = center.x - badge / 2, by = center.y - badgeH / 2;
   const clip = clipId ? ` clip-path="url(#${clipId})"` : "";
-  return `<g${clip}>${shape}<rect x="${bx}" y="${by}" width="${badgeW}" height="${badgeH}" rx="7" fill="${isEnsuite ? "#047857" : "#1e3a8a"}" fill-opacity="0.96" stroke="white" stroke-width="2"/><text x="${center.x}" y="${center.y + font * 0.34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${font}" font-weight="800" fill="white">${escapeXml(label)}</text></g>`;
+  return `<g${clip}>${shape}<rect x="${bx}" y="${by}" width="${badge}" height="${badgeH}" rx="7" fill="${stroke}" fill-opacity="0.96" stroke="white" stroke-width="2"/><text x="${center.x}" y="${center.y + font * 0.34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${font}" font-weight="800" fill="white">${escapeXml(label)}</text></g>`;
 }
-function makeClipPath(id: string, room: any): string {
-  const points = polygonPoints(room?.polygon);
-  if (points) return `<clipPath id="${id}"><polygon points="${points}"/></clipPath>`;
-  return `<clipPath id="${id}"><rect x="${Number(room?.x)}" y="${Number(room?.y)}" width="${Number(room?.width)}" height="${Number(room?.height)}"/></clipPath>`;
-}
-function maskOriginalRoom(room: any): string {
-  const points = polygonPoints(room?.polygon);
-  if (points) return `<polygon points="${points}" fill="white" fill-opacity="0.72" stroke="#111827" stroke-width="3"/>`;
-  return `<rect x="${Number(room?.x)}" y="${Number(room?.y)}" width="${Number(room?.width)}" height="${Number(room?.height)}" fill="white" fill-opacity="0.72" stroke="#111827" stroke-width="3"/>`;
+function makeClipPath(id: string, room: any): string { const points = polygonPoints(room?.polygon); return points ? `<clipPath id="${id}"><polygon points="${points}"/></clipPath>` : `<clipPath id="${id}"><rect x="${Number(room.x)}" y="${Number(room.y)}" width="${Number(room.width)}" height="${Number(room.height)}"/></clipPath>`; }
+function maskOriginal(room: any): string { const points = polygonPoints(room?.polygon); return points ? `<polygon points="${points}" fill="white" fill-opacity="0.82"/>` : `<rect x="${Number(room.x)}" y="${Number(room.y)}" width="${Number(room.width)}" height="${Number(room.height)}" fill="white" fill-opacity="0.82"/>`; }
+function sameGeometry(a: any, b: any): boolean {
+  if (!a || !b || norm(a.type) !== norm(b.type) || String(a.name || "") !== String(b.name || "")) return false;
+  const ap = polygonPoints(a.polygon), bp = polygonPoints(b.polygon); if (ap && bp) return ap === bp;
+  return Number(a.x) === Number(b.x) && Number(a.y) === Number(b.y) && Number(a.width) === Number(b.width) && Number(a.height) === Number(b.height);
 }
 
 export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, originalImageDataUri: string, changes: RoomChange[] = []): string {
-  const width = original.metadata?.imageWidth ?? proposed.metadata?.imageWidth ?? 1600;
-  const height = original.metadata?.imageHeight ?? proposed.metadata?.imageHeight ?? 1200;
+  const width = original.metadata?.imageWidth ?? proposed.metadata?.imageWidth ?? 1600, height = original.metadata?.imageHeight ?? proposed.metadata?.imageHeight ?? 1200;
   const originals = new Map<string, any>(), proposedRooms = new Map<string, any>();
-  for (const floor of original.floors) for (const room of floor.rooms) originals.set(room.id.trim().toLowerCase(), room);
-  for (const floor of proposed.floors) for (const room of floor.rooms) proposedRooms.set(room.id.trim().toLowerCase(), room);
+  for (const floor of original.floors) for (const room of floor.rooms) originals.set(String(room.id).trim().toLowerCase(), room);
+  for (const floor of proposed.floors) for (const room of floor.rooms) proposedRooms.set(String(room.id).trim().toLowerCase(), room);
+  const defs: string[] = [], overlays: string[] = [], rendered = new Set<string>();
+  const changedIds = new Set(changes.map(c => String(c?.roomId || "").trim().toLowerCase()).filter(Boolean));
 
-  const defs: string[] = [], overlays: string[] = [];
-  const byRoom = new Map<string, RoomChange[]>();
+  for (const id of changedIds) { const before = originals.get(id); if (!before) continue; const clipId = `source-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`; defs.push(makeClipPath(clipId, before)); overlays.push(`<g clip-path="url(#${clipId})">${maskOriginal(before)}</g>`); }
+
+  // The final proposed geometry is the visual source of truth. This includes
+  // newly-created split children such as en-suites, which have no original ID.
+  for (const [id, room] of proposedRooms) {
+    const bedroom = isBedroom(room), ensuite = isEnsuite(room); if (!bedroom && !ensuite) continue;
+    const originalRoom = originals.get(id), changed = changedIds.has(id) || !originalRoom || !sameGeometry(originalRoom, room);
+    if (!changed && !bedroom && !ensuite) continue;
+    const clipId = originalRoom ? `source-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}` : undefined;
+    overlays.push(renderRoom(room, ensuite ? "EN-SUITE" : String(room.name || "BEDROOM").toUpperCase(), ensuite ? "ensuite" : "bedroom", clipId));
+    rendered.add(id);
+  }
+
   for (const change of changes) {
-    const id = String(change?.roomId || "").trim().toLowerCase();
-    if (!id) continue;
-    const list = byRoom.get(id) || [];
-    list.push(change);
-    byRoom.set(id, list);
+    const id = String(change?.roomId || "").trim().toLowerCase(), room = proposedRooms.get(id);
+    if (!room || rendered.has(id) || isBedroom(room) || isEnsuite(room)) continue;
+    const originalRoom = originals.get(id), clipId = originalRoom ? `source-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}` : undefined;
+    overlays.push(renderRoom(room, String(room.name || room.type || "PROPOSED").toUpperCase(), "bedroom", clipId));
   }
 
-  // A room can legitimately have multiple transformations: e.g. convert the
-  // room to a bedroom AND then carve an internal en-suite from that bedroom.
-  // The old renderer marked the room as rendered after the first change and
-  // silently skipped the second one. That was the reason the report could say
-  // "Bedroom 1 with en-suite" while the picture showed only Bedroom 1.
-  for (const [id, roomChanges] of byRoom) {
-    const before = originals.get(id);
-    const after = proposedRooms.get(id);
-    if (!before || !after) continue;
-    const splitChange = roomChanges.find(c => normaliseAction(c.action) === "splitroom");
-    const change = splitChange || roomChanges.find(c => shouldRender(c, before, after));
-    if (!change || !shouldRender(change, before, after)) continue;
-
-    const clipId = `clip-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-    defs.push(makeClipPath(clipId, before));
-    const action = normaliseAction(change.action);
-    overlays.push(`<g clip-path="url(#${clipId})">${maskOriginalRoom(before)}</g>`);
-
-    if (action === "splitroom") {
-      overlays.push(renderRoom(after, change.split?.firstName || after.name || "Bedroom", false, clipId, true));
-      const second = [...proposedRooms.values()].find((candidate: any) => String(candidate?.notes || "").includes(`Created by split of ${before.id}`));
-      if (second) {
-        const ensuite = /ensuite|bath|shower/i.test(String(second.type || ""));
-        overlays.push(renderRoom(second, ensuite ? "EN-SUITE" : (change.split?.secondName || "Bedroom"), ensuite, clipId, true));
-      }
-    } else {
-      const label = action === "converttobedroom"
-        ? (change.newName || "BEDROOM")
-        : action === "converttobathroom"
-          ? (change.newName || "SHOWER ROOM")
-          : after.name || after.type || "PROPOSED ROOM";
-      overlays.push(renderRoom(after, label, false, clipId));
-    }
-  }
-
-  const banner = `<g><rect x="0" y="0" width="${Math.min(width, 330)}" height="48" fill="#111827" fill-opacity="0.94"/><text x="18" y="32" font-family="Arial,sans-serif" font-size="22" font-weight="800" fill="white">PROPOSED HMO LAYOUT</text></g>`;
-  const emptyWarning = overlays.length === 0
-    ? `<g><rect x="20" y="60" width="${Math.min(width - 40, 520)}" height="54" rx="8" fill="#b91c1c" fill-opacity="0.94"/><text x="40" y="94" font-family="Arial,sans-serif" font-size="20" font-weight="800" fill="white">NO VALID GEOMETRY CHANGES RENDERED</text></g>`
-    : "";
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs>${defs.join("")}</defs><image href="${escapeXml(originalImageDataUri)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${overlays.join("")}</g>${banner}${emptyWarning}</svg>`;
+  const finalBedrooms = [...proposedRooms.values()].filter(isBedroom).length, finalEnsuites = [...proposedRooms.values()].filter(isEnsuite).length;
+  const bannerText = `${finalBedrooms} BEDROOMS  |  ${finalEnsuites} PRIVATE EN-SUITES`, bannerWidth = Math.min(width - 30, Math.max(430, bannerText.length * 14));
+  const banner = `<g><rect x="15" y="15" width="${bannerWidth}" height="46" rx="10" fill="#14532d" fill-opacity="0.96"/><text x="35" y="45" font-family="Arial,sans-serif" font-size="21" font-weight="900" fill="white">${escapeXml(bannerText)}</text></g>`;
+  const legend = `<g><rect x="18" y="${height - 54}" width="${Math.min(width - 36, 570)}" height="36" rx="8" fill="#111827" fill-opacity="0.93"/><circle cx="38" cy="${height - 36}" r="7" fill="#8b5cf6"/><text x="52" y="${height - 31}" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="white">BEDROOM</text><circle cx="155" cy="${height - 36}" r="7" fill="#38bdf8"/><text x="169" y="${height - 31}" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="white">PRIVATE EN-SUITE</text></g>`;
+  const emptyWarning = overlays.length === 0 ? `<g><rect x="20" y="70" width="${Math.min(width - 40, 620)}" height="58" rx="8" fill="#b91c1c" fill-opacity="0.96"/><text x="42" y="107" font-family="Arial,sans-serif" font-size="21" font-weight="800" fill="white">NO VALID PROPOSED GEOMETRY</text></g>` : "";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs>${defs.join("")}</defs><image href="${escapeXml(originalImageDataUri)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${overlays.join("")}</g>${banner}${legend}${emptyWarning}</svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
