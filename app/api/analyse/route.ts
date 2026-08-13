@@ -45,44 +45,42 @@ function noOpChange(c: any, plan: any): boolean {
   return target === current;
 }
 
-function addBestRoomConversions(plan: any, labels: RoomLabel[], changes: any[], result: any): any[] {
-  const output = [...changes];
+/**
+ * The AI owns the architectural decision. This function only normalises the
+ * representation of an AI-requested ensuite so the deterministic geometry
+ * engine can validate and apply it. It deliberately does NOT invent ensuites
+ * for every large bedroom.
+ */
+function normaliseRequestedEnsuites(plan: any, labels: RoomLabel[], changes: any[]): any[] {
   const byId = new Map<string, RoomLabel>(); for (const l of labels) byId.set(String(l.roomId ?? ""), l);
-  const existing = labels.filter(l => isBedroom(l.type)).length;
-  const converted = new Set(output.filter(isBedroomChange).map(c => String(c.roomId ?? "")));
-  const candidates = plan.floors.flatMap((f: any) => f.rooms.map((r: any) => ({ r, floor: f.name, l: byId.get(r.id) })))
-    .filter((x: any) => x.l && !isBedroom(x.l.type))
-    .filter((x: any) => ["lounge", "living", "reception"].some(k => norm(x.l.type).includes(k)))
-    .filter((x: any) => Number(x.r.approxAreaSqm || 0) >= 6.51 && !converted.has(x.r.id));
-  const hasKitchen = labels.some(l => norm(l.type).includes("kitchen"));
-  const hasDining = labels.some(l => norm(l.type).includes("dining"));
-  let proposedCount = existing + output.filter(isBedroomChange).filter(c => !isBedroom(byId.get(String(c.roomId))?.type)).length;
-  for (const x of candidates.sort((a: any, b: any) => Number(b.r.approxAreaSqm || 0) - Number(a.r.approxAreaSqm || 0))) {
-    if (proposedCount >= 6) break;
-    if (!hasKitchen || (!hasDining && candidates.length <= 1 && proposedCount >= 5)) continue;
-    output.push({ roomId: x.r.id, action: "ConvertToBedroom", newName: `Bedroom ${proposedCount + 1}`, newType: "bedroom", reason: `Viable ${x.l.name || x.l.type} conversion based on detected geometry while retaining communal kitchen${hasDining ? " and dining" : ""}.` });
-    converted.add(x.r.id); proposedCount++;
-  }
-  result.summary = { ...(result.summary || {}), possibleHMOBedrooms: Math.max(Number(result.summary?.possibleHMOBedrooms) || 0, proposedCount) };
-  if (proposedCount > existing) result.highestPossibleHMO = { bedrooms: proposedCount, score: Number(result.hmoScore || 0), reason: "Selected from detected viable living/reception geometry rather than fixed room IDs." };
-  return output;
-}
+  return changes.map((change: any) => {
+    const action = norm(change?.action);
+    const id = String(change?.roomId ?? "");
+    const label = byId.get(id);
+    const room = plan.floors.flatMap((f: any) => f.rooms).find((r: any) => r.id === id);
+    const requestedEnsuite = action === "converttoensuite" || (action === "splitroom" && /ensuite|bath|shower/i.test(String(change?.split?.secondType || "")));
+    if (!requestedEnsuite || !room || !label || !isBedroom(label.type)) return change;
 
-function addSafeEnsuites(plan: any, labels: RoomLabel[], changes: any[]): any[] {
-  const output = [...changes];
-  const byId = new Map<string, RoomLabel>(); for (const l of labels) byId.set(String(l.roomId ?? ""), l);
-  for (const floor of plan.floors) for (const room of floor.rooms) {
-    const label = byId.get(room.id); if (!label || !isBedroom(label.type)) continue;
-    const area = Number(label.areaSqm || room.approxAreaSqm || 0); if (area < 12) continue;
-    if (output.some(c => String(c.roomId) === room.id && (norm(c.action) === "splitroom" || norm(c.action) === "converttoensuite"))) continue;
     const windows: WallSide[] = Array.isArray(label.windows) ? label.windows : [];
     let direction: "horizontal" | "vertical";
     if (windows.includes("top") !== windows.includes("bottom")) direction = "horizontal";
     else if (windows.includes("left") !== windows.includes("right")) direction = "vertical";
     else direction = room.width >= room.height ? "horizontal" : "vertical";
-    output.push({ roomId: room.id, action: "SplitRoom", reason: windows.length ? `Internal ensuite for ${label.name || room.id}; detected window wall ${windows.join(", ")} is retained with the bedroom and the ensuite is placed at the opposite/internal end.` : `Internal ensuite for ${label.name || room.id}; compact corner geometry will be validated against the detected bedroom polygon.`, split: { firstName: label.name || room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction, firstRatio: 0.72 } });
-  }
-  return output;
+
+    const existingSplit = change.split || {};
+    return {
+      ...change,
+      action: "SplitRoom",
+      split: {
+        firstName: existingSplit.firstName || label.name || room.name || "Bedroom",
+        firstType: "bedroom",
+        secondName: existingSplit.secondName || change.newName || "En-suite",
+        secondType: "ensuite",
+        direction: existingSplit.direction || direction,
+        firstRatio: Number.isFinite(Number(existingSplit.firstRatio)) ? Number(existingSplit.firstRatio) : 0.72,
+      },
+    };
+  });
 }
 
 function annotatedImage(filePath: string, plan: any): Promise<string> {
@@ -112,12 +110,12 @@ export async function POST(req: Request) {
     const labelsById = new Map<string, RoomLabel>(); for (const l of labels) labelsById.set(String(l.roomId ?? ""), l);
     const requested = Array.isArray(result.changes) ? result.changes : [];
     const valid = requested.filter((c: any) => { const id = String(c?.roomId || ""); if (!roomsById.has(id) || noOpChange(c, labelled)) return false; const l = labelsById.get(id); if (l?.floor && String(l.floor).toLowerCase() !== String(roomsById.get(id)!.floor).toLowerCase()) return false; return true; });
-    const withConversions = addBestRoomConversions(labelled, labels, valid, result);
-    const finalChanges = addSafeEnsuites(labelled, labels, withConversions);
+    const finalChanges = normaliseRequestedEnsuites(labelled, labels, valid);
     const proposed = applyRoomChanges(labelled, finalChanges);
 
-    // A split is applied only when the source room now has valid remainder geometry
-    // and the generated child exists. Conversions must also produce a real source-room change.
+    // Geometry is the source of truth. A change is considered applied only if
+    // the resulting room geometry proves that the requested transformation
+    // actually happened. Rejected geometry is removed from the final report.
     const proposedRooms = proposed.floors.flatMap((f: any) => f.rooms);
     const appliedChanges = finalChanges.filter((c: any) => {
       const id = String(c?.roomId || "");
@@ -132,8 +130,6 @@ export async function POST(req: Request) {
       return !!after && (after.type !== before.type || after.name !== before.name);
     });
 
-    // Geometry is the source of truth for the report: a rejected change is not
-    // allowed to survive in the final narrative/changes array.
     result.changes = appliedChanges;
     result.originalFloorPlan = original;
     result.proposedFloorPlan = proposed;
@@ -143,6 +139,10 @@ export async function POST(req: Request) {
       result.summary.bedrooms = originalBedrooms;
       result.summary.possibleHMOBedrooms = proposedBedrooms;
     }
+    result.highestPossibleHMO = {
+      ...(result.highestPossibleHMO || {}),
+      bedrooms: proposedRooms.filter((r: any) => isBedroom(r.type)).length,
+    };
     result.generatedLayoutImage = renderFloorPlan(labelled, proposed, `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`, appliedChanges);
     return NextResponse.json({ success: true, result });
   } catch (error: any) { console.error("ANALYSE ERROR:", error); return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 }); }
