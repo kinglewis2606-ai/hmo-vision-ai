@@ -2,7 +2,8 @@ import { loadImage } from "./loadImage";
 import { DetectedRoom, DetectedFloor, Point } from "@/lib/types/floorPlan";
 
 const DARK_THRESHOLD = 130;
-const DILATION_SIZE = 5;
+const BASE_DILATION_SIZE = 5;
+const DOOR_CLOSING_DILATION_SIZE = 15;
 const MAX_ANALYSIS_DIMENSION = 1000;
 
 interface Region {
@@ -57,7 +58,6 @@ function dilateBinary(source: Uint8Array, width: number, height: number, size: n
 }
 
 type Edge = { a: Point; b: Point };
-
 function pointKey(point: Point): string { return `${point.x},${point.y}`; }
 
 function simplifyPolygon(points: Point[]): Point[] {
@@ -72,7 +72,6 @@ function simplifyPolygon(points: Point[]): Point[] {
     if (first.x === last.x && first.y === last.y) cleaned.pop();
   }
   if (cleaned.length < 3) return cleaned;
-
   let changed = true;
   let current = cleaned;
   while (changed && current.length >= 3) {
@@ -103,7 +102,6 @@ function polygonFromCells(cells: number[], width: number, height: number, closed
     if (!open(x - 1, y)) edges.push({ a: { x, y: y + 1 }, b: { x, y } });
   }
   if (!edges.length) return [];
-
   const outgoing = new Map<string, Edge[]>();
   for (const edge of edges) {
     const key = pointKey(edge.a);
@@ -111,11 +109,9 @@ function polygonFromCells(cells: number[], width: number, height: number, closed
     list.push(edge);
     outgoing.set(key, list);
   }
-
   const used = new Set<string>();
   const loops: Point[][] = [];
   const edgeKey = (edge: Edge) => `${pointKey(edge.a)}>${pointKey(edge.b)}`;
-
   for (const start of edges) {
     if (used.has(edgeKey(start))) continue;
     const loop: Point[] = [];
@@ -134,7 +130,6 @@ function polygonFromCells(cells: number[], width: number, height: number, closed
     }
     if (loop.length >= 4 && pointKey(loop[0]) === pointKey(loop[loop.length - 1])) loops.push(loop.slice(0, -1));
   }
-
   if (!loops.length) return [];
   loops.sort((a, b) => Math.abs(polygonArea(b)) - Math.abs(polygonArea(a)));
   return simplifyPolygon(loops[0]);
@@ -149,12 +144,11 @@ function polygonArea(points: Point[]): number {
   return area / 2;
 }
 
-function findEnclosedRegions(barrier: Uint8Array, width: number, height: number): Region[] {
-  const closed = dilateBinary(barrier, width, height, DILATION_SIZE);
+function findEnclosedRegions(barrier: Uint8Array, width: number, height: number, dilationSize: number): Region[] {
+  const closed = dilateBinary(barrier, width, height, dilationSize);
   const visited = new Uint8Array(width * height);
   const queue = new Int32Array(width * height);
   const regions: Region[] = [];
-
   for (let y = 1; y < height - 1; y++) {
     for (let x = 1; x < width - 1; x++) {
       const start = y * width + x;
@@ -164,7 +158,6 @@ function findEnclosedRegions(barrier: Uint8Array, width: number, height: number)
       const cells: number[] = [];
       queue[tail++] = start;
       visited[start] = 1;
-
       while (head < tail) {
         const current = queue[head++];
         const cy = Math.floor(current / width);
@@ -217,6 +210,14 @@ function dedupeRegions(regions: Region[]): Region[] {
   return kept.sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
+function scoreRegions(regions: Region[], floorWidth: number, floorHeight: number): number {
+  if (!regions.length) return -Infinity;
+  const floorArea = floorWidth * floorHeight;
+  const usable = regions.reduce((sum, r) => sum + r.area, 0) / floorArea;
+  if (usable < 0.05) return -Infinity;
+  return regions.length * 10 + Math.min(usable, 0.9);
+}
+
 export async function detectRooms(imagePath: string, floors: DetectedFloor[]): Promise<DetectedRoom[]> {
   if (!floors?.length) {
     console.log("Room detector received no floor bounds");
@@ -244,12 +245,14 @@ export async function detectRooms(imagePath: string, floors: DetectedFloor[]): P
         local[y * floorWidth + x] = source.data[sy * source.width + sx];
       }
     }
-    const uniqueRegions = dedupeRegions(findEnclosedRegions(local, floorWidth, floorHeight).filter(region => isRoomRegion(region, floorWidth, floorHeight)));
+    const base = dedupeRegions(findEnclosedRegions(local, floorWidth, floorHeight, BASE_DILATION_SIZE).filter(region => isRoomRegion(region, floorWidth, floorHeight)));
+    const closedDoors = dedupeRegions(findEnclosedRegions(local, floorWidth, floorHeight, DOOR_CLOSING_DILATION_SIZE).filter(region => isRoomRegion(region, floorWidth, floorHeight)));
+    const uniqueRegions = scoreRegions(closedDoors, floorWidth, floorHeight) > scoreRegions(base, floorWidth, floorHeight) ? closedDoors : base;
     for (const region of uniqueRegions) {
       const polygon = region.polygon.map(point => ({ x: fullLeft + point.x * scale, y: fullTop + point.y * scale }));
       rooms.push({ id: `room-${nextId++}`, x: fullLeft + region.x * scale, y: fullTop + region.y * scale, width: Math.max(1, region.width * scale), height: Math.max(1, region.height * scale), polygon });
     }
-    console.log(`${floor.name}: ${uniqueRegions.length} enclosed room regions`);
+    console.log(`${floor.name}: ${uniqueRegions.length} enclosed room regions (base=${base.length}, door-close=${closedDoors.length})`);
   }
   console.log(`Detected ${rooms.length} rooms from real pixel geometry`);
   return rooms;
