@@ -85,6 +85,15 @@ function splitChild(source: Room, change: RoomChange, x: number, y: number, widt
   };
 }
 
+/**
+ * Choose only a genuinely internal corner for a wet-room.
+ *
+ * A door wall is a hard exclusion, not merely a scoring penalty.  Door
+ * geometry currently records the wall side rather than an exact opening
+ * interval, so the deterministic engine must conservatively reserve the
+ * entire wall side.  This prevents an ensuite candidate from consuming the
+ * bedroom entrance, which is exactly the failure mode this validation guards.
+ */
 function bestInternalCorner(room: Room): { sideX: "left" | "right"; sideY: "top" | "bottom" } | undefined {
   const windows = new Set(windowWalls(room));
   const doors = new Set(doorWalls(room));
@@ -94,13 +103,16 @@ function bestInternalCorner(room: Room): { sideX: "left" | "right"; sideY: "top"
   ];
   const score = (c: { sideX: "left" | "right"; sideY: "top" | "bottom" }) => {
     const wallX: WallSide = c.sideX, wallY: WallSide = c.sideY;
+    // Never carve through a window/external wall or the wall containing the
+    // bedroom entrance. The latter is a hard architectural constraint.
     if (windows.has(wallX) || windows.has(wallY)) return -1000;
-    let value = 100;
-    if (doors.has(wallX)) value -= 50;
-    if (doors.has(wallY)) value -= 50;
-    return value;
+    if (doors.has(wallX) || doors.has(wallY)) return -1000;
+    return 100;
   };
-  return corners.sort((a, b) => score(b) - score(a))[0];
+  const ranked = corners
+    .map(c => ({ c, score: score(c) }))
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.score === 100 ? ranked[0].c : undefined;
 }
 
 function validPolygon(poly: Point[] | undefined): poly is Point[] {
@@ -158,14 +170,6 @@ function validRemainder(source: Room, remainder: Point[], ensuiteArea: number): 
   return true;
 }
 
-/**
- * For the rectangular corner wet-room produced above, subtraction from the
- * source polygon can be represented exactly as an L-shaped simple polygon.
- * The helper handles the two cases we intentionally allow: a corner box that
- * touches the source's top-left/top-right/bottom-left/bottom-right bounds.
- * For irregular polygons, it only succeeds when the corner cut intersects
- * exactly two source edges and produces a single simple remainder.
- */
 function subtractCorner(source: Point[], cut: Point[], corner: { sideX: "left" | "right"; sideY: "top" | "bottom" }): Point[] | undefined {
   if (source.length < 3 || cut.length < 3) return undefined;
   const cb = polygonBounds(cut);
@@ -175,8 +179,6 @@ function subtractCorner(source: Point[], cut: Point[], corner: { sideX: "left" |
   const touchesY = corner.sideY === "top" ? Math.abs(cb.y - sy) <= 1e-6 : Math.abs(cb.y + cb.height - sye) <= 1e-6;
   if (!touchesX || !touchesY) return undefined;
 
-  // We walk the source boundary, inserting the two cut intersections that
-  // bound the corner notch. This works for orthogonal detected room polygons.
   const xCut = corner.sideX === "left" ? cb.x + cb.width : cb.x;
   const yCut = corner.sideY === "top" ? cb.y + cb.height : cb.y;
   const next = (point: Point, direction: "x" | "y") => direction === "x" ? point.x : point.y;
@@ -194,9 +196,6 @@ function subtractCorner(source: Point[], cut: Point[], corner: { sideX: "left" |
     return undefined;
   };
 
-  // Generic polygon difference using boundary traversal for an axis-aligned
-  // corner cut. We collect the source boundary outside the cut and bridge the
-  // two cut-edge intersections in the correct corner order.
   const insideCut = (p: Point) => p.x >= cb.x - 1e-6 && p.x <= cb.x + cb.width + 1e-6 && p.y >= cb.y - 1e-6 && p.y <= cb.y + cb.height + 1e-6;
   const outside = (p: Point) => !insideCut(p);
 
@@ -212,15 +211,10 @@ function subtractCorner(source: Point[], cut: Point[], corner: { sideX: "left" |
     if (aOut !== bOut) {
       const candidates = [axisAt(a, b, "x", cb.x), axisAt(a, b, "x", cb.x + cb.width), axisAt(a, b, "y", cb.y), axisAt(a, b, "y", cb.y + cb.height)]
         .filter(Boolean) as Point[];
-      for (const p of candidates) {
-        if (insideCut(p)) appendUnique(p);
-      }
+      for (const p of candidates) if (insideCut(p)) appendUnique(p);
     }
   }
 
-  // The simple boundary walk above is enough for rectangles but can leave the
-  // notch bridge ambiguous for orthogonal polygons. Prefer the exact L-shape
-  // construction when the source itself is axis-aligned and its bounds match.
   const orthogonal = source.every((p, i) => {
     const q = source[(i + 1) % source.length];
     return Math.abs(p.x - q.x) < 1e-6 || Math.abs(p.y - q.y) < 1e-6;
@@ -318,7 +312,7 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
     const firstW=Math.max(1,Math.round(ow*firstRatio)), secondW=ow-firstW; if(secondW<=1)return; const splitX=ox+firstW;
     const bedroomPoly=walls[0]==="right"?clip(originalPolygon,"x",ox+secondW,true):clip(originalPolygon,"x",splitX,false);
     const secondPoly=walls[0]==="right"?clip(originalPolygon,"x",ox+secondW,false):clip(originalPolygon,"x",splitX,true); if(!bedroomPoly||!secondPoly)return;
-    room.x=walls[0]==="right"?ox+secondW:ox; room.width=firstW; room.polygon=bedroomPoly; floor.rooms.push(splitChild(room,change,ox,walls[0]==="right"?oy:oy,secondW,oh,secondPoly));
+    room.x=walls[0]==="right"?ox+secondW:ox; room.width=firstW; room.polygon=bedroomPoly; floor.rooms.push(splitChild(room,change,ox,oy,secondW,oh,secondPoly));
   }
   room.type=change.split?.firstType||"bedroom"; room.name=change.split?.firstName||room.name||"Bedroom"; room.notes=[room.notes,"First portion of proposed room split"].filter(Boolean).join("; ");
 }
