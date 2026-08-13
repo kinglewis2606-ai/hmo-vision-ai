@@ -19,7 +19,6 @@ type RoomLabel = { roomId?: string; name?: string; type?: string; floor?: string
 function norm(v: unknown): string { return String(v ?? "").toLowerCase().replace(/[^a-z]/g, ""); }
 function isBedroom(v: unknown): boolean { return norm(v).includes("bedroom"); }
 function isBathroom(v: unknown): boolean { const x = norm(v); return x.includes("bath") || x.includes("shower") || x.includes("ensuite") || x === "wc" || x.includes("toilet"); }
-function isBedroomChange(c: any): boolean { return norm(c?.action) === "converttobedroom" || String(c?.newType ?? "").toLowerCase().includes("bedroom"); }
 
 function applyLabels(plan: any, labels: RoomLabel[]): void {
   const byId = new Map<string, any>(); for (const f of plan.floors) for (const r of f.rooms) byId.set(r.id, r);
@@ -60,13 +59,11 @@ function normaliseRequestedEnsuites(plan: any, labels: RoomLabel[], changes: any
     const room = plan.floors.flatMap((f: any) => f.rooms).find((r: any) => r.id === id);
     const requestedEnsuite = action === "converttoensuite" || (action === "splitroom" && /ensuite|bath|shower/i.test(String(change?.split?.secondType || "")));
     if (!requestedEnsuite || !room || !label || !isBedroom(label.type)) return change;
-
     const windows: WallSide[] = Array.isArray(label.windows) ? label.windows : [];
     let direction: "horizontal" | "vertical";
     if (windows.includes("top") !== windows.includes("bottom")) direction = "horizontal";
     else if (windows.includes("left") !== windows.includes("right")) direction = "vertical";
     else direction = room.width >= room.height ? "horizontal" : "vertical";
-
     const existingSplit = change.split || {};
     return {
       ...change,
@@ -81,6 +78,38 @@ function normaliseRequestedEnsuites(plan: any, labels: RoomLabel[], changes: any
       },
     };
   });
+}
+
+/** Build the user-facing room proposal from rooms that actually survived geometry application. */
+function buildAppliedRoomLayout(original: any, proposed: any, appliedChanges: any[]): string[] {
+  const originalRooms = new Map<string, any>();
+  const proposedRooms = new Map<string, any>();
+  const floorByRoom = new Map<string, string>();
+  for (const floor of original.floors) for (const room of floor.rooms) { originalRooms.set(room.id, room); floorByRoom.set(room.id, floor.name); }
+  for (const floor of proposed.floors) for (const room of floor.rooms) { proposedRooms.set(room.id, room); floorByRoom.set(room.id, floor.name); }
+
+  const lines: string[] = [];
+  for (const change of appliedChanges) {
+    const id = String(change?.roomId || "");
+    const before = originalRooms.get(id);
+    const after = proposedRooms.get(id);
+    if (!before || !after) continue;
+    const action = norm(change?.action);
+    const floor = floorByRoom.get(id) || "Floor";
+    if (action === "splitroom") {
+      const child = proposedRooms.get(`${id}-split-2`);
+      if (!child) continue;
+      const firstName = after.name || change.split?.firstName || "Bedroom";
+      const childType = String(child.type || "").toLowerCase();
+      const childName = /ensuite|bath|shower/i.test(childType) ? "En-suite" : (child.name || change.split?.secondName || "Second room");
+      lines.push(`${floor}: ${firstName} retained with its remaining geometry; ${childName} created only in the successfully carved area.`);
+    } else {
+      lines.push(`${floor}: ${after.name || after.type || "Room"} — converted from ${before.name || before.type || "existing room"}.`);
+    }
+  }
+
+  if (!lines.length) lines.push("No proposed room changes were successfully applied to the detected geometry.");
+  return lines;
 }
 
 function annotatedImage(filePath: string, plan: any): Promise<string> {
@@ -113,9 +142,6 @@ export async function POST(req: Request) {
     const finalChanges = normaliseRequestedEnsuites(labelled, labels, valid);
     const proposed = applyRoomChanges(labelled, finalChanges);
 
-    // Geometry is the source of truth. A change is considered applied only if
-    // the resulting room geometry proves that the requested transformation
-    // actually happened. Rejected geometry is removed from the final report.
     const proposedRooms = proposed.floors.flatMap((f: any) => f.rooms);
     const appliedChanges = finalChanges.filter((c: any) => {
       const id = String(c?.roomId || "");
@@ -133,16 +159,24 @@ export async function POST(req: Request) {
     result.changes = appliedChanges;
     result.originalFloorPlan = original;
     result.proposedFloorPlan = proposed;
-    if (result.summary) {
-      const originalBedrooms = original.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBedroom(r.type)).length;
-      const proposedBedrooms = proposedRooms.filter((r: any) => isBedroom(r.type)).length;
-      result.summary.bedrooms = originalBedrooms;
-      result.summary.possibleHMOBedrooms = proposedBedrooms;
-    }
+    const originalBedrooms = original.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBedroom(r.type)).length;
+    const proposedBedrooms = proposedRooms.filter((r: any) => isBedroom(r.type)).length;
+    result.summary = {
+      ...(result.summary || {}),
+      bedrooms: originalBedrooms,
+      possibleHMOBedrooms: proposedBedrooms,
+    };
     result.highestPossibleHMO = {
       ...(result.highestPossibleHMO || {}),
-      bedrooms: proposedRooms.filter((r: any) => isBedroom(r.type)).length,
+      bedrooms: proposedBedrooms,
     };
+
+    // The final written room proposal is deliberately rebuilt from the same
+    // applied geometry used by the renderer. A rejected AI change therefore
+    // cannot remain in the user-facing room-by-room proposal.
+    result.recommendedLayout = buildAppliedRoomLayout(original, proposed, appliedChanges);
+    result.conversionSteps = [...result.recommendedLayout];
+
     result.generatedLayoutImage = renderFloorPlan(labelled, proposed, `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`, appliedChanges);
     return NextResponse.json({ success: true, result });
   } catch (error: any) { console.error("ANALYSE ERROR:", error); return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 }); }
