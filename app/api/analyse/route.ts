@@ -8,198 +8,90 @@ import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
 import { buildHMOAnalysisPrompt } from "@/lib/prompts/hmoAnalysisPrompt";
-import { findMaximumHMO, applyBestEnsuites, finalRoomSummary, isBedroom } from "@/lib/hmoPlanner";
+import { findMaximumHMO, applyBestEnsuites, finalRoomSummary } from "@/lib/hmoPlanner";
 import { RoomChange, WallSide } from "@/lib/types/floorPlan";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+type RoomLabel = { roomId?: string; name?: string; type?: string; floor?: string; confidence?: string; areaSqm?: number; widthM?: number; depthM?: number; windows?: WallSide[]; doors?: WallSide[]; [key: string]: unknown };
+const WALLS: WallSide[] = ["top", "bottom", "left", "right"];
+const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z]/g, "");
+const isBathroom = (v: unknown) => { const x = norm(v); return x.includes("bath") || x.includes("shower") || x.includes("ensuite") || x.includes("toilet") || x === "wc"; };
 
-type RoomLabel = {
-  roomId?: string;
-  name?: string;
-  type?: string;
-  floor?: string;
-  confidence?: string;
-  areaSqm?: number;
-  widthM?: number;
-  depthM?: number;
-  windows?: WallSide[];
-  doors?: WallSide[];
-  [key: string]: unknown;
-};
-
-const VALID_WALLS: WallSide[] = ["top", "bottom", "left", "right"];
-
-function norm(value: unknown): string {
-  return String(value ?? "").toLowerCase().replace(/[^a-z]/g, "");
-}
-
-function isBathroom(value: unknown): boolean {
-  const x = norm(value);
-  return x.includes("bath") || x.includes("shower") || x.includes("ensuite") || x.includes("toilet") || x === "wc";
-}
-
-function applyLabels(plan: any, labels: RoomLabel[]): void {
-  const byId = new Map<string, any>();
-  for (const floor of plan.floors) for (const room of floor.rooms) byId.set(String(room.id), room);
-  for (const label of labels) {
-    const room = byId.get(String(label.roomId ?? ""));
-    if (!room) continue;
-    if (label.name) room.name = String(label.name);
-    if (label.type) room.type = String(label.type);
-    if (label.confidence) room.confidence = String(label.confidence);
-    if (Number.isFinite(Number(label.areaSqm)) && Number(label.areaSqm) > 0) room.approxAreaSqm = Number(label.areaSqm);
-    if (Number.isFinite(Number(label.widthM)) && Number(label.widthM) > 0) room.approxWidthM = Number(label.widthM);
-    if (Number.isFinite(Number(label.depthM)) && Number(label.depthM) > 0) room.approxDepthM = Number(label.depthM);
-    if (Array.isArray(label.windows)) room.windows = label.windows.filter((wall): wall is WallSide => VALID_WALLS.includes(wall));
-    if (Array.isArray(label.doors)) room.doors = label.doors.filter((wall): wall is WallSide => VALID_WALLS.includes(wall)).map(wall => ({ wall }));
+function applyLabels(plan: any, labels: RoomLabel[]) {
+  const rooms = new Map<string, any>();
+  for (const f of plan.floors) for (const r of f.rooms) rooms.set(String(r.id), r);
+  for (const l of labels) {
+    const r = rooms.get(String(l.roomId ?? "")); if (!r) continue;
+    if (l.name) r.name = String(l.name); if (l.type) r.type = String(l.type); if (l.confidence) r.confidence = String(l.confidence);
+    if (Number(l.areaSqm) > 0) r.approxAreaSqm = Number(l.areaSqm);
+    if (Number(l.widthM) > 0) r.approxWidthM = Number(l.widthM); if (Number(l.depthM) > 0) r.approxDepthM = Number(l.depthM);
+    if (Array.isArray(l.windows)) r.windows = l.windows.filter((w): w is WallSide => WALLS.includes(w));
+    if (Array.isArray(l.doors)) r.doors = l.doors.filter((w): w is WallSide => WALLS.includes(w)).map(wall => ({ wall }));
   }
 }
+function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
 
-function cleanJson(value: string): string {
-  return value.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim();
-}
-
-function finalAppliedLayout(original: any, proposed: any, changes: RoomChange[]): string[] {
-  const originalRooms = new Map<string, any>();
-  const proposedRooms = new Map<string, any>();
-  const floors = new Map<string, string>();
-  for (const floor of original.floors) for (const room of floor.rooms) {
-    originalRooms.set(room.id, room);
-    floors.set(room.id, floor.name);
-  }
-  for (const floor of proposed.floors) for (const room of floor.rooms) {
-    proposedRooms.set(room.id, room);
-    floors.set(room.id, floor.name);
-  }
-
-  const lines: string[] = [];
-  for (const change of changes) {
-    const before = originalRooms.get(change.roomId);
-    const after = proposedRooms.get(change.roomId);
-    if (!before || !after) continue;
-    const action = norm(change.action);
-    if (action === "splitroom" || action === "split") {
-      const child = proposedRooms.get(`${change.roomId}-split-2`);
-      if (!child) continue;
-      lines.push(`${floors.get(change.roomId) || "Floor"}: ${after.name || "Bedroom"} retained with its final geometry; ${child.name || "En-suite"} physically carved from the source room.`);
-    } else {
-      lines.push(`${floors.get(change.roomId) || "Floor"}: ${after.name || after.type || "Room"} — ${before.name || before.type || "existing room"} converted using the detected room geometry.`);
-    }
-  }
-  return lines.length ? lines : ["No valid proposed geometry was applied."];
-}
-
-function geometryVerdict(currentBedrooms: number, finalBedrooms: number, ensuites: number): string {
-  if (finalBedrooms > currentBedrooms) {
-    return `Maximum geometry-feasible ${finalBedrooms}-bedroom HMO layout selected from the detected geometry, with ${ensuites} private en-suite${ensuites === 1 ? "" : "s"}. Planning, licensing, building-control and fire-safety approval still require professional/local-authority confirmation.`;
-  }
-  return `The final deterministic geometry supports ${finalBedrooms} bedroom${finalBedrooms === 1 ? "" : "s"} and ${ensuites} private en-suite${ensuites === 1 ? "" : "s"}. No physically valid higher-bedroom transformation survived the geometry checks. Planning, licensing, building-control and fire-safety approval still require professional/local-authority confirmation.`;
-}
-
-async function annotatedImage(filePath: string, plan: any): Promise<string> {
-  const source = fs.readFileSync(filePath);
-  const width = plan.metadata?.imageWidth || 1600;
-  const height = plan.metadata?.imageHeight || 1200;
-  const labels = plan.floors.flatMap((floor: any) => floor.rooms.map((room: any) =>
-    `<rect x="${room.x}" y="${room.y}" width="${room.width}" height="${room.height}" fill="none" stroke="#ff0055" stroke-width="6"/><text x="${room.x + room.width / 2}" y="${room.y + room.height / 2}" text-anchor="middle" font-size="28" font-weight="800" fill="#ff0055" stroke="white" stroke-width="5" paint-order="stroke">${room.id}</text>`
-  )).join("\n"));
+async function annotate(filePath: string, plan: any) {
+  const source = fs.readFileSync(filePath), width = plan.metadata?.imageWidth || 1600, height = plan.metadata?.imageHeight || 1200;
+  const labels = plan.floors.flatMap((f: any) => f.rooms.map((r: any) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="none" stroke="#ff0055" stroke-width="6"/><text x="${r.x + r.width / 2}" y="${r.y + r.height / 2}" text-anchor="middle" font-size="28" font-weight="800" fill="#ff0055" stroke="white" stroke-width="5" paint-order="stroke">${r.id}</text>`))).join("\n");
   const mime = path.extname(filePath).toLowerCase() === ".png" ? "image/png" : "image/jpeg";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><image href="data:${mime};base64,${source.toString("base64")}" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${labels}</g></svg>`;
-  const rendered = await sharp(Buffer.from(svg)).png().toBuffer();
-  return `data:image/png;base64,${rendered.toString("base64")}`;
+  return `data:image/png;base64,${(await sharp(Buffer.from(svg)).png().toBuffer()).toString("base64")}`;
+}
+
+function appliedLayout(original: any, proposed: any, changes: RoomChange[]): string[] {
+  const before = new Map<string, any>(), after = new Map<string, any>(), floors = new Map<string, string>();
+  for (const f of original.floors) for (const r of f.rooms) { before.set(r.id, r); floors.set(r.id, f.name); }
+  for (const f of proposed.floors) for (const r of f.rooms) { after.set(r.id, r); floors.set(r.id, f.name); }
+  const lines: string[] = [];
+  for (const c of changes) {
+    const b = before.get(c.roomId), a = after.get(c.roomId); if (!b || !a) continue;
+    const child = after.get(`${c.roomId}-split-2`);
+    lines.push(norm(c.action).includes("split") && child
+      ? `${floors.get(c.roomId) || "Floor"}: ${a.name || "Bedroom"} retained; ${child.name || "En-suite"} created from the final carved geometry.`
+      : `${floors.get(c.roomId) || "Floor"}: ${a.name || a.type || "Room"} converted from ${b.name || b.type || "existing room"}.`);
+  }
+  return lines.length ? lines : ["No valid proposed geometry was applied."];
 }
 
 export async function POST(req: Request) {
   try {
     const { filename, address, propertyType } = await req.json();
-    if (!filename || typeof filename !== "string" || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
-      return NextResponse.json({ success: false, error: "Invalid uploaded filename." }, { status: 400 });
-    }
-
+    if (!filename || typeof filename !== "string" || /\.\.|[\\/]/.test(filename)) return NextResponse.json({ success: false, error: "Invalid uploaded filename." }, { status: 400 });
     const filePath = path.join(process.cwd(), "public", "uploads", filename);
     if (!fs.existsSync(filePath)) return NextResponse.json({ success: false, error: "Uploaded floor plan not found." }, { status: 404 });
 
-    const floors = await detectFloors(filePath);
-    const detectedRooms = await detectRooms(filePath, floors);
-    const original = buildOriginalFloorPlan(floors, detectedRooms);
-    const metadata = await sharp(filePath).metadata();
-    original.metadata = { imageWidth: metadata.width, imageHeight: metadata.height, imageDpi: metadata.density };
-
+    const floors = await detectFloors(filePath), detectedRooms = await detectRooms(filePath, floors), original = buildOriginalFloorPlan(floors, detectedRooms), meta = await sharp(filePath).metadata();
+    original.metadata = { imageWidth: meta.width, imageHeight: meta.height, imageDpi: meta.density };
     const prompt = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(original, null, 2));
-    const annotated = await annotatedImage(filePath, original);
-    const response = await openai.responses.create({
-      model: "gpt-5",
-      input: [{ role: "user", content: [
-        { type: "input_text", text: prompt },
-        { type: "input_image", image_url: annotated, detail: "high" },
-      ] }],
-    });
-
+    const image = await annotate(filePath, original);
+    const response = await openai.responses.create({ model: "gpt-5", input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
     const result = JSON.parse(cleanJson(response.output_text || "{}"));
-    const labels: RoomLabel[] = Array.isArray(result.roomLabels) ? result.roomLabels : [];
-    const labelled = structuredClone(original);
+    const labelled = structuredClone(original), labels: RoomLabel[] = Array.isArray(result.roomLabels) ? result.roomLabels : [];
     applyLabels(labelled, labels);
+    const aiChanges: RoomChange[] = Array.isArray(result.changes) ? result.changes.filter((c: any) => c && typeof c.roomId === "string") : [];
 
-    const aiChanges: RoomChange[] = Array.isArray(result.changes)
-      ? result.changes.filter((change: any) => change && typeof change.roomId === "string")
-      : [];
-
-    // AI supplies strategy. The deterministic planner owns physical feasibility
-    // and searches beyond the first/conservative AI solution.
     const maximum = findMaximumHMO(labelled, aiChanges);
-    const ensuiteResult = applyBestEnsuites(maximum.plan, maximum.ensuiteCandidates);
-    const proposed = ensuiteResult.plan;
-    const appliedChanges = [...maximum.appliedChanges, ...ensuiteResult.applied];
-    const rejectedChanges = [...maximum.rejectedChanges, ...ensuiteResult.rejected];
-    const summary = finalRoomSummary(proposed);
-    const currentSummary = finalRoomSummary(labelled);
-    const currentBedrooms = currentSummary.bedrooms;
-
-    // Re-numbering is a presentation concern. The renderer numbers the final
-    // geometry sequentially; IDs remain stable source-room IDs plus split child IDs.
-    const generatedImage = renderFloorPlan(
-      labelled,
-      proposed,
-      `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`,
-      appliedChanges,
-    );
-
-    const layout = finalAppliedLayout(labelled, proposed, appliedChanges);
-    const verdict = geometryVerdict(currentBedrooms, summary.bedrooms, summary.ensuites);
+    const ensuites = applyBestEnsuites(maximum.plan, maximum.ensuiteCandidates);
+    const proposed = ensuites.plan, appliedChanges = [...maximum.appliedChanges, ...ensuites.applied], rejectedChanges = [...maximum.rejectedChanges, ...ensuites.rejected];
+    const final = finalRoomSummary(proposed), current = finalRoomSummary(labelled), currentBedrooms = current.bedrooms;
+    const originalImage = `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`;
 
     result.originalFloorPlan = labelled;
     result.proposedFloorPlan = proposed;
     result.changes = appliedChanges;
-    result.rejectedChanges = rejectedChanges.map(change => ({ roomId: change.roomId, action: change.action, reason: "Rejected by deterministic geometry validation." }));
-    result.summary = {
-      ...(result.summary || {}),
-      bedrooms: currentBedrooms,
-      bathrooms: labelled.floors.flatMap((floor: any) => floor.rooms).filter((room: any) => isBathroom(room.type)).length,
-      possibleHMOBedrooms: summary.bedrooms,
-    };
-    result.highestPossibleHMO = {
-      ...(result.highestPossibleHMO || {}),
-      bedrooms: summary.bedrooms,
-      ensuites: summary.ensuites,
-      reason: `Highest bedroom count surviving deterministic geometry validation: ${summary.bedrooms}. Every final bedroom was tested for an internal en-suite; ${summary.ensuites} were physically applied.`,
-    };
-    result.geometryFeasibility = {
-      ...(result.geometryFeasibility || {}),
-      possible: summary.bedrooms > 0,
-      currentBedrooms,
-      proposedBedrooms: summary.bedrooms,
-      proposedEnsuites: summary.ensuites,
-      appliedChanges: appliedChanges.length,
-      rejectedChanges: rejectedChanges.length,
-      finalBedroomIds: summary.bedroomIds,
-      finalEnsuiteIds: summary.ensuiteIds,
-    };
-    result.recommendedLayout = layout;
-    result.conversionSteps = layout;
-    result.verdict = verdict;
-    result.investorSummary = `Final geometry: ${summary.bedrooms} bedroom${summary.bedrooms === 1 ? "" : "s"} and ${summary.ensuites} private en-suite${summary.ensuites === 1 ? "" : "s"}. Only successfully applied geometry is included in the recommendation, report and rendered plan.`;
-    result.generatedLayoutImage = generatedImage;
+    result.rejectedChanges = rejectedChanges.map(c => ({ roomId: c.roomId, action: c.action, reason: "Rejected by deterministic geometry validation." }));
+    result.summary = { ...(result.summary || {}), bedrooms: currentBedrooms, bathrooms: labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length, possibleHMOBedrooms: final.bedrooms };
+    result.highestPossibleHMO = { ...(result.highestPossibleHMO || {}), bedrooms: final.bedrooms, ensuites: final.ensuites, reason: `Highest bedroom count surviving deterministic geometry validation: ${final.bedrooms}; ${final.ensuites} private ensuites physically applied.` };
+    result.geometryFeasibility = { ...(result.geometryFeasibility || {}), possible: final.bedrooms > 0, currentBedrooms, proposedBedrooms: final.bedrooms, proposedEnsuites: final.ensuites, appliedChanges: appliedChanges.length, rejectedChanges: rejectedChanges.length, finalBedroomIds: final.bedroomIds, finalEnsuiteIds: final.ensuiteIds };
+    result.recommendedLayout = appliedLayout(labelled, proposed, appliedChanges);
+    result.conversionSteps = result.recommendedLayout;
+    result.verdict = final.bedrooms > currentBedrooms
+      ? `Maximum geometry-feasible ${final.bedrooms}-bedroom HMO layout selected, with ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Planning/licensing/building-control approval still requires professional/local-authority confirmation.`
+      : `Final deterministic geometry supports ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}; no higher-bedroom transformation survived geometry validation.`;
+    result.investorSummary = `Final applied geometry contains ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Only successfully applied geometry is reported.`;
+    result.generatedLayoutImage = renderFloorPlan(labelled, proposed, originalImage, appliedChanges);
 
     return NextResponse.json({ success: true, result });
   } catch (error: any) {
