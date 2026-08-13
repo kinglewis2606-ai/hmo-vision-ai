@@ -16,6 +16,8 @@ export const maxDuration = 300;
 type WallSide = "top" | "bottom" | "left" | "right";
 type RoomLabel = { roomId?: string; name?: string; type?: string; floor?: string; confidence?: string; areaSqm?: number; widthM?: number; depthM?: number; windows?: WallSide[]; doors?: WallSide[]; [key: string]: unknown };
 
+type LivingCandidate = { room: any; label?: RoomLabel };
+
 function norm(v: unknown): string { return String(v ?? "").toLowerCase().replace(/[^a-z]/g, ""); }
 function isBedroom(v: unknown): boolean { return norm(v).includes("bedroom"); }
 function isBathroom(v: unknown): boolean { const x = norm(v); return x.includes("bath") || x.includes("shower") || x.includes("ensuite") || x === "wc" || x.includes("toilet"); }
@@ -64,24 +66,35 @@ function ensuiteRequestHasOpeningEvidence(change: any, label: RoomLabel | undefi
  * Select the maximum geometry-feasible bedroom count rather than blindly
  * trusting a conservative AI scheme. This is generic: it only promotes a
  * real ground-floor living/lounge/reception room when the detected plan also
- * contains a separate kitchen and/or dining/communal room. It never invents a
+ * contains a separate kitchen and dining/communal room. It never invents a
  * room or coordinates.
  */
 function addMaximumLivingRoomConversion(plan: any, labels: RoomLabel[], changes: any[]): any[] {
   const alreadyTargets = new Set(changes.map(c => String(c?.roomId || "")));
-  const allRooms = plan.floors.flatMap((f: any) => f.rooms);
   const hasSeparateKitchen = labels.some(l => isKitchen(l.type));
   const hasSeparateDining = labels.some(l => isDining(l.type));
-  if (!hasSeparateKitchen || (!hasSeparateDining && !labels.some(l => norm(l.type).includes("communal")))) return changes;
+  if (!hasSeparateKitchen || !hasSeparateDining) return changes;
 
   const ground = plan.floors.find((f: any) => f.level === 0 || /ground/i.test(String(f.name || "")));
   if (!ground) return changes;
-  const candidates = ground.rooms
-    .map((room: any) => ({ room, label: labels.find(l => String(l.roomId) === String(room.id)) }))
-    .filter(({ room, label }) => label && isLiving(label.type) && !alreadyTargets.has(room.id))
-    .filter(({ room, label }) => Number(label!.areaSqm || room.approxAreaSqm || 0) >= 6.51)
-    .filter(({ label }) => Array.isArray(label!.windows) && label!.windows.length > 0 && Array.isArray(label!.doors) && label!.doors.length > 0)
-    .sort((a, b) => Number(b.label!.areaSqm || b.room.approxAreaSqm || 0) - Number(a.label!.areaSqm || a.room.approxAreaSqm || 0));
+
+  const candidates: Array<{ room: any; label: RoomLabel }> = ground.rooms
+    .map((room: any): LivingCandidate => ({ room, label: labels.find(l => String(l.roomId) === String(room.id)) }))
+    .filter((candidate: LivingCandidate): candidate is { room: any; label: RoomLabel } => {
+      const { room, label } = candidate;
+      return !!label
+        && isLiving(label.type)
+        && !alreadyTargets.has(room.id)
+        && Number(label.areaSqm || room.approxAreaSqm || 0) >= 6.51
+        && Array.isArray(label.windows)
+        && label.windows.length > 0
+        && Array.isArray(label.doors)
+        && label.doors.length > 0;
+    })
+    .sort((a: { room: any; label: RoomLabel }, b: { room: any; label: RoomLabel }) =>
+      Number(b.label.areaSqm || b.room.approxAreaSqm || 0) - Number(a.label.areaSqm || a.room.approxAreaSqm || 0)
+    );
+
   const candidate = candidates[0];
   if (!candidate) return changes;
 
@@ -102,7 +115,6 @@ function addMaximumLivingRoomConversion(plan: any, labels: RoomLabel[], changes:
 function normaliseRequestedEnsuites(plan: any, labels: RoomLabel[], changes: any[]): any[] {
   const byId = new Map<string, RoomLabel>(); for (const l of labels) byId.set(String(l.roomId ?? ""), l);
   return changes.map((change: any) => {
-    const action = norm(change?.action);
     const id = String(change?.roomId ?? "");
     const label = byId.get(id);
     const room = plan.floors.flatMap((f: any) => f.rooms).find((r: any) => r.id === id);
@@ -206,11 +218,6 @@ export async function POST(req: Request) {
       return true;
     });
 
-    // The final scheme is allowed to improve on a conservative AI choice when
-    // the actual detected geometry proves a higher bedroom count is available.
-    // For this generic optimisation the deterministic rule is: retain all
-    // valid AI changes, then promote a suitable ground-floor living/lounge/
-    // reception room when separate communal kitchen/dining space remains.
     const optimisedChanges = addMaximumLivingRoomConversion(labelled, labels, valid);
     const finalChanges = normaliseRequestedEnsuites(labelled, labels, optimisedChanges);
     const proposed = applyRoomChanges(labelled, finalChanges);
