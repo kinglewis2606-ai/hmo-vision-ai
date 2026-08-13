@@ -1,7 +1,20 @@
 import { FloorPlan, Room, RoomChange, Point, WallSide } from "@/lib/types/floorPlan";
 
+const BEDROOM_MIN_SQM = 6.51;
+const PIXEL_TO_SQM_FALLBACK = 10000;
+const ENSUITE_MIN_SHOWER_MM = 800;
+const ENSUITE_TARGET_SQM = 2.5;
+const ENSUITE_MAX_SHARE = 0.34;
+
+type Corner = { sideX: "left" | "right"; sideY: "top" | "bottom" };
+type Bounds = { x: number; y: number; width: number; height: number };
+
+function normaliseAction(action?: string): string {
+  return String(action || "").toLowerCase().replace(/\s+/g, "");
+}
+
 function actionType(action?: string): string | undefined {
-  switch ((action || "").toLowerCase().replace(/\s+/g, "")) {
+  switch (normaliseAction(action)) {
     case "converttobedroom": return "bedroom";
     case "converttokitchen": return "kitchen";
     case "converttobathroom": return "bathroom";
@@ -19,33 +32,6 @@ function noOp(current: string, requested: string): boolean {
   return c === r;
 }
 
-function clip(points: Point[] | undefined, axis: "x" | "y", threshold: number, greater: boolean): Point[] | undefined {
-  if (!points || points.length < 3) return points;
-  const inside = (p: Point) => greater ? p[axis] >= threshold : p[axis] <= threshold;
-  const intersection = (a: Point, b: Point): Point => {
-    const d = b[axis] - a[axis];
-    const t = Math.abs(d) < 1e-9 ? 0 : (threshold - a[axis]) / d;
-    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-  };
-  const out: Point[] = [];
-  for (let i = 0; i < points.length; i++) {
-    const a = points[(i - 1 + points.length) % points.length], b = points[i];
-    const ai = inside(a), bi = inside(b);
-    if (ai !== bi) out.push(intersection(a, b));
-    if (bi) out.push(b);
-  }
-  return out.length >= 3 ? out : undefined;
-}
-
-function clipRect(points: Point[] | undefined, minX?: number, maxX?: number, minY?: number, maxY?: number): Point[] | undefined {
-  let result = points;
-  if (minX !== undefined) result = clip(result, "x", minX, true);
-  if (maxX !== undefined) result = clip(result, "x", maxX, false);
-  if (minY !== undefined) result = clip(result, "y", minY, true);
-  if (maxY !== undefined) result = clip(result, "y", maxY, false);
-  return result;
-}
-
 function polygonArea(points: Point[]): number {
   let area = 0;
   for (let i = 0; i < points.length; i++) {
@@ -55,68 +41,14 @@ function polygonArea(points: Point[]): number {
   return Math.abs(area / 2);
 }
 
-function polygonBounds(points: Point[]): { x: number; y: number; width: number; height: number } {
+function polygonBounds(points: Point[]): Bounds {
   const xs = points.map(p => p.x), ys = points.map(p => p.y);
   const x = Math.min(...xs), y = Math.min(...ys);
   return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 }
 
-function requestedRatio(change: RoomChange): number {
-  const r = Number(change.split?.firstRatio);
-  return Number.isFinite(r) ? Math.min(.82, Math.max(.65, r)) : .72;
-}
-
-function windowWalls(room: Room): WallSide[] { return Array.from(new Set((room.windows || []).map(w => w.wall))); }
-function doorWalls(room: Room): WallSide[] { return Array.from(new Set((room.doors || []).map(d => d.wall))); }
-
-function splitChild(source: Room, change: RoomChange, x: number, y: number, width: number, height: number, polygon?: Point[]): Room {
-  const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
-  return {
-    ...structuredClone(source),
-    id: `${source.id}-split-2`,
-    name: change.split?.secondName || (wet ? "En-suite" : "Bedroom 2"),
-    type: change.split?.secondType || "bedroom",
-    x, y, width, height, polygon,
-    windows: wet ? [] : structuredClone(source.windows || []),
-    doors: [],
-    adjacentRooms: [source.id],
-    notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "),
-    confidence: "geometry-proposed",
-  };
-}
-
-/**
- * Choose only a genuinely internal corner for a wet-room.
- *
- * A door wall is a hard exclusion, not merely a scoring penalty.  Door
- * geometry currently records the wall side rather than an exact opening
- * interval, so the deterministic engine must conservatively reserve the
- * entire wall side.  This prevents an ensuite candidate from consuming the
- * bedroom entrance, which is exactly the failure mode this validation guards.
- */
-function bestInternalCorner(room: Room): { sideX: "left" | "right"; sideY: "top" | "bottom" } | undefined {
-  const windows = new Set(windowWalls(room));
-  const doors = new Set(doorWalls(room));
-  const corners: Array<{ sideX: "left" | "right"; sideY: "top" | "bottom" }> = [
-    { sideX: "left", sideY: "top" }, { sideX: "right", sideY: "top" },
-    { sideX: "left", sideY: "bottom" }, { sideX: "right", sideY: "bottom" },
-  ];
-  const score = (c: { sideX: "left" | "right"; sideY: "top" | "bottom" }) => {
-    const wallX: WallSide = c.sideX, wallY: WallSide = c.sideY;
-    // Never carve through a window/external wall or the wall containing the
-    // bedroom entrance. The latter is a hard architectural constraint.
-    if (windows.has(wallX) || windows.has(wallY)) return -1000;
-    if (doors.has(wallX) || doors.has(wallY)) return -1000;
-    return 100;
-  };
-  const ranked = corners
-    .map(c => ({ c, score: score(c) }))
-    .sort((a, b) => b.score - a.score);
-  return ranked[0]?.score === 100 ? ranked[0].c : undefined;
-}
-
-function validPolygon(poly: Point[] | undefined): poly is Point[] {
-  return !!poly && poly.length >= 3 && polygonArea(poly) > 100;
+function validPolygon(points: Point[] | undefined): points is Point[] {
+  return !!points && points.length >= 3 && polygonArea(points) > 100;
 }
 
 function pointOnSegment(p: Point, a: Point, b: Point, epsilon = 1e-6): boolean {
@@ -160,185 +92,397 @@ function polygonSelfIntersects(points: Point[]): boolean {
   return false;
 }
 
-function validRemainder(source: Room, remainder: Point[], ensuiteArea: number): boolean {
+function windowWalls(room: Room): WallSide[] { return Array.from(new Set((room.windows || []).map(w => w.wall))); }
+function doorWalls(room: Room): WallSide[] { return Array.from(new Set((room.doors || []).map(d => d.wall))); }
+
+function clip(points: Point[] | undefined, axis: "x" | "y", threshold: number, greater: boolean): Point[] | undefined {
+  if (!points || points.length < 3) return undefined;
+  const inside = (p: Point) => greater ? p[axis] >= threshold : p[axis] <= threshold;
+  const intersection = (a: Point, b: Point): Point => {
+    const d = b[axis] - a[axis];
+    const t = Math.abs(d) < 1e-9 ? 0 : (threshold - a[axis]) / d;
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  };
+  const out: Point[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[(i - 1 + points.length) % points.length], b = points[i];
+    const ai = inside(a), bi = inside(b);
+    if (ai !== bi) out.push(intersection(a, b));
+    if (bi) out.push(b);
+  }
+  return out.length >= 3 ? out : undefined;
+}
+
+function clipRect(points: Point[], minX?: number, maxX?: number, minY?: number, maxY?: number): Point[] | undefined {
+  let result: Point[] | undefined = points;
+  if (minX !== undefined) result = clip(result, "x", minX, true);
+  if (maxX !== undefined) result = clip(result, "x", maxX, false);
+  if (minY !== undefined) result = clip(result, "y", minY, true);
+  if (maxY !== undefined) result = clip(result, "y", maxY, false);
+  return result;
+}
+
+function sourceAreaSqm(room: Room): number {
+  if (room.approxAreaSqm && room.approxAreaSqm > 0) return room.approxAreaSqm;
+  return polygonArea(room.polygon || []) / PIXEL_TO_SQM_FALLBACK;
+}
+
+function squareMetresForPixels(room: Room, pixels: number): number {
+  const sqm = sourceAreaSqm(room);
+  const px = polygonArea(room.polygon || []);
+  return px > 0 ? sqm * (pixels / px) : pixels / PIXEL_TO_SQM_FALLBACK;
+}
+
+function pixelAreaForSqm(room: Room, sqm: number): number {
+  const sourcePx = polygonArea(room.polygon || []);
+  const sourceSqm = sourceAreaSqm(room);
+  if (sourcePx > 0 && sourceSqm > 0) return sourcePx * (sqm / sourceSqm);
+  return sqm * PIXEL_TO_SQM_FALLBACK;
+}
+
+function roomHasRequiredWindow(room: Room): boolean { return windowWalls(room).length > 0; }
+function roomHasUsableDoor(room: Room): boolean { return doorWalls(room).length > 0; }
+
+function principalWindowWalls(room: Room): Set<WallSide> {
+  const walls = windowWalls(room);
+  if (!walls.length) return new Set();
+  const longest = (wall: WallSide): number => {
+    const p = room.polygon || [];
+    let best = 0;
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length];
+      if (wall === "top" && Math.abs(a.y - room.y) < 2 && Math.abs(b.y - room.y) < 2) best = Math.max(best, Math.abs(b.x - a.x));
+      if (wall === "bottom" && Math.abs(a.y - (room.y + room.height)) < 2 && Math.abs(b.y - (room.y + room.height)) < 2) best = Math.max(best, Math.abs(b.x - a.x));
+      if (wall === "left" && Math.abs(a.x - room.x) < 2 && Math.abs(b.x - room.x) < 2) best = Math.max(best, Math.abs(b.y - a.y));
+      if (wall === "right" && Math.abs(a.x - (room.x + room.width)) < 2 && Math.abs(b.x - (room.x + room.width)) < 2) best = Math.max(best, Math.abs(b.y - a.y));
+    }
+    return best;
+  };
+  const longestLength = Math.max(...walls.map(longest));
+  return new Set(walls.filter(w => longest(w) >= longestLength * 0.75));
+}
+
+function wallInterval(room: Room, wall: WallSide): { start: number; end: number } {
+  if (wall === "top" || wall === "bottom") return { start: room.x, end: room.x + room.width };
+  return { start: room.y, end: room.y + room.height };
+}
+
+function wallDistanceToCorner(room: Room, wall: WallSide, side: "left" | "right" | "top" | "bottom"): number {
+  const interval = wallInterval(room, wall);
+  return Math.max(0, interval.end - interval.start);
+}
+
+function candidateCorners(room: Room): Corner[] {
+  const windows = new Set(windowWalls(room));
+  const principal = principalWindowWalls(room);
+  const doors = new Set(doorWalls(room));
+  const corners: Corner[] = [
+    { sideX: "left", sideY: "top" }, { sideX: "right", sideY: "top" },
+    { sideX: "left", sideY: "bottom" }, { sideX: "right", sideY: "bottom" },
+  ];
+  const score = (corner: Corner): number => {
+    const xWall = corner.sideX as WallSide;
+    const yWall = corner.sideY as WallSide;
+    let s = 0;
+    if (!windows.has(xWall) && !windows.has(yWall)) s += 100;
+    if (principal.has(xWall) || principal.has(yWall)) s -= 2000;
+    if (doors.has(xWall) || doors.has(yWall)) s -= 160;
+    if (windows.has(xWall) || windows.has(yWall)) s -= 1000;
+    s += 100 / Math.max(1, wallDistanceToCorner(room, xWall, corner.sideX));
+    s += 100 / Math.max(1, wallDistanceToCorner(room, yWall, corner.sideY));
+    return s;
+  };
+  return corners.sort((a, b) => score(b) - score(a));
+}
+
+function openingWallBlocked(room: Room, bounds: Bounds): boolean {
+  const epsilon = 4;
+  for (const wall of doorWalls(room)) {
+    if (wall === "top" && Math.abs(bounds.y - room.y) <= epsilon && bounds.x < room.x + room.width && bounds.x + bounds.width > room.x) return true;
+    if (wall === "bottom" && Math.abs(bounds.y + bounds.height - (room.y + room.height)) <= epsilon && bounds.x < room.x + room.width && bounds.x + bounds.width > room.x) return true;
+    if (wall === "left" && Math.abs(bounds.x - room.x) <= epsilon && bounds.y < room.y + room.height && bounds.y + bounds.height > room.y) return true;
+    if (wall === "right" && Math.abs(bounds.x + bounds.width - (room.x + room.width)) <= epsilon && bounds.y < room.y + room.height && bounds.y + bounds.height > room.y) return true;
+  }
+  return false;
+}
+
+function buildCornerRect(room: Room, corner: Corner, width: number, height: number): Bounds {
+  return {
+    x: corner.sideX === "right" ? room.x + room.width - width : room.x,
+    y: corner.sideY === "bottom" ? room.y + room.height - height : room.y,
+    width,
+    height,
+  };
+}
+
+function subtractRectangleFromOrthogonal(source: Point[], cut: Bounds): Point[] | undefined {
+  if (source.length !== 4) return undefined;
+  const xs = source.map(p => p.x), ys = source.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const points: Point[] = [
+    { x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY },
+  ];
+  const c = { x: cut.x, y: cut.y, right: cut.x + cut.width, bottom: cut.y + cut.height };
+  if (c.x <= minX || c.y <= minY || c.right >= maxX || c.bottom >= maxY) return undefined;
+  const result: Point[] = [];
+  const add = (p: Point) => { const last = result[result.length - 1]; if (!last || last.x !== p.x || last.y !== p.y) result.push(p); };
+  const cornerMatches = [
+    { sideX: "left", sideY: "top", points: [{ x: c.right, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }, { x: minX, y: c.bottom }, { x: c.right, y: c.bottom }] },
+    { sideX: "right", sideY: "top", points: [{ x: minX, y: minY }, { x: c.x, y: minY }, { x: c.x, y: c.bottom }, { x: maxX, y: c.bottom }, { x: maxX, y: maxY }, { x: minX, y: maxY }] },
+    { sideX: "left", sideY: "bottom", points: [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: c.right, y: maxY }, { x: c.right, y: c.y }, { x: minX, y: c.y }] },
+    { sideX: "right", sideY: "bottom", points: [{ x: minX, y: minY }, { x: c.x, y: minY }, { x: c.x, y: c.y }, { x: maxX, y: c.y }, { x: maxX, y: maxY }, { x: minX, y: maxY }] },
+  ];
+  for (const match of cornerMatches) {
+    const same = (match.sideX === "left") === (Math.abs(c.x - minX) < 1e-6) && (match.sideY === "top") === (Math.abs(c.y - minY) < 1e-6);
+    if (same) {
+      for (const p of match.points) add(p);
+      return result;
+    }
+  }
+  return points;
+}
+
+function carveRectangle(source: Point[], cut: Bounds, corner: Corner): Point[] | undefined {
+  if (!validPolygon(source)) return undefined;
+  const simpleRect = subtractRectangleFromOrthogonal(source, cut);
+  if (simpleRect && validPolygon(simpleRect)) return simpleRect;
+
+  const clippedOutside: Point[] | undefined = (() => {
+    let result = source;
+    const minX = corner.sideX === "left" ? cut.x + cut.width : undefined;
+    const maxX = corner.sideX === "right" ? cut.x : undefined;
+    const minY = corner.sideY === "top" ? cut.y + cut.height : undefined;
+    const maxY = corner.sideY === "bottom" ? cut.y : undefined;
+    if (minX !== undefined) result = clip(result, "x", minX, true) || [];
+    if (maxX !== undefined) result = clip(result, "x", maxX, false) || [];
+    if (minY !== undefined) result = clip(result, "y", minY, true) || [];
+    if (maxY !== undefined) result = clip(result, "y", maxY, false) || [];
+    return result.length >= 3 ? result : undefined;
+  })();
+  return clippedOutside;
+}
+
+function validBedroomRemainder(source: Room, remainder: Point[], ensuitePixels: number): boolean {
   if (!validPolygon(remainder) || polygonSelfIntersects(remainder)) return false;
-  const sourceArea = polygonArea(source.polygon!);
+  const sourceArea = polygonArea(source.polygon || []);
   const remainderArea = polygonArea(remainder);
-  if (remainderArea <= 0 || remainderArea < sourceArea * 0.65) return false;
-  if (ensuiteArea / sourceArea > 0.30) return false;
-  if (remainderArea < 900) return false;
+  if (sourceArea <= 0 || remainderArea <= 0 || ensuitePixels <= 0) return false;
+  if (squareMetresForPixels(source, remainderArea) + 0.001 < BEDROOM_MIN_SQM) return false;
+  if (remainderArea < sourceArea * 0.50) return false;
+  if (ensuitePixels / sourceArea > ENSUITE_MAX_SHARE) return false;
   return true;
 }
 
-function subtractCorner(source: Point[], cut: Point[], corner: { sideX: "left" | "right"; sideY: "top" | "bottom" }): Point[] | undefined {
-  if (source.length < 3 || cut.length < 3) return undefined;
-  const cb = polygonBounds(cut);
-  const sx = Math.min(...source.map(p => p.x)), sy = Math.min(...source.map(p => p.y));
-  const sxe = Math.max(...source.map(p => p.x)), sye = Math.max(...source.map(p => p.y));
-  const touchesX = corner.sideX === "left" ? Math.abs(cb.x - sx) <= 1e-6 : Math.abs(cb.x + cb.width - sxe) <= 1e-6;
-  const touchesY = corner.sideY === "top" ? Math.abs(cb.y - sy) <= 1e-6 : Math.abs(cb.y + cb.height - sye) <= 1e-6;
-  if (!touchesX || !touchesY) return undefined;
-
-  const xCut = corner.sideX === "left" ? cb.x + cb.width : cb.x;
-  const yCut = corner.sideY === "top" ? cb.y + cb.height : cb.y;
-  const next = (point: Point, direction: "x" | "y") => direction === "x" ? point.x : point.y;
-  const sourceOriented = polygonArea(source) >= 0 ? source : [...source].reverse();
-  const result: Point[] = [];
-
-  const axisAt = (p: Point, q: Point, axis: "x" | "y", value: number): Point | undefined => {
-    const pAxis = next(p, axis), qAxis = next(q, axis);
-    if ((pAxis <= value && value <= qAxis) || (qAxis <= value && value <= pAxis)) {
-      const d = qAxis - pAxis;
-      const t = Math.abs(d) < 1e-9 ? 0 : (value - pAxis) / d;
-      if (t < -1e-9 || t > 1 + 1e-9) return undefined;
-      return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
-    }
-    return undefined;
+function childRoom(source: Room, change: RoomChange, polygon: Point[], type: string, name: string): Room {
+  const bounds = polygonBounds(polygon);
+  return {
+    ...structuredClone(source),
+    id: `${source.id}-split-2`,
+    name,
+    type,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    polygon,
+    windows: type === "ensuite" ? [] : structuredClone(source.windows || []),
+    doors: [],
+    adjacentRooms: [source.id],
+    notes: [source.notes, `Created by split of ${source.id}`].filter(Boolean).join("; "),
+    confidence: "geometry-proposed",
   };
-
-  const insideCut = (p: Point) => p.x >= cb.x - 1e-6 && p.x <= cb.x + cb.width + 1e-6 && p.y >= cb.y - 1e-6 && p.y <= cb.y + cb.height + 1e-6;
-  const outside = (p: Point) => !insideCut(p);
-
-  const appendUnique = (p: Point) => {
-    const last = result[result.length - 1];
-    if (!last || Math.abs(last.x - p.x) > 1e-6 || Math.abs(last.y - p.y) > 1e-6) result.push(p);
-  };
-
-  for (let i = 0; i < sourceOriented.length; i++) {
-    const a = sourceOriented[i], b = sourceOriented[(i + 1) % sourceOriented.length];
-    const aOut = outside(a), bOut = outside(b);
-    if (aOut) appendUnique(a);
-    if (aOut !== bOut) {
-      const candidates = [axisAt(a, b, "x", cb.x), axisAt(a, b, "x", cb.x + cb.width), axisAt(a, b, "y", cb.y), axisAt(a, b, "y", cb.y + cb.height)]
-        .filter(Boolean) as Point[];
-      for (const p of candidates) if (insideCut(p)) appendUnique(p);
-    }
-  }
-
-  const orthogonal = source.every((p, i) => {
-    const q = source[(i + 1) % source.length];
-    return Math.abs(p.x - q.x) < 1e-6 || Math.abs(p.y - q.y) < 1e-6;
-  });
-  if (orthogonal) {
-    const rect = [
-      { x: sx, y: sy }, { x: sxe, y: sy }, { x: sxe, y: sye }, { x: sx, y: sye },
-    ];
-    if (source.length === 4 && rect.every((p, i) => Math.abs(p.x - source[i].x) < 1e-6 && Math.abs(p.y - source[i].y) < 1e-6)) {
-      if (corner.sideX === "left" && corner.sideY === "top") return [
-        { x: cb.x + cb.width, y: sy }, { x: sxe, y: sy }, { x: sxe, y: sye }, { x: sx, y: sye }, { x: sx, y: cb.y + cb.height }, { x: cb.x + cb.width, y: cb.y + cb.height },
-      ];
-      if (corner.sideX === "right" && corner.sideY === "top") return [
-        { x: sx, y: sy }, { x: cb.x, y: sy }, { x: cb.x, y: cb.y + cb.height }, { x: sxe, y: cb.y + cb.height }, { x: sxe, y: sye }, { x: sx, y: sye },
-      ];
-      if (corner.sideX === "left" && corner.sideY === "bottom") return [
-        { x: sx, y: sy }, { x: sxe, y: sy }, { x: sxe, y: sye }, { x: cb.x + cb.width, y: sye }, { x: cb.x + cb.width, y: cb.y }, { x: sx, y: cb.y },
-      ];
-      if (corner.sideX === "right" && corner.sideY === "bottom") return [
-        { x: sx, y: sy }, { x: cb.x, y: sy }, { x: cb.x, y: cb.y }, { x: sxe, y: cb.y }, { x: sxe, y: sye }, { x: sx, y: sye },
-      ];
-    }
-  }
-  return result.length >= 3 ? result : undefined;
 }
 
-function splitEnsuiteCorner(floor: any, room: Room, change: RoomChange): boolean {
+function preserveBedroomOpenings(original: Room, remainder: Point[], cut: Bounds): { windows?: Room["windows"]; doors?: Room["doors"] } {
+  const bounds = polygonBounds(remainder);
+  const windows = (original.windows || []).filter(w => {
+    const wall = w.wall;
+    if (wall === "top") return bounds.y <= original.y + 2 && !((cut.y <= original.y + 2) && cut.x <= original.x + original.width && cut.x + cut.width >= original.x);
+    if (wall === "bottom") return bounds.y + bounds.height >= original.y + original.height - 2 && !((cut.y + cut.height >= original.y + original.height - 2) && cut.x <= original.x + original.width && cut.x + cut.width >= original.x);
+    if (wall === "left") return bounds.x <= original.x + 2 && !((cut.x <= original.x + 2) && cut.y <= original.y + original.height && cut.y + cut.height >= original.y);
+    if (wall === "right") return bounds.x + bounds.width >= original.x + original.width - 2 && !((cut.x + cut.width >= original.x + original.width - 2) && cut.y <= original.y + original.height && cut.y + cut.height >= original.y);
+    return true;
+  });
+  const doors = (original.doors || []).filter(d => {
+    if (d.wall === "top") return bounds.y <= original.y + 2;
+    if (d.wall === "bottom") return bounds.y + bounds.height >= original.y + original.height - 2;
+    if (d.wall === "left") return bounds.x <= original.x + 2;
+    if (d.wall === "right") return bounds.x + bounds.width >= original.x + original.width - 2;
+    return true;
+  });
+  return { windows, doors };
+}
+
+function applySimpleConversion(room: Room, change: RoomChange): void {
+  const inferred = actionType(change.action);
+  const requested = String(change.newType || inferred || "").trim().toLowerCase();
+  if (!requested || noOp(room.type || "", requested)) return;
+  room.type = change.newType || inferred || room.type;
+  if (change.newName) room.name = change.newName;
+  else if (inferred === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom";
+  if (change.reason) room.notes = [room.notes, change.reason].filter(Boolean).join("; ");
+}
+
+function splitNonEnsuite(floor: { rooms: Room[] }, room: Room, change: RoomChange): boolean {
   if (!room.polygon || room.polygon.length < 3) return false;
-
-  const corner = bestInternalCorner(room);
-  if (!corner) return false;
-
-  const ensuiteWidth = Math.max(80, Math.min(room.width * 0.28, 150));
-  const ensuiteHeight = Math.max(70, Math.min(room.height * 0.24, 135));
-  const minX = corner.sideX === "right" ? room.x + room.width - ensuiteWidth : room.x;
-  const maxX = corner.sideX === "right" ? room.x + room.width : room.x + ensuiteWidth;
-  const minY = corner.sideY === "bottom" ? room.y + room.height - ensuiteHeight : room.y;
-  const maxY = corner.sideY === "bottom" ? room.y + room.height : room.y + ensuiteHeight;
-
-  let ensuitePoly = clipRect(structuredClone(room.polygon), minX, maxX, minY, maxY);
-  if (!validPolygon(ensuitePoly)) {
-    const inset = 8;
-    const candidate: Point[] = [
-      { x: minX + inset, y: minY + inset },
-      { x: maxX - inset, y: minY + inset },
-      { x: maxX - inset, y: maxY - inset },
-      { x: minX + inset, y: maxY - inset },
-    ];
-    if (candidate.every(p => pointInPolygon(p, room.polygon!))) ensuitePoly = candidate;
+  const windows = windowWalls(room);
+  const direction = change.split?.direction || (windows.includes("top") || windows.includes("bottom") ? "horizontal" : "vertical");
+  const ratio = Number.isFinite(Number(change.split?.firstRatio)) ? Math.max(0.4, Math.min(0.8, Number(change.split?.firstRatio))) : 0.65;
+  const original = structuredClone(room.polygon);
+  const ox = room.x, oy = room.y, ow = room.width, oh = room.height;
+  if (direction === "horizontal") {
+    const splitY = oy + oh * ratio;
+    const first = clip(original, "y", splitY, false);
+    const second = clip(original, "y", splitY, true);
+    if (!first || !second) return false;
+    const firstAreaSqm = squareMetresForPixels(room, polygonArea(first));
+    const secondAreaSqm = squareMetresForPixels(room, polygonArea(second));
+    if (firstAreaSqm < BEDROOM_MIN_SQM || secondAreaSqm < BEDROOM_MIN_SQM) return false;
+    room.polygon = first;
+    room.y = polygonBounds(first).y;
+    room.height = polygonBounds(first).height;
+    room.type = change.split?.firstType || "bedroom";
+    room.name = change.split?.firstName || room.name || "Bedroom";
+    floor.rooms.push(childRoom(room, change, second, change.split?.secondType || "bedroom", change.split?.secondName || "Bedroom"));
+    return true;
   }
+  const splitX = ox + ow * ratio;
+  const first = clip(original, "x", splitX, false);
+  const second = clip(original, "x", splitX, true);
+  if (!first || !second) return false;
+  const firstAreaSqm = squareMetresForPixels(room, polygonArea(first));
+  const secondAreaSqm = squareMetresForPixels(room, polygonArea(second));
+  if (firstAreaSqm < BEDROOM_MIN_SQM || secondAreaSqm < BEDROOM_MIN_SQM) return false;
+  room.polygon = first;
+  room.x = polygonBounds(first).x;
+  room.width = polygonBounds(first).width;
+  room.type = change.split?.firstType || "bedroom";
+  room.name = change.split?.firstName || room.name || "Bedroom";
+  floor.rooms.push(childRoom(room, change, second, change.split?.secondType || "bedroom", change.split?.secondName || "Bedroom"));
+  return true;
+}
 
-  if (!validPolygon(ensuitePoly)) return false;
+function findBestEnsuiteCandidate(room: Room): { polygon: Point[]; bounds: Bounds; remainder: Point[]; score: number } | undefined {
+  if (!room.polygon || room.polygon.length < 3 || !roomHasRequiredWindow(room) || !roomHasUsableDoor(room)) return undefined;
+  const sourceArea = polygonArea(room.polygon);
+  if (sourceArea <= 0) return undefined;
+  const corners = candidateCorners(room);
+  const widthValues = [
+    Math.max(ENSUITE_MIN_SHOWER_MM, Math.min(room.width * 0.26, 150)),
+    Math.max(ENSUITE_MIN_SHOWER_MM, Math.min(room.width * 0.31, 170)),
+    Math.max(ENSUITE_MIN_SHOWER_MM, Math.min(room.width * 0.36, 190)),
+  ];
+  const heightValues = [
+    Math.max(ENSUITE_MIN_SHOWER_MM, Math.min(room.height * 0.24, 140)),
+    Math.max(ENSUITE_MIN_SHOWER_MM, Math.min(room.height * 0.30, 170)),
+    Math.max(ENSUITE_MIN_SHOWER_MM, Math.min(room.height * 0.36, 200)),
+  ];
 
-  const childBounds = polygonBounds(ensuitePoly);
-  const childW = childBounds.width, childH = childBounds.height;
-  if (childW < 70 || childH < 60) return false;
+  const candidates: Array<{ polygon: Point[]; bounds: Bounds; remainder: Point[]; score: number }> = [];
+  for (const corner of corners) {
+    for (const width of widthValues) {
+      for (const height of heightValues) {
+        if (width >= room.width - 8 || height >= room.height - 8) continue;
+        const bounds = buildCornerRect(room, corner, width, height);
+        if (openingWallBlocked(room, bounds)) continue;
+        const cornersInside = [
+          { x: bounds.x + 2, y: bounds.y + 2 },
+          { x: bounds.x + bounds.width - 2, y: bounds.y + 2 },
+          { x: bounds.x + bounds.width - 2, y: bounds.y + bounds.height - 2 },
+          { x: bounds.x + 2, y: bounds.y + bounds.height - 2 },
+        ];
+        if (!cornersInside.every(p => pointInPolygon(p, room.polygon!))) continue;
+        const ensuitePoly: Point[] = [
+          { x: bounds.x, y: bounds.y },
+          { x: bounds.x + bounds.width, y: bounds.y },
+          { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+          { x: bounds.x, y: bounds.y + bounds.height },
+        ];
+        const ensuitePixels = polygonArea(ensuitePoly);
+        const ensuiteSqm = squareMetresForPixels(room, ensuitePixels);
+        if (width < ENSUITE_MIN_SHOWER_MM || height < ENSUITE_MIN_SHOWER_MM) continue;
+        if (ensuiteSqm < ENSUITE_TARGET_SQM * 0.75) continue;
+        const remainder = carveRectangle(room.polygon!, bounds, corner);
+        if (!validBedroomRemainder(room, remainder || [], ensuitePixels)) continue;
+        if (polygonArea(remainder!) + ensuitePixels < sourceArea * 0.995) continue;
+        const remainderOpenings = preserveBedroomOpenings(room, remainder!, bounds);
+        const principal = principalWindowWalls(room);
+        if (principal.size && !Array.from(principal).every(w => (remainderOpenings.windows || []).some(x => x.wall === w))) continue;
+        const remainderAreaSqm = squareMetresForPixels(room, polygonArea(remainder!));
+        const score = remainderAreaSqm * 10 + ensuiteSqm * 4 - (ensuitePixels / sourceArea) * 1000 + (Array.from(principal).length ? 50 : 0);
+        candidates.push({ polygon: ensuitePoly, bounds, remainder: remainder!, score });
+      }
+    }
+  }
+  return candidates.sort((a, b) => b.score - a.score)[0];
+}
 
-  const bedroomArea = polygonArea(room.polygon);
-  const ensuiteArea = polygonArea(ensuitePoly);
-  if (!bedroomArea || ensuiteArea / bedroomArea > 0.30) return false;
+function splitEnsuite(floor: { rooms: Room[] }, room: Room, change: RoomChange): boolean {
+  const candidate = findBestEnsuiteCandidate(room);
+  if (!candidate) return false;
+  const original = structuredClone(room);
+  const remainderBounds = polygonBounds(candidate.remainder);
+  const openings = preserveBedroomOpenings(original, candidate.remainder, candidate.bounds);
+  room.x = remainderBounds.x;
+  room.y = remainderBounds.y;
+  room.width = remainderBounds.width;
+  room.height = remainderBounds.height;
+  room.polygon = candidate.remainder;
+  room.windows = openings.windows;
+  room.doors = openings.doors;
+  room.approxAreaSqm = Number(squareMetresForPixels(original, polygonArea(candidate.remainder)).toFixed(2));
+  room.name = change.split?.firstName || room.name || "Bedroom";
+  room.type = "bedroom";
+  room.notes = [room.notes, "Bedroom remainder after validated internal ensuite carve"].filter(Boolean).join("; ");
+  room.confidence = "geometry-proposed";
 
-  const remainder = subtractCorner(room.polygon, ensuitePoly, corner);
-  if (!validRemainder(room, remainder || [], ensuiteArea)) return false;
-  if ((polygonArea(remainder!) + ensuiteArea) < bedroomArea * 0.985) return false;
-
-  const bedroom = structuredClone(room);
-  const remainderBounds = polygonBounds(remainder!);
-  bedroom.x = remainderBounds.x;
-  bedroom.y = remainderBounds.y;
-  bedroom.width = remainderBounds.width;
-  bedroom.height = remainderBounds.height;
-  bedroom.polygon = remainder;
-  bedroom.notes = [bedroom.notes, "Bedroom reduced by measured internal ensuite cut; remainder is the authoritative bedroom geometry"].filter(Boolean).join("; ");
-  bedroom.confidence = "geometry-proposed";
-  Object.assign(room, bedroom);
-
-  const child = splitChild(bedroom, change, childBounds.x, childBounds.y, childBounds.width, childBounds.height, ensuitePoly);
-  child.notes = [child.notes, "Internal ensuite cut from source bedroom polygon; no external/window wall occupied"].filter(Boolean).join("; ");
+  const child = childRoom(room, change, candidate.polygon, "ensuite", "En-suite");
+  child.windows = [];
+  child.doors = [];
+  child.approxAreaSqm = Number(squareMetresForPixels(original, polygonArea(candidate.polygon)).toFixed(2));
+  child.notes = [child.notes, `Real geometry carved from ${original.id}; candidate preserves principal bedroom window and doorway`].filter(Boolean).join("; ");
   floor.rooms.push(child);
   return true;
 }
 
-function splitRoom(floor: any, room: Room, change: RoomChange): void {
+function splitRoom(floor: { rooms: Room[] }, room: Room, change: RoomChange): boolean {
   const wet = /ensuite|bath|shower/i.test(String(change.split?.secondType || ""));
-  if (wet) { splitEnsuiteCorner(floor, room, change); return; }
-  if (!room.polygon || room.polygon.length < 3) return;
-  const walls = windowWalls(room), direction = change.split?.direction || (walls.includes("top") || walls.includes("bottom") ? "horizontal" : "vertical"), firstRatio = requestedRatio(change);
-  const ox=room.x, oy=room.y, ow=room.width, oh=room.height, originalPolygon=structuredClone(room.polygon);
-  if (direction === "horizontal") {
-    const firstH=Math.max(1,Math.round(oh*firstRatio)), secondH=oh-firstH; if(secondH<=1)return; const splitY=oy+firstH;
-    const bedroomPoly=walls[0]==="bottom"?clip(originalPolygon,"y",oy+secondH,true):clip(originalPolygon,"y",splitY,false);
-    const secondPoly=walls[0]==="bottom"?clip(originalPolygon,"y",oy+secondH,false):clip(originalPolygon,"y",splitY,true); if(!bedroomPoly||!secondPoly)return;
-    room.y=walls[0]==="bottom"?oy+secondH:oy; room.height=firstH; room.polygon=bedroomPoly; floor.rooms.push(splitChild(room,change,ox,walls[0]==="bottom"?oy:oy+firstH,ow,secondH,secondPoly));
-  } else {
-    const firstW=Math.max(1,Math.round(ow*firstRatio)), secondW=ow-firstW; if(secondW<=1)return; const splitX=ox+firstW;
-    const bedroomPoly=walls[0]==="right"?clip(originalPolygon,"x",ox+secondW,true):clip(originalPolygon,"x",splitX,false);
-    const secondPoly=walls[0]==="right"?clip(originalPolygon,"x",ox+secondW,false):clip(originalPolygon,"x",splitX,true); if(!bedroomPoly||!secondPoly)return;
-    room.x=walls[0]==="right"?ox+secondW:ox; room.width=firstW; room.polygon=bedroomPoly; floor.rooms.push(splitChild(room,change,ox,oy,secondW,oh,secondPoly));
-  }
-  room.type=change.split?.firstType||"bedroom"; room.name=change.split?.firstName||room.name||"Bedroom"; room.notes=[room.notes,"First portion of proposed room split"].filter(Boolean).join("; ");
+  return wet ? splitEnsuite(floor, room, change) : splitNonEnsuite(floor, room, change);
 }
 
-function addEnsuite(floor:any,room:Room,change:RoomChange):void {
-  splitRoom(floor,room,{...change,action:"SplitRoom",split:{firstName:room.name,firstType:"bedroom",secondName:change.newName||"En-suite",secondType:"ensuite",direction:change.split?.direction,firstRatio:change.split?.firstRatio??.72}});
+function addEnsuite(floor: { rooms: Room[] }, room: Room, change: RoomChange): boolean {
+  return splitEnsuite(floor, room, {
+    ...change,
+    action: "SplitRoom",
+    split: {
+      firstName: change.split?.firstName || room.name,
+      firstType: "bedroom",
+      secondName: "En-suite",
+      secondType: "ensuite",
+    },
+  });
 }
 
-export function applyRoomChanges(floorPlan:FloorPlan,changes:RoomChange[]):FloorPlan {
-  const updated=structuredClone(floorPlan);
-  for(const change of changes||[]){
-    if(!change?.roomId)continue;
-    for(const floor of updated.floors){
-      const room=floor.rooms.find(r=>r.id===change.roomId);
-      if(!room)continue;
-      const action=String(change.action||"").toLowerCase().replace(/\s+/g,""),inferred=actionType(change.action),requested=String(change.newType||inferred||"").trim().toLowerCase();
-      if(action==="nochange"&&!requested)continue;
-      if(action==="splitroom"||action==="split"){splitRoom(floor,room,change);continue;}
-      if(requested.includes("ensuite")||action==="converttoensuite"){if(String(room.type||"").toLowerCase().includes("bedroom"))addEnsuite(floor,room,change);continue;}
-      if(requested&&!noOp(room.type||"",requested)){
-        room.type=change.newType||inferred||room.type;
-        if(change.newName)room.name=change.newName;
-        else if(inferred==="bedroom"&&!/bedroom/i.test(room.name))room.name="Proposed Bedroom";
+export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): FloorPlan {
+  const updated = structuredClone(floorPlan);
+  for (const change of changes || []) {
+    if (!change?.roomId) continue;
+    for (const floor of updated.floors) {
+      const room = floor.rooms.find(r => r.id === change.roomId);
+      if (!room) continue;
+      const action = normaliseAction(change.action), inferred = actionType(change.action);
+      const requested = String(change.newType || inferred || "").trim().toLowerCase();
+      if (action === "nochange" && !requested) continue;
+      if (action === "splitroom" || action === "split") {
+        splitRoom(floor, room, change);
+        break;
       }
-      if(change.action&&/merge|extend|partition|doorway|opening/i.test(change.action))room.notes=[room.notes,change.action].filter(Boolean).join("; ");
-      if(change.reason&&requested&&!noOp(room.type||"",requested))room.notes=[room.notes,change.reason].filter(Boolean).join("; ");
+      if (requested.includes("ensuite") || action === "converttoensuite") {
+        if (String(room.type || "").toLowerCase().includes("bedroom")) addEnsuite(floor, room, change);
+        break;
+      }
+      if (requested) applySimpleConversion(room, change);
+      break;
     }
   }
   return updated;
