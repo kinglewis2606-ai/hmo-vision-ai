@@ -73,17 +73,12 @@ function addSafeEnsuites(plan: any, labels: RoomLabel[], changes: any[]): any[] 
   const byId = new Map<string, RoomLabel>(); for (const l of labels) byId.set(String(l.roomId ?? ""), l);
   for (const floor of plan.floors) for (const room of floor.rooms) {
     const label = byId.get(room.id); if (!label || !isBedroom(label.type)) continue;
-    // Bedroom 1/4 in typical HMO conversions can legitimately be around
-    // 15-17 sqm. The old 18 sqm gate silently discarded exactly those rooms,
-    // leaving the written analysis claiming an ensuite that the renderer never
-    // received. Geometry validation is handled by applyRoomChanges instead.
     const area = Number(label.areaSqm || room.approxAreaSqm || 0); if (area < 12) continue;
     if (output.some(c => String(c.roomId) === room.id && (norm(c.action) === "splitroom" || norm(c.action) === "converttoensuite"))) continue;
     const windows: WallSide[] = Array.isArray(label.windows) ? label.windows : [];
-    const hasTop = windows.includes("top"), hasBottom = windows.includes("bottom"), hasLeft = windows.includes("left"), hasRight = windows.includes("right");
     let direction: "horizontal" | "vertical";
-    if (hasTop !== hasBottom) direction = "horizontal";
-    else if (hasLeft !== hasRight) direction = "vertical";
+    if (windows.includes("top") !== windows.includes("bottom")) direction = "horizontal";
+    else if (windows.includes("left") !== windows.includes("right")) direction = "vertical";
     else direction = room.width >= room.height ? "horizontal" : "vertical";
     output.push({ roomId: room.id, action: "SplitRoom", reason: windows.length ? `Internal ensuite for ${label.name || room.id}; detected window wall ${windows.join(", ")} is retained with the bedroom and the ensuite is placed at the opposite/internal end.` : `Internal ensuite for ${label.name || room.id}; compact corner geometry will be validated against the detected bedroom polygon.`, split: { firstName: label.name || room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction, firstRatio: 0.72 } });
   }
@@ -120,8 +115,34 @@ export async function POST(req: Request) {
     const withConversions = addBestRoomConversions(labelled, labels, valid, result);
     const finalChanges = addSafeEnsuites(labelled, labels, withConversions);
     const proposed = applyRoomChanges(labelled, finalChanges);
-    const appliedChanges = finalChanges.filter((c: any) => { const before = roomsById.get(String(c.roomId))?.room; if (!before) return false; if (norm(c.action) === "splitroom" || norm(c.action) === "converttoensuite") return proposed.floors.some((f: any) => f.rooms.some((r: any) => r.id === `${before.id}-split-2`)); const after = proposed.floors.flatMap((f: any) => f.rooms).find((r: any) => r.id === before.id); return !!after && (after.type !== before.type || after.name !== before.name); });
-    result.changes = appliedChanges; result.originalFloorPlan = original; result.proposedFloorPlan = proposed;
+
+    // A split is applied only when the source room now has valid remainder geometry
+    // and the generated child exists. Conversions must also produce a real source-room change.
+    const proposedRooms = proposed.floors.flatMap((f: any) => f.rooms);
+    const appliedChanges = finalChanges.filter((c: any) => {
+      const id = String(c?.roomId || "");
+      const before = roomsById.get(id)?.room;
+      if (!before) return false;
+      if (norm(c.action) === "splitroom" || norm(c.action) === "converttoensuite") {
+        const child = proposedRooms.find((r: any) => r.id === `${before.id}-split-2` && String(r.notes || "").includes(`Created by split of ${before.id}`));
+        const source = proposedRooms.find((r: any) => r.id === before.id);
+        return !!child && !!source && Array.isArray(source.polygon) && source.polygon.length >= 3;
+      }
+      const after = proposedRooms.find((r: any) => r.id === before.id);
+      return !!after && (after.type !== before.type || after.name !== before.name);
+    });
+
+    // Geometry is the source of truth for the report: a rejected change is not
+    // allowed to survive in the final narrative/changes array.
+    result.changes = appliedChanges;
+    result.originalFloorPlan = original;
+    result.proposedFloorPlan = proposed;
+    if (result.summary) {
+      const originalBedrooms = original.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBedroom(r.type)).length;
+      const proposedBedrooms = proposedRooms.filter((r: any) => isBedroom(r.type)).length;
+      result.summary.bedrooms = originalBedrooms;
+      result.summary.possibleHMOBedrooms = proposedBedrooms;
+    }
     result.generatedLayoutImage = renderFloorPlan(labelled, proposed, `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`, appliedChanges);
     return NextResponse.json({ success: true, result });
   } catch (error: any) { console.error("ANALYSE ERROR:", error); return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 }); }
