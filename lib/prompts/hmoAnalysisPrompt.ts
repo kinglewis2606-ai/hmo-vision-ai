@@ -20,6 +20,7 @@ SOURCE OF TRUTH
 ROOM IDENTIFICATION
 Return exactly one roomLabels item for every detected room. Read the printed room label, fixtures, doors, windows and geometry in the supplied image.
 Bedroom N -> bedroom; Living Room/Lounge/Reception -> living room; Dining Room -> dining room; Kitchen -> kitchen; Shower Room/Bathroom -> bathroom; WC/Toilet -> WC; Landing/Hall/Entrance/stairs -> circulation.
+If a detected room is visibly a dining room or a kitchen/dining communal room, label it accordingly even if the text is partly obscured. Do not omit a real detected room merely because its printed name is unclear.
 Every roomLabels.roomId and floor must exactly match the supplied geometry.
 If printed dimensions are visible, return areaSqm, widthM and depthM from those dimensions; do not guess dimensions from pixels.
 
@@ -31,28 +32,47 @@ For EVERY room return windows and doors using ONLY: top, bottom, left, right.
 - If uncertain, return [].
 - A bedroom's principal external window wall MUST remain with the bedroom after works.
 
-MAXIMUM-VIABLE-HMO OPTIMISATION
-Test candidates in this order:
-1. Existing bedrooms retained.
-2. Existing bedrooms + every viable ground-floor Lounge/Living Room/Reception conversion.
-3. Higher counts using genuine room splits where geometry supports them.
-4. Ensuite upgrades to large bedrooms.
-Do NOT select the easiest low-work scheme when a materially better valid scheme is physically achievable.
-- 4 existing bedrooms + suitable lounge/reception => test 5 beds.
-- 5 existing bedrooms + suitable lounge/reception => test 6 beds.
-- A separate kitchen plus dining/communal area remains legitimate communal amenity after a lounge conversion.
-Reject a higher count only for a concrete geometry, room-size, amenity, fire/escape, planning or licensing constraint and state that exact reason.
+READING HMO SPACE AND AMENITY RULES
+Use these as the conservative design rules for this analysis when the property is in Reading. They are not a guarantee of planning/building-control approval.
+- Single-occupancy bedroom: at least 6.51 sqm of usable floor area.
+- Two-person bedroom: at least 10.5 sqm.
+- Ignore floor area below 1.5 m ceiling height.
+- Bedrooms must have an openable window providing natural light and ventilation.
+- Shared kitchen: target at least 7 sqm with a safe usable layout.
+- For 5 occupiers using communal facilities: at least 1 bathroom plus 1 separate WC; the WC may be within a second bathroom.
+- For 6–10 occupiers: at least 2 bathrooms plus 2 separate WCs, with one WC allowed within one bathroom.
+- A private ensuite does NOT count toward the communal bathroom/WC provision.
+- Shower: minimum shower footprint is 800 x 800 mm. Bathroom/shower rooms must also have enough space for safe use, changing and drying; there is no separate fixed statutory sqm minimum for an ensuite, so do not pretend there is one.
+- A communal living room is recommended by Reading, and planning decisions may consider communal amenity; do not sacrifice all meaningful communal space merely to increase the bedroom count.
+- A bedroom conversion is only viable if its resulting usable geometry still meets the 6.51 sqm single-occupancy standard and has an external openable window.
 
-ENSUITE — MANDATORY TEST
-Every bedroom around 18 sqm or larger MUST be evaluated for an internal ensuite.
-Use SplitRoom on the REAL bedroom roomId with secondType=ensuite and secondName=En-suite; firstRatio normally 0.65–0.75.
-The ensuite MUST be wholly inside the source bedroom boundary. It MUST NOT overlap the bedroom's principal window wall. It must be at the internal/opposite end and leave a viable bedroom.
-Window preference: bottom window -> ensuite at top/internal end; top -> bottom; left -> right; right -> left.
-If that cannot be achieved, do not claim the ensuite.
-Do not emit ConvertToEnsuite for a bedroom that is being split.
+MAXIMUM-VIABLE-HMO OPTIMISATION
+Find the HIGHEST genuinely achievable bedroom count from the detected rooms. Do not optimise for the easiest conversion; optimise for the maximum profitable room count that remains physically and amenity feasible.
+Test candidates in descending value:
+1. Keep every existing valid bedroom.
+2. Convert every viable ground-floor Lounge/Living Room/Reception to a bedroom where a separate kitchen remains and sufficient communal amenity remains.
+3. Test genuine room splits only where both resulting rooms have valid geometry, openings and minimum usable area.
+4. Test ensuite upgrades to large bedrooms without reducing the bedroom below 6.51 sqm.
+5. For each candidate count, verify the communal bathroom/WC requirement for the resulting number of occupants.
+6. Reject a higher count only for a concrete detected geometry, room-size, opening, amenity, fire/escape, planning or licensing constraint.
+
+IMPORTANT: DO NOT REQUIRE THE AI TO LABEL A DINING ROOM PERFECTLY BEFORE TESTING A LOUNGE CONVERSION. The deterministic geometry layer will also evaluate distinct ground-floor communal space. If a kitchen and a separate non-bedroom communal/dining space are visibly present, treat that as supporting evidence even if the room label confidence is low.
+
+ENSUITE — TEST EVERY VIABLE LARGE BEDROOM
+Every bedroom must be evaluated for an ensuite opportunity, not only bedrooms above an arbitrary 18 sqm threshold.
+- First preserve at least 6.51 sqm usable bedroom area.
+- Reserve a realistic compact shower-room footprint. Use 800 x 800 mm as the minimum shower footprint and target roughly 2.5 sqm or more for the complete ensuite where the geometry permits safe use of WC, basin, shower and access. This 2.5 sqm figure is an engineering/design target, not a statutory minimum.
+- Use SplitRoom on the REAL bedroom roomId with secondType=ensuite and secondName=En-suite; firstRatio normally 0.65–0.75, but choose the ratio needed to preserve the bedroom minimum and make the ensuite physically usable.
+- The ensuite MUST be wholly inside the source bedroom boundary.
+- It MUST NOT occupy the principal external/window wall unless the remaining bedroom still retains a compliant external window, which is normally not acceptable for this optimisation.
+- It MUST NOT block or occupy the existing bedroom doorway/opening.
+- Prefer the internal/opposite end from the principal window and away from the door.
+- If no valid position exists, do not claim the ensuite.
+- Do not emit ConvertToEnsuite for a bedroom that is being split.
 
 GROUND-FLOOR LOUNGE / RECEPTION
-Every separate ground-floor Lounge, Living Room or Reception MUST be tested as a bedroom candidate when its geometry is large enough and separate kitchen/dining communal space remains usable. A lower count requires a concrete documented reason.
+Every separate ground-floor Lounge, Living Room or Reception MUST be tested as a bedroom candidate when its resulting usable geometry is at least 6.51 sqm and it has an openable external window.
+A lounge conversion is preferred only when the remaining ground-floor arrangement still contains a usable kitchen and meaningful communal/dining space. A low-count scheme requires a concrete documented reason.
 
 CHANGES
 Allowed: ConvertToBedroom, ConvertToKitchen, ConvertToBathroom, ConvertToEnsuite, ExtendBathroom, SplitRoom, MergeRoom.
@@ -66,13 +86,16 @@ summary.possibleHMOBedrooms = final proposed bedroom count.
 A bedroom+ensuite split adds zero bedrooms.
 
 FINAL SELF-CHECK
-1. Every roomId exists and every room has a current label.
-2. Existing and proposed counts are consistent.
-3. Every viable ground-floor lounge/reception has been tested.
-4. Every large bedroom has been tested for an ensuite.
-5. Every ensuite is an internal split of the actual bedroom, preserves its principal window wall and leaves a viable bedroom.
-6. Verdict, score, highestPossibleHMO, rent, cost, investorSummary and changes describe the SAME selected scheme.
-7. Never use raw room IDs as bedroom numbers.
+1. Every detected room has exactly one roomLabels item.
+2. Every roomId exists and every floor matches.
+3. Existing and proposed counts are consistent.
+4. Every viable ground-floor lounge/reception has been tested.
+5. Every bedroom has been evaluated for a viable ensuite, with no arbitrary 18 sqm cutoff.
+6. Every ensuite preserves a compliant bedroom, principal window and existing doorway.
+7. The final bedroom count also satisfies the communal bathroom/WC requirement for the number of occupants.
+8. Do not sacrifice all meaningful communal amenity just to create another bedroom.
+9. Verdict, score, highestPossibleHMO, rent, cost, investorSummary and changes describe the SAME selected scheme.
+10. Never use raw room IDs as bedroom numbers.
 
 RETURN JSON ONLY:
 {
