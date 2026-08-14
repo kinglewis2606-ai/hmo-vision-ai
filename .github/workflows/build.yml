@@ -42,9 +42,10 @@ jobs:
           grep -q "Analyse Floor Plan" /tmp/new.html
       - name: Verify upload API is reachable
         run: |
-          status=$(curl --silent --output /tmp/upload.json --write-out "%{http_code}" -X POST http://127.0.0.1:3000/api/upload)
+          printf 'x' > /tmp/smoke.txt
+          status=$(curl --silent --output /tmp/upload.json --write-out "%{http_code}" -X POST -F 'file=@/tmp/smoke.txt;type=text/plain' http://127.0.0.1:3000/api/upload)
           test "$status" = "400"
-          grep -q "No file uploaded" /tmp/upload.json
+          grep -q "Unsupported file type" /tmp/upload.json
       - name: Show server log on failure
         if: failure()
         run: cat /tmp/hmo-next.log || true
