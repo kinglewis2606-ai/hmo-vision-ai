@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:geometry": "rm -rf .geometry-test && tsc tests/geometry.test.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .geometry-test --rootDir . --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node --test .geometry-test/tests/geometry.test.js"
+    "test:geometry": "rm -rf .geometry-test && tsc tests/geometry.test.ts tests/deterministicGeometry.test.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .geometry-test --rootDir . --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node --test .geometry-test/tests/*.test.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -34,6 +34,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "eslint": "^9",
+    "eslint-config-next": "16.2.11"
   }
 }
