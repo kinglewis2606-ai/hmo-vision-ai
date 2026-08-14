@@ -1,5 +1,12 @@
 import { Point, Room } from "./types/floorPlan";
 
+declare global {
+  function noOp(current: string, requested: string): boolean;
+}
+
+const geometryNoOp = (current: string, requested: string): boolean => String(current || "").trim().toLowerCase() === String(requested || "").trim().toLowerCase();
+(globalThis as typeof globalThis & { noOp: typeof geometryNoOp }).noOp = geometryNoOp;
+
 export const BEDROOM_MIN_SQM = 6.51;
 export const ENSUITE_SHOWER_MIN_M = 0.8;
 export const ENSUITE_TARGET_SQM = 2.5;
