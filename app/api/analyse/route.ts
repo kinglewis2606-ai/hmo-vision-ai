@@ -16,19 +16,39 @@ type RoomLabel = { roomId?: string; name?: string; type?: string; floor?: string
 const WALLS: WallSide[] = ["top", "bottom", "left", "right"];
 const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z]/g, "");
 const isBathroom = (v: unknown) => { const x = norm(v); return x.includes("bath") || x.includes("shower") || x.includes("ensuite") || x.includes("toilet") || x === "wc"; };
+
 function applyLabels(plan: any, labels: RoomLabel[]) {
-  const rooms = new Map<string, any>(); for (const f of plan.floors) for (const r of f.rooms) rooms.set(String(r.id), r);
-  for (const l of labels) { const r = rooms.get(String(l.roomId ?? "")); if (!r) continue; if (l.name) r.name = String(l.name); if (l.type) r.type = String(l.type); if (l.confidence) r.confidence = String(l.confidence); if (Number(l.areaSqm) > 0) r.approxAreaSqm = Number(l.areaSqm); if (Number(l.widthM) > 0) r.approxWidthM = Number(l.widthM); if (Number(l.depthM) > 0) r.approxDepthM = Number(l.depthM); if (Array.isArray(l.windows)) r.windows = l.windows.filter((w): w is WallSide => WALLS.includes(w)); if (Array.isArray(l.doors)) r.doors = l.doors.filter((w): w is WallSide => WALLS.includes(w)).map(wall => ({ wall })); }
+  const rooms = new Map<string, any>();
+  for (const f of plan.floors) for (const r of f.rooms) rooms.set(String(r.id), r);
+
+  for (const l of labels) {
+    const r = rooms.get(String(l.roomId ?? ""));
+    if (!r) continue;
+    if (l.name) r.name = String(l.name);
+    if (l.type) r.type = String(l.type);
+    if (l.confidence) r.confidence = String(l.confidence);
+    if (Number(l.areaSqm) > 0) r.approxAreaSqm = Number(l.areaSqm);
+    if (Number(l.widthM) > 0) r.approxWidthM = Number(l.widthM);
+    if (Number(l.depthM) > 0) r.approxDepthM = Number(l.depthM);
+
+    // Do not erase reliable detector openings merely because the vision model
+    // returned [] when it was uncertain. The AI is allowed to add/refine
+    // openings, but uncertainty must not turn a valid bedroom into a zero-opening room.
+    if (Array.isArray(l.windows) && l.windows.length > 0) {
+      r.windows = l.windows.filter((w): w is WallSide => WALLS.includes(w));
+    }
+    if (Array.isArray(l.doors) && l.doors.length > 0) {
+      r.doors = l.doors.filter((w): w is WallSide => WALLS.includes(w)).map(wall => ({ wall }));
+    }
+  }
 }
+
 function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
 async function annotate(filePath: string, plan: any) {
   const source = fs.readFileSync(filePath), metadata = await sharp(source).metadata();
   const width = metadata.width || plan.metadata?.imageWidth || 1600, height = metadata.height || plan.metadata?.imageHeight || 1200;
   const annotated = await sharp(source).resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 76, mozjpeg: true }).toBuffer();
-  const scaleX = (width > 1800 || height > 1800) ? 1 : 1;
   const labels = plan.floors.flatMap((f: any) => f.rooms.map((r: any) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="none" stroke="#ff0055" stroke-width="6"/><text x="${r.x + r.width / 2}" y="${r.y + r.height / 2}" text-anchor="middle" font-size="28" font-weight="800" fill="#ff0055" stroke="white" stroke-width="5" paint-order="stroke">${r.id}</text>`)).join("\n");
-  // Keep the room-ID map aligned with the original coordinate system. For very large images
-  // use a compact annotated image instead; the prompt's authoritative JSON still carries original coordinates.
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><image href="data:image/jpeg;base64,${annotated.toString("base64")}" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${labels}</g></svg>`;
   const final = await sharp(Buffer.from(svg)).resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 76, mozjpeg: true }).toBuffer();
   return `data:image/jpeg;base64,${final.toString("base64")}`;
@@ -51,7 +71,8 @@ export async function POST(req: Request) {
     const prompt = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(original, null, 2));
     const image = await annotate(filePath, original);
     const response = await openai.responses.create({ model: "gpt-5", input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
-    const result = JSON.parse(cleanJson(response.output_text || "{}")), labelled = structuredClone(original), labels: RoomLabel[] = Array.isArray(result.roomLabels) ? result.roomLabels : [];
+    const result = JSON.parse(cleanJson(response.output_text || "{}")), labelled = structuredClone(original);
+    const labels: RoomLabel[] = Array.isArray(result.roomLabels) ? result.roomLabels : (Array.isArray(result.rooms) ? result.rooms : []);
     applyLabels(labelled, labels);
     const aiChanges: RoomChange[] = Array.isArray(result.changes) ? result.changes.filter((c: any) => c && typeof c.roomId === "string") : [];
     const maximum = findMaximumHMO(labelled, aiChanges), ensuites = applyBestEnsuites(maximum.plan, maximum.ensuiteCandidates), proposed = ensuites.plan;
