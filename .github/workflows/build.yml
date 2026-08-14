@@ -5,6 +5,7 @@ on:
     branches:
       - fix/real-floorplan-pipeline
       - fix/max-hmo-geometry-output
+      - fix/hmo-production-recovery
   pull_request:
 
 jobs:
