@@ -21,19 +21,50 @@ function roomIdNumber(id: unknown): string | undefined {
   const matches = String(id ?? "").match(/\d+/g);
   return matches?.length ? matches[matches.length - 1] : undefined;
 }
+function floorKey(value: unknown): string {
+  const x = norm(value);
+  if (!x) return "";
+  if (x.includes("ground") || x === "gf" || x.includes("level0")) return "ground";
+  if (x.includes("first") || x === "1f" || x.includes("level1")) return "first";
+  if (x.includes("second") || x === "2f" || x.includes("level2")) return "second";
+  if (x.includes("third") || x === "3f" || x.includes("level3")) return "third";
+  return x;
+}
 function resolveRoom(plan: any, label: RoomLabel): any | undefined {
-  const rooms = plan.floors.flatMap((f: any) => f.rooms);
-  const exact = rooms.find((r: any) => String(r.id) === String(label.roomId ?? ""));
-  if (exact) return exact;
+  const floors = Array.isArray(plan?.floors) ? plan.floors : [];
+  const rooms = floors.flatMap((f: any) => (f.rooms || []).map((r: any) => ({ room: r, floor: f })));
+  const requestedId = String(label.roomId ?? "");
+  const exact = rooms.find(({ room }: any) => String(room.id) === requestedId);
+  if (exact) return exact.room;
+
   const number = roomIdNumber(label.roomId);
-  if (!number) return undefined;
-  const candidates = rooms.filter((r: any) => roomIdNumber(r.id) === number);
-  return candidates.length === 1 ? candidates[0] : undefined;
+  const requestedFloor = floorKey(label.floor);
+  if (number) {
+    const numeric = rooms.filter(({ room }: any) => roomIdNumber(room.id) === number);
+    if (requestedFloor) {
+      const sameFloor = numeric.filter(({ floor }: any) => floorKey(floor.name || floor.level) === requestedFloor);
+      if (sameFloor.length === 1) return sameFloor[0].room;
+    }
+    if (numeric.length === 1) return numeric[0].room;
+  }
+
+  const requestedName = norm(label.name);
+  if (requestedName) {
+    const named = rooms.filter(({ room, floor }: any) => {
+      if (requestedFloor && floorKey(floor.name || floor.level) !== requestedFloor) return false;
+      return norm(room.name) === requestedName;
+    });
+    if (named.length === 1) return named[0].room;
+  }
+
+  return undefined;
 }
 function applyLabels(plan: any, labels: RoomLabel[]) {
+  let resolved = 0;
   for (const l of labels) {
     const r = resolveRoom(plan, l);
     if (!r) continue;
+    resolved++;
     if (l.name) r.name = String(l.name);
     if (l.type) r.type = String(l.type);
     if (l.confidence) r.confidence = String(l.confidence);
@@ -43,6 +74,7 @@ function applyLabels(plan: any, labels: RoomLabel[]) {
     if (Array.isArray(l.windows) && l.windows.length > 0) r.windows = l.windows.filter((w): w is WallSide => WALLS.includes(w));
     if (Array.isArray(l.doors) && l.doors.length > 0) r.doors = l.doors.filter((w): w is WallSide => WALLS.includes(w)).map(wall => ({ wall }));
   }
+  return resolved;
 }
 function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
 async function annotate(filePath: string, plan: any) {
@@ -74,7 +106,11 @@ export async function POST(req: Request) {
     const response = await openai.responses.create({ model: "gpt-5", input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
     const result = JSON.parse(cleanJson(response.output_text || "{}")), labelled = structuredClone(original);
     const labels: RoomLabel[] = Array.isArray(result.roomLabels) ? result.roomLabels : (Array.isArray(result.rooms) ? result.rooms : []);
-    applyLabels(labelled, labels);
+    const resolvedLabels = applyLabels(labelled, labels);
+    const labelBedrooms = labels.filter(l => norm(`${l.type} ${l.name}`).includes("bedroom")).length;
+    if (labels.length > 0 && labelBedrooms > 0 && resolvedLabels === 0) {
+      throw new Error("The AI identified bedrooms but none could be matched to the detected floor-plan geometry. No unverified layout was generated.");
+    }
     const aiChanges: RoomChange[] = Array.isArray(result.changes) ? result.changes.filter((c: any) => c && typeof c.roomId === "string") : [];
     const maximum = findMaximumHMO(labelled, aiChanges), ensuites = applyBestEnsuites(maximum.plan, maximum.ensuiteCandidates), proposed = ensuites.plan;
     const appliedChanges = [...maximum.appliedChanges, ...ensuites.applied], rejectedChanges = [...maximum.rejectedChanges, ...ensuites.rejected];
