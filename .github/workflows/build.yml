@@ -18,6 +18,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - run: npm run test:geometry
       - run: npm run build
       - name: Start production server
         run: |
@@ -46,6 +47,13 @@ jobs:
           status=$(curl --silent --output /tmp/upload.json --write-out "%{http_code}" -X POST -F 'file=@/tmp/smoke.txt;type=text/plain' http://127.0.0.1:3000/api/upload)
           test "$status" = "400"
           grep -Eq 'Unsupported file type|No file uploaded' /tmp/upload.json
+      - name: Verify analysis API initializes
+        run: |
+          status=$(curl --silent --output /tmp/analyse.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse)
+          test "$status" = "400"
+          grep -Eq 'No uploaded file|Invalid uploaded filename|Missing' /tmp/analyse.json
+      - name: Verify server remains alive
+        run: kill -0 $(cat /tmp/hmo-next.pid)
       - name: Show server log on failure
         if: failure()
         run: cat /tmp/hmo-next.log || true
