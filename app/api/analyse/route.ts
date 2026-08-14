@@ -17,12 +17,22 @@ const WALLS: WallSide[] = ["top", "bottom", "left", "right"];
 const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z]/g, "");
 const isBathroom = (v: unknown) => { const x = norm(v); return x.includes("bath") || x.includes("shower") || x.includes("ensuite") || x.includes("toilet") || x === "wc"; };
 
+function roomIdNumber(id: unknown): string | undefined {
+  const matches = String(id ?? "").match(/\d+/g);
+  return matches?.length ? matches[matches.length - 1] : undefined;
+}
+function resolveRoom(plan: any, label: RoomLabel): any | undefined {
+  const rooms = plan.floors.flatMap((f: any) => f.rooms);
+  const exact = rooms.find((r: any) => String(r.id) === String(label.roomId ?? ""));
+  if (exact) return exact;
+  const number = roomIdNumber(label.roomId);
+  if (!number) return undefined;
+  const candidates = rooms.filter((r: any) => roomIdNumber(r.id) === number);
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
 function applyLabels(plan: any, labels: RoomLabel[]) {
-  const rooms = new Map<string, any>();
-  for (const f of plan.floors) for (const r of f.rooms) rooms.set(String(r.id), r);
-
   for (const l of labels) {
-    const r = rooms.get(String(l.roomId ?? ""));
+    const r = resolveRoom(plan, l);
     if (!r) continue;
     if (l.name) r.name = String(l.name);
     if (l.type) r.type = String(l.type);
@@ -30,19 +40,10 @@ function applyLabels(plan: any, labels: RoomLabel[]) {
     if (Number(l.areaSqm) > 0) r.approxAreaSqm = Number(l.areaSqm);
     if (Number(l.widthM) > 0) r.approxWidthM = Number(l.widthM);
     if (Number(l.depthM) > 0) r.approxDepthM = Number(l.depthM);
-
-    // Do not erase reliable detector openings merely because the vision model
-    // returned [] when it was uncertain. The AI is allowed to add/refine
-    // openings, but uncertainty must not turn a valid bedroom into a zero-opening room.
-    if (Array.isArray(l.windows) && l.windows.length > 0) {
-      r.windows = l.windows.filter((w): w is WallSide => WALLS.includes(w));
-    }
-    if (Array.isArray(l.doors) && l.doors.length > 0) {
-      r.doors = l.doors.filter((w): w is WallSide => WALLS.includes(w)).map(wall => ({ wall }));
-    }
+    if (Array.isArray(l.windows) && l.windows.length > 0) r.windows = l.windows.filter((w): w is WallSide => WALLS.includes(w));
+    if (Array.isArray(l.doors) && l.doors.length > 0) r.doors = l.doors.filter((w): w is WallSide => WALLS.includes(w)).map(wall => ({ wall }));
   }
 }
-
 function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
 async function annotate(filePath: string, plan: any) {
   const source = fs.readFileSync(filePath), metadata = await sharp(source).metadata();
