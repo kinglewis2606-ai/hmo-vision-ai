@@ -1,0 +1,62 @@
+name: Build and Runtime Smoke Test
+
+on:
+  push:
+    branches:
+      - fix/real-floorplan-pipeline
+      - fix/max-hmo-geometry-output
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run test:geometry
+      - run: npm run build
+      - name: Start production server
+        run: |
+          nohup npm run start -- -H 127.0.0.1 -p 3000 > /tmp/hmo-next.log 2>&1 &
+          echo $! > /tmp/hmo-next.pid
+      - name: Wait for production server
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/ > /tmp/home.html; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/hmo-next.log
+          exit 1
+      - name: Verify pages render
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:3000/ | grep -q "HMO Vision AI"
+          curl --fail --silent --show-error http://127.0.0.1:3000/new > /tmp/new.html
+          grep -q "Analyse a Property" /tmp/new.html
+          grep -q "Upload Floor Plan" /tmp/new.html
+          grep -q "Analyse Floor Plan" /tmp/new.html
+      - name: Verify upload API is reachable
+        run: |
+          printf 'x' > /tmp/smoke.txt
+          status=$(curl --silent --output /tmp/upload.json --write-out "%{http_code}" -X POST -F 'file=@/tmp/smoke.txt;type=text/plain' http://127.0.0.1:3000/api/upload)
+          test "$status" = "400"
+          grep -Eq 'Unsupported file type|No file uploaded' /tmp/upload.json
+      - name: Verify analysis API initializes
+        run: |
+          status=$(curl --silent --output /tmp/analyse.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse)
+          test "$status" = "400"
+          grep -Eq 'No uploaded file|Invalid uploaded filename|Missing' /tmp/analyse.json
+      - name: Verify server remains alive
+        run: kill -0 $(cat /tmp/hmo-next.pid)
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/hmo-next.log || true
+      - name: Stop production server
+        if: always()
+        run: kill $(cat /tmp/hmo-next.pid) 2>/dev/null || true

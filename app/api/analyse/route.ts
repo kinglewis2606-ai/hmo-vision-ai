@@ -1,135 +1,94 @@
 import { NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
+import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
+import sharp from "sharp";
+import { detectRooms } from "@/lib/floorDetection/detectRooms";
+import { detectFloors } from "@/lib/floorDetection/detectFloors";
+import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
+import { buildHMOAnalysisPrompt } from "@/lib/prompts/hmoAnalysisPrompt";
+import { findMaximumHMO, applyBestEnsuites, finalRoomSummary } from "@/lib/hmoPlanner";
+import { RoomChange, WallSide } from "@/lib/types/floorPlan";
+export const runtime = "nodejs";
+export const maxDuration = 300;
+type RoomLabel = { roomId?: string; name?: string; type?: string; floor?: string; confidence?: string; areaSqm?: number; widthM?: number; depthM?: number; windows?: WallSide[]; doors?: WallSide[]; [key: string]: unknown };
+const WALLS: WallSide[] = ["top", "bottom", "left", "right"];
+const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z]/g, "");
+const isBathroom = (v: unknown) => { const x = norm(v); return x.includes("bath") || x.includes("shower") || x.includes("ensuite") || x.includes("toilet") || x === "wc"; };
 
+function roomIdNumber(id: unknown): string | undefined {
+  const matches = String(id ?? "").match(/\d+/g);
+  return matches?.length ? matches[matches.length - 1] : undefined;
+}
+function resolveRoom(plan: any, label: RoomLabel): any | undefined {
+  const rooms = plan.floors.flatMap((f: any) => f.rooms);
+  const exact = rooms.find((r: any) => String(r.id) === String(label.roomId ?? ""));
+  if (exact) return exact;
+  const number = roomIdNumber(label.roomId);
+  if (!number) return undefined;
+  const candidates = rooms.filter((r: any) => roomIdNumber(r.id) === number);
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+function applyLabels(plan: any, labels: RoomLabel[]) {
+  for (const l of labels) {
+    const r = resolveRoom(plan, l);
+    if (!r) continue;
+    if (l.name) r.name = String(l.name);
+    if (l.type) r.type = String(l.type);
+    if (l.confidence) r.confidence = String(l.confidence);
+    if (Number(l.areaSqm) > 0) r.approxAreaSqm = Number(l.areaSqm);
+    if (Number(l.widthM) > 0) r.approxWidthM = Number(l.widthM);
+    if (Number(l.depthM) > 0) r.approxDepthM = Number(l.depthM);
+    if (Array.isArray(l.windows) && l.windows.length > 0) r.windows = l.windows.filter((w): w is WallSide => WALLS.includes(w));
+    if (Array.isArray(l.doors) && l.doors.length > 0) r.doors = l.doors.filter((w): w is WallSide => WALLS.includes(w)).map(wall => ({ wall }));
+  }
+}
+function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
+async function annotate(filePath: string, plan: any) {
+  const source = fs.readFileSync(filePath), metadata = await sharp(source).metadata();
+  const width = metadata.width || plan.metadata?.imageWidth || 1600, height = metadata.height || plan.metadata?.imageHeight || 1200;
+  const annotated = await sharp(source).resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 76, mozjpeg: true }).toBuffer();
+  const labels = plan.floors.flatMap((f: any) => f.rooms.map((r: any) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="none" stroke="#ff0055" stroke-width="6"/><text x="${r.x + r.width / 2}" y="${r.y + r.height / 2}" text-anchor="middle" font-size="28" font-weight="800" fill="#ff0055" stroke="white" stroke-width="5" paint-order="stroke">${r.id}</text>`)).join("\n");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><image href="data:image/jpeg;base64,${annotated.toString("base64")}" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${labels}</g></svg>`;
+  const final = await sharp(Buffer.from(svg)).resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 76, mozjpeg: true }).toBuffer();
+  return `data:image/jpeg;base64,${final.toString("base64")}`;
+}
+function appliedLayout(original: any, proposed: any, changes: RoomChange[]): string[] {
+  const before = new Map<string, any>(), after = new Map<string, any>(), floors = new Map<string, string>();
+  for (const f of original.floors) for (const r of f.rooms) { before.set(r.id, r); floors.set(r.id, f.name); }
+  for (const f of proposed.floors) for (const r of f.rooms) { after.set(r.id, r); floors.set(r.id, f.name); }
+  const lines: string[] = [];
+  for (const c of changes) { const b = before.get(c.roomId), a = after.get(c.roomId); if (!b || !a) continue; const child = after.get(`${c.roomId}-split-2`); lines.push(norm(c.action).includes("split") && child ? `${floors.get(c.roomId) || "Floor"}: ${a.name || "Bedroom"} retained; ${child.name || "En-suite"} created from the final carved geometry.` : `${floors.get(c.roomId) || "Floor"}: ${a.name || a.type || "Room"} converted from ${b.name || b.type || "existing room"}.`); }
+  return lines.length ? lines : ["No valid proposed geometry was applied."];
+}
 export async function POST(req: Request) {
   try {
     const { filename, address, propertyType } = await req.json();
-
-    const filePath = path.join(process.cwd(), "uploads", filename);
-
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({
-        success: false,
-        error: "Uploaded floor plan not found.",
-      });
-    }
-
-    const image = fs.readFileSync(filePath);
-    const ext = path.extname(filename).toLowerCase();
-
-    let mime = "image/jpeg";
-
-    if (ext === ".png") mime = "image/png";
-    if (ext === ".webp") mime = "image/webp";
-
-    const base64 = image.toString("base64");
-
-    const response = await openai.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `
-You are an experienced UK HMO consultant, architect and property investor.
-
-Analyse this floor plan.
-
-Property Address:
-${address || "Unknown"}
-
-Property Type:
-${propertyType || "Unknown"}
-
-IMPORTANT
-
-Only recommend HMOs with FOUR OR MORE BEDROOMS.
-
-If the property cannot realistically become a legal 4-bedroom HMO, clearly explain why.
-
-Return ONLY valid JSON in exactly this format:
-
-{
-  "summary": {
-    "bedrooms": 0,
-    "bathrooms": 0,
-    "kitchen": false,
-    "livingRoom": false,
-    "possibleHMOBedrooms": 0,
-    "confidence": ""
-  },
-  "hmoScore": 0,
-  "verdict": "",
-  "highestPossibleHMO": {
-    "bedrooms": 0,
-    "score": 0,
-    "reason": ""
-  },
-  "recommendedLayout": [],
-  "conversionSteps": [],
-  "recommendations": [],
-  "compliance": [],
-  "fireSafety": [],
-  "planningRisk": "",
-  "estimatedConversionCost": {
-    "low": 0,
-    "high": 0
-  },
-  "estimatedMonthlyRent": 0,
-  "estimatedAnnualRent": 0,
-  "estimatedYield": "",
-  "estimatedROI": "",
-  "investorSummary": ""
-}
-`,
-            },
-            {
-              type: "input_image",
-              image_url: `data:${mime};base64,${base64}`,
-              detail: "high",
-            },
-          ],
-        },
-      ],
-    });
-
-    const text = response.output_text ?? "";
-
-    const cleaned = text
-      .replace(/^```json/i, "")
-      .replace(/^```/i, "")
-      .replace(/```$/i, "")
-      .trim();
-
-    let result;
-
-    try {
-      result = JSON.parse(cleaned);
-    } catch {
-      console.error("AI returned invalid JSON:");
-      console.error(cleaned);
-
-      return NextResponse.json({
-        success: false,
-        error: "OpenAI returned invalid JSON.",
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      result,
-    });
-
-  } catch (error: any) {
-    console.error(error);
-
-    return NextResponse.json({
-      success: false,
-      error: error.message || "Analysis failed.",
-    });
-  }
+    if (!filename || typeof filename !== "string" || /\.\.|[\\/]/.test(filename)) return NextResponse.json({ success: false, error: "Invalid uploaded filename." }, { status: 400 });
+    const filePath = path.join(process.cwd(), "public", "uploads", filename); if (!fs.existsSync(filePath)) return NextResponse.json({ success: false, error: "Uploaded floor plan not found." }, { status: 404 });
+    const floors = await detectFloors(filePath), detectedRooms = await detectRooms(filePath, floors), original = buildOriginalFloorPlan(floors, detectedRooms), meta = await sharp(filePath).metadata();
+    original.metadata = { imageWidth: meta.width, imageHeight: meta.height, imageDpi: meta.density };
+    const prompt = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(original, null, 2));
+    const image = await annotate(filePath, original);
+    const response = await openai.responses.create({ model: "gpt-5", input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
+    const result = JSON.parse(cleanJson(response.output_text || "{}")), labelled = structuredClone(original);
+    const labels: RoomLabel[] = Array.isArray(result.roomLabels) ? result.roomLabels : (Array.isArray(result.rooms) ? result.rooms : []);
+    applyLabels(labelled, labels);
+    const aiChanges: RoomChange[] = Array.isArray(result.changes) ? result.changes.filter((c: any) => c && typeof c.roomId === "string") : [];
+    const maximum = findMaximumHMO(labelled, aiChanges), ensuites = applyBestEnsuites(maximum.plan, maximum.ensuiteCandidates), proposed = ensuites.plan;
+    const appliedChanges = [...maximum.appliedChanges, ...ensuites.applied], rejectedChanges = [...maximum.rejectedChanges, ...ensuites.rejected];
+    const final = finalRoomSummary(proposed), current = finalRoomSummary(labelled), currentBedrooms = current.bedrooms;
+    const originalImage = `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`;
+    result.originalFloorPlan = labelled; result.proposedFloorPlan = proposed; result.changes = appliedChanges;
+    result.rejectedChanges = rejectedChanges.map(c => ({ roomId: c.roomId, action: c.action, reason: "Rejected by deterministic geometry validation." }));
+    result.summary = { ...(result.summary || {}), bedrooms: currentBedrooms, bathrooms: labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length, possibleHMOBedrooms: final.bedrooms };
+    result.highestPossibleHMO = { ...(result.highestPossibleHMO || {}), bedrooms: final.bedrooms, ensuites: final.ensuites, reason: `Highest bedroom count surviving deterministic geometry validation: ${final.bedrooms}; ${final.ensuites} private ensuites physically applied.` };
+    result.geometryFeasibility = { ...(result.geometryFeasibility || {}), possible: final.bedrooms > 0, currentBedrooms, proposedBedrooms: final.bedrooms, proposedEnsuites: final.ensuites, appliedChanges: appliedChanges.length, rejectedChanges: rejectedChanges.length, finalBedroomIds: final.bedroomIds, finalEnsuiteIds: final.ensuiteIds };
+    result.recommendedLayout = appliedLayout(labelled, proposed, appliedChanges); result.conversionSteps = result.recommendedLayout;
+    result.verdict = final.bedrooms > currentBedrooms ? `Maximum geometry-feasible ${final.bedrooms}-bedroom HMO layout selected, with ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Planning/licensing/building-control approval still requires professional/local-authority confirmation.` : `Final deterministic geometry supports ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}; no higher-bedroom transformation survived geometry validation.`;
+    result.investorSummary = `Final applied geometry contains ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Only successfully applied geometry is reported.`;
+    result.generatedLayoutImage = renderFloorPlan(labelled, proposed, originalImage, appliedChanges);
+    return NextResponse.json({ success: true, result });
+  } catch (error: any) { console.error("ANALYSE ERROR:", error); return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 }); }
 }
