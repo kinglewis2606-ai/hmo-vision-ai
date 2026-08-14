@@ -17,7 +17,7 @@ const WALLS: WallSide[] = ["top", "bottom", "left", "right"];
 const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z]/g, "");
 const isBathroom = (v: unknown) => { const x = norm(v); return x.includes("bath") || x.includes("shower") || x.includes("ensuite") || x.includes("toilet") || x === "wc"; };
 function roomIdNumber(id: unknown): string | undefined { const matches = String(id ?? "").match(/\d+/g); return matches?.length ? matches[matches.length - 1] : undefined; }
-function floorKey(value: unknown): string { const x = norm(value); if (!x) return ""; if (x.includes("ground") || x === "gf" || x.includes("level0")) return "ground"; if (x.includes("first") || x === "1f" || x.includes("level1")) return "first"; if (x.includes("second") || x === "2f" || x.includes("level2")) return "second"; if (x.includes("third") || x === "3f" || x.includes("level3")) return "third"; return x; }
+function floorKey(value: unknown): string { const x = norm(value); if (!x) return ""; if (x.includes("ground") || x === "gf" || x.includes("level0") || x === "0") return "ground"; if (x.includes("first") || x === "1f" || x.includes("level1") || x === "1") return "first"; if (x.includes("second") || x === "2f" || x.includes("level2") || x === "2") return "second"; if (x.includes("third") || x === "3f" || x.includes("level3") || x === "3") return "third"; return x; }
 function resolveRoom(plan: any, label: RoomLabel): any | undefined {
   const floors = Array.isArray(plan?.floors) ? plan.floors : [];
   const rooms = floors.flatMap((f: any) => (f.rooms || []).map((r: any) => ({ room: r, floor: f })));
@@ -51,31 +51,46 @@ function extractLabels(result: any): RoomLabel[] {
   const labels = candidates.find(Array.isArray);
   return Array.isArray(labels) ? labels.filter((x: any) => x && typeof x === "object") : [];
 }
-function labelCoverage(plan: any, labels: RoomLabel[]): number {
-  const rooms = plan.floors.flatMap((f: any) => f.rooms);
-  const resolved = new Set(labels.map(l => resolveRoom(plan, l)?.id).filter(Boolean));
-  return rooms.length ? resolved.size / rooms.length : 0;
+function roomList(plan: any) { return plan.floors.flatMap((f: any) => (f.rooms || []).map((r: any) => ({ id: r.id, floor: f.name, level: f.level, x: r.x, y: r.y, width: r.width, height: r.height, areaSqm: r.approxAreaSqm }))); }
+function labelCoverage(plan: any, labels: RoomLabel[]): number { const rooms = plan.floors.flatMap((f: any) => f.rooms); const resolved = new Set(labels.map(l => resolveRoom(plan, l)?.id).filter(Boolean)); return rooms.length ? resolved.size / rooms.length : 0; }
+function normalizeRecoveredLabels(plan: any, labels: RoomLabel[]): RoomLabel[] {
+  const rooms = roomList(plan);
+  const exact = labelCoverage(plan, labels);
+  if (exact >= 0.9) return labels;
+  const normalized: RoomLabel[] = [];
+  for (const floor of plan.floors) {
+    const floorRooms = (floor.rooms || []).slice();
+    const key = floorKey(floor.name || floor.level);
+    const floorLabels = labels.filter(l => floorKey(l.floor) === key);
+    if (!floorLabels.length || floorLabels.length !== floorRooms.length) continue;
+    const used = new Set<string>();
+    const ordered = floorLabels.map(l => ({ label: l, room: resolveRoom(plan, l) })).filter(x => x.room);
+    for (const x of ordered) used.add(x.room.id);
+    const remainingRooms = floorRooms.filter((r: any) => !used.has(r.id));
+    const remainingLabels = floorLabels.filter(l => !resolveRoom(plan, l));
+    if (remainingRooms.length === remainingLabels.length) remainingLabels.forEach((l, i) => normalized.push({ ...l, roomId: remainingRooms[i].id, floor: floor.name }));
+    normalized.push(...ordered.map(x => ({ ...x.label, roomId: x.room.id, floor: floor.name })));
+  }
+  if (normalized.length === rooms.length) return normalized;
+  return labels;
 }
 function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
 async function recoverRoomLabels(plan: any, annotatedImage: string, existing: RoomLabel[]): Promise<RoomLabel[]> {
-  if (labelCoverage(plan, existing) >= 0.9) return existing;
-  const rooms = plan.floors.flatMap((f: any) => (f.rooms || []).map((r: any) => ({ id: r.id, floor: f.name, x: r.x, y: r.y, width: r.width, height: r.height, areaSqm: r.approxAreaSqm })));
-  const geometry = JSON.stringify(rooms);
+  const initial = normalizeRecoveredLabels(plan, existing);
+  if (labelCoverage(plan, initial) >= 0.9) return initial;
+  const geometry = JSON.stringify(roomList(plan));
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const response = await openai.responses.create({
-        model: "gpt-5-mini",
-        max_output_tokens: 5000,
-        input: [{ role: "user", content: [
-          { type: "input_text", text: `You are the room-classification recovery step for a floor-plan system. The image contains magenta room IDs drawn over the real plan. Classify EVERY supplied room ID from the visible printed room name, fixtures, doors, windows and geometry. Return JSON ONLY as {"roomLabels":[...]}. Return exactly one item for every supplied ID. Never invent or omit IDs. Allowed type values: bedroom,living,dining,kitchen,bathroom,shower,wc,circulation,utility,storage,other. For windows and doors use only top,bottom,left,right and only visible walls. Geometry list: ${geometry}` },
-          { type: "input_image", image_url: annotatedImage, detail: "high" },
-        ] }],
-      });
-      const parsed = JSON.parse(cleanJson(response.output_text || "{}")), labels = extractLabels(parsed);
-      if (labelCoverage(plan, labels) >= 0.9) return labels;
+      const response = await openai.responses.create({ model: "gpt-5-mini", max_output_tokens: 6000, input: [{ role: "user", content: [
+        { type: "input_text", text: `Classify EVERY room in this supplied floor-plan geometry. The image has a magenta canonical room ID printed over every detected room. Return JSON ONLY: {"roomLabels":[...]}. Return exactly one item for EVERY supplied room, in the same floor order as the supplied geometry. roomId MUST be copied exactly from the supplied geometry list, not invented. Use type values only: bedroom,living,dining,kitchen,bathroom,shower,wc,circulation,utility,storage,other. Read the original printed room labels and dimensions. Windows and doors: only top,bottom,left,right and only when visibly supported. Geometry list: ${geometry}` },
+        { type: "input_image", image_url: annotatedImage, detail: "high" },
+      ] }], });
+      const parsed = JSON.parse(cleanJson(response.output_text || "{}"));
+      const recovered = normalizeRecoveredLabels(plan, extractLabels(parsed));
+      if (labelCoverage(plan, recovered) >= 0.9) return recovered;
     } catch (error) { console.warn(`Room label recovery attempt ${attempt} failed`, error); }
   }
-  return existing;
+  return initial;
 }
 async function annotate(filePath: string, plan: any) {
   const source = fs.readFileSync(filePath), metadata = await sharp(source).metadata();
@@ -105,10 +120,10 @@ export async function POST(req: Request) {
     const image = await annotate(filePath, original);
     const response = await openai.responses.create({ model: "gpt-5", max_output_tokens: 6000, input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
     const result = JSON.parse(cleanJson(response.output_text || "{}")), labelled = structuredClone(original);
-    let labels: RoomLabel[] = extractLabels(result);
-    labels = await recoverRoomLabels(original, image, labels);
+    let labels: RoomLabel[] = await recoverRoomLabels(original, image, extractLabels(result));
     const resolvedLabels = applyLabels(labelled, labels);
-    if (labelCoverage(original, labels) < 0.9 || resolvedLabels < Math.ceil(original.floors.flatMap((f: any) => f.rooms).length * 0.9)) throw new Error("Room classification could not be recovered for the detected floor plan. Analysis was stopped instead of producing a false 0-bedroom result.");
+    const roomCount = original.floors.flatMap((f: any) => f.rooms).length;
+    if (labelCoverage(original, labels) < 0.9 || resolvedLabels < Math.ceil(roomCount * 0.9)) throw new Error("Room classification could not be recovered for the detected floor plan. Analysis was stopped instead of producing a false 0-bedroom result.");
     const aiChanges: RoomChange[] = Array.isArray(result.changes) ? result.changes.filter((c: any) => c && typeof c.roomId === "string") : [];
     const maximum = findMaximumHMO(labelled, aiChanges), ensuites = applyBestEnsuites(maximum.plan, maximum.ensuiteCandidates), proposed = ensuites.plan;
     const appliedChanges = [...maximum.appliedChanges, ...ensuites.applied], rejectedChanges = [...maximum.rejectedChanges, ...ensuites.rejected];
