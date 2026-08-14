@@ -3,19 +3,19 @@ import OpenAI from "openai";
 /**
  * Keep the client lazy. Next.js evaluates route modules during `next build`,
  * so constructing OpenAI at module scope makes CI fail when the secret is not
- * available. The API route can keep using `openai.responses.create(...)`.
+ * available.
  *
- * The analysis route currently requests gpt-5 with a full annotated floor-plan
- * image. That request was repeatedly exceeding the application's 4-minute
- * client timeout. Geometry recognition already uses gpt-5-mini; use the same
- * fast model for the image-heavy analysis call so an upload can complete in a
- * predictable time. Text/JSON-only calls keep their requested model.
+ * Vision calls are deliberately bounded. A hung upstream request must become a
+ * normal application error/fallback, not a dead HTTP connection that makes the
+ * browser report "Failed to fetch" after several minutes.
  */
 function getClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on the server.");
   return new OpenAI({ apiKey });
 }
+
+const OPENAI_REQUEST_TIMEOUT_MS = 110_000;
 
 export const openai = {
   get responses() {
@@ -24,9 +24,17 @@ export const openai = {
       ...client.responses,
       create: (params: any, options?: any) => {
         const nextParams = params?.model === "gpt-5"
-          ? { ...params, model: "gpt-5-mini" }
+          ? {
+              ...params,
+              model: "gpt-5-mini",
+              max_output_tokens: params.max_output_tokens ?? 5000,
+            }
           : params;
-        return client.responses.create(nextParams, options);
+        const requestOptions = {
+          ...(options || {}),
+          signal: options?.signal || AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
+        };
+        return client.responses.create(nextParams, requestOptions);
       },
     };
   },
