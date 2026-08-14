@@ -17,9 +17,6 @@
     "openai": "^6.48.0",
     "pdf-poppler": "^0.2.3",
     "prisma": "^6.19.3",
-    "next": "16.2.11",
-    "openai": "^6.48.0",
-    "pdf-poppler": "^0.2.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-dropzone": "^19.1.1",
@@ -36,6 +33,7 @@
     "@types/uuid": "^10.0.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }
