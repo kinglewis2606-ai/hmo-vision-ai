@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:geometry": "node --experimental-strip-types --test tests/geometry.test.ts"
+    "test:geometry": "rm -rf .geometry-test && tsc tests/geometry.test.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .geometry-test --rootDir . --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node --test .geometry-test/tests/geometry.test.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
