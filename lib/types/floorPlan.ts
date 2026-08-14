@@ -10,13 +10,14 @@ export interface DetectedFloor { name: string; level: number; top: number; botto
 export interface WallLine { x1: number; y1: number; x2: number; y2: number; }
 export interface Point { x: number; y: number; }
 export type WallSide = "top" | "bottom" | "left" | "right";
-export interface DetectedRoom { id: string; x: number; y: number; width: number; height: number; polygon?: Point[]; openingWalls?: WallSide[]; }
+export interface OpeningInterval { wall: WallSide; start: number; end: number; kind: "door" | "window"; }
+export interface DetectedRoom { id: string; x: number; y: number; width: number; height: number; polygon?: Point[]; openingWalls?: WallSide[]; openingIntervals?: OpeningInterval[]; }
 
 // ============================================================================
 // LAYER 3: CANONICAL FLOOR PLAN MODEL
 // ============================================================================
-export interface Door { wall: WallSide; connectsTo?: string; }
-export interface Window { wall: WallSide; }
+export interface Door { wall: WallSide; connectsTo?: string; start?: number; end?: number; }
+export interface Window { wall: WallSide; start?: number; end?: number; openable?: boolean; }
 export interface Room {
   id: string; name: string; type: string; x: number; y: number; width: number; height: number;
   adjacentRooms: string[]; shape: string; doors?: Door[]; windows?: Window[]; polygon?: Point[];
@@ -41,4 +42,13 @@ export interface RoomLabel {
 export interface RoomChange {
   roomId: string; action?: string; newType?: string; newName?: string; reason?: string;
   split?: { firstName?: string; firstType?: string; secondName?: string; secondType?: string; direction?: "horizontal" | "vertical"; firstRatio?: number; };
+}
+
+export interface AppliedGeometryChange {
+  roomId: string;
+  action: string;
+  status: "applied" | "rejected";
+  reason: string;
+  sourcePolygon?: Point[];
+  resultPolygons?: Point[][];
 }
