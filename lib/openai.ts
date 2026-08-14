@@ -27,7 +27,7 @@ export const openai = {
           ? {
               ...params,
               model: "gpt-5-mini",
-              max_output_tokens: params.max_output_tokens ?? 5000,
+              max_output_tokens: params.max_output_tokens ?? 3500,
             }
           : params;
         const requestOptions = {
