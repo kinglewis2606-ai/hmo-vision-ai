@@ -22,11 +22,16 @@ function applyLabels(plan: any, labels: RoomLabel[]) {
 }
 function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
 async function annotate(filePath: string, plan: any) {
-  const source = fs.readFileSync(filePath), width = plan.metadata?.imageWidth || 1600, height = plan.metadata?.imageHeight || 1200;
+  const source = fs.readFileSync(filePath), metadata = await sharp(source).metadata();
+  const width = metadata.width || plan.metadata?.imageWidth || 1600, height = metadata.height || plan.metadata?.imageHeight || 1200;
+  const annotated = await sharp(source).resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 76, mozjpeg: true }).toBuffer();
+  const scaleX = (width > 1800 || height > 1800) ? 1 : 1;
   const labels = plan.floors.flatMap((f: any) => f.rooms.map((r: any) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="none" stroke="#ff0055" stroke-width="6"/><text x="${r.x + r.width / 2}" y="${r.y + r.height / 2}" text-anchor="middle" font-size="28" font-weight="800" fill="#ff0055" stroke="white" stroke-width="5" paint-order="stroke">${r.id}</text>`)).join("\n");
-  const mime = path.extname(filePath).toLowerCase() === ".png" ? "image/png" : "image/jpeg";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><image href="data:${mime};base64,${source.toString("base64")}" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${labels}</g></svg>`;
-  return `data:image/png;base64,${(await sharp(Buffer.from(svg)).png().toBuffer()).toString("base64")}`;
+  // Keep the room-ID map aligned with the original coordinate system. For very large images
+  // use a compact annotated image instead; the prompt's authoritative JSON still carries original coordinates.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><image href="data:image/jpeg;base64,${annotated.toString("base64")}" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${labels}</g></svg>`;
+  const final = await sharp(Buffer.from(svg)).resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 76, mozjpeg: true }).toBuffer();
+  return `data:image/jpeg;base64,${final.toString("base64")}`;
 }
 function appliedLayout(original: any, proposed: any, changes: RoomChange[]): string[] {
   const before = new Map<string, any>(), after = new Map<string, any>(), floors = new Map<string, string>();
