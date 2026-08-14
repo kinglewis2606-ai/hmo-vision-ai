@@ -55,23 +55,25 @@ function roomList(plan: any) { return plan.floors.flatMap((f: any) => (f.rooms |
 function labelCoverage(plan: any, labels: RoomLabel[]): number { const rooms = plan.floors.flatMap((f: any) => f.rooms); const resolved = new Set(labels.map(l => resolveRoom(plan, l)?.id).filter(Boolean)); return rooms.length ? resolved.size / rooms.length : 0; }
 function normalizeRecoveredLabels(plan: any, labels: RoomLabel[]): RoomLabel[] {
   const rooms = roomList(plan);
-  const exact = labelCoverage(plan, labels);
-  if (exact >= 0.9) return labels;
+  if (!labels.length) return labels;
+  if (labelCoverage(plan, labels) >= 0.9) return labels;
   const normalized: RoomLabel[] = [];
   for (const floor of plan.floors) {
-    const floorRooms = (floor.rooms || []).slice();
-    const key = floorKey(floor.name || floor.level);
-    const floorLabels = labels.filter(l => floorKey(l.floor) === key);
+    const floorRooms = (floor.rooms || []).slice(), key = floorKey(floor.name || floor.level);
+    const floorLabels = labels.filter(l => !l.floor || floorKey(l.floor) === key);
     if (!floorLabels.length || floorLabels.length !== floorRooms.length) continue;
-    const used = new Set<string>();
-    const ordered = floorLabels.map(l => ({ label: l, room: resolveRoom(plan, l) })).filter(x => x.room);
-    for (const x of ordered) used.add(x.room.id);
+    const used = new Set<string>(), orderedMatches: Array<{ label: RoomLabel; room: any }> = [];
+    for (const label of floorLabels) { const room = resolveRoom(plan, label); if (room && !used.has(room.id)) { used.add(room.id); orderedMatches.push({ label, room }); } }
     const remainingRooms = floorRooms.filter((r: any) => !used.has(r.id));
     const remainingLabels = floorLabels.filter(l => !resolveRoom(plan, l));
     if (remainingRooms.length === remainingLabels.length) remainingLabels.forEach((l, i) => normalized.push({ ...l, roomId: remainingRooms[i].id, floor: floor.name }));
-    normalized.push(...ordered.map(x => ({ ...x.label, roomId: x.room.id, floor: floor.name })));
+    normalized.push(...orderedMatches.map(x => ({ ...x.label, roomId: x.room.id, floor: floor.name })));
   }
   if (normalized.length === rooms.length) return normalized;
+  // Final controlled fallback: the recovery prompt explicitly requests the same
+  // floor/room order as the geometry list. If it returned the right number of
+  // labels but malformed IDs/floor strings, bind by that canonical order.
+  if (labels.length === rooms.length) return labels.map((label, i) => ({ ...label, roomId: rooms[i].id, floor: rooms[i].floor }));
   return labels;
 }
 function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
