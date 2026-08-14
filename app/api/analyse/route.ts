@@ -35,22 +35,48 @@ function copyLabel(r: any, l: RoomLabel) {
   if (Array.isArray(l.windows) && l.windows.length > 0) r.windows = l.windows.filter((w): w is WallSide => WALLS.includes(w));
   if (Array.isArray(l.doors) && l.doors.length > 0) r.doors = l.doors.filter((w): w is WallSide => WALLS.includes(w)).map(wall => ({ wall }));
 }
-/** Recover harmless AI room-ID formatting differences without ever guessing a room. */
 function applyLabels(plan: any, labels: RoomLabel[]) {
   let resolved = 0; const used = new Set<string>();
   for (const l of labels) { const r = resolveRoom(plan, l); if (!r || used.has(r.id)) continue; used.add(r.id); resolved++; copyLabel(r, l); }
-  // Last-resort one-to-one recovery: only when every unresolved label and every
-  // unresolved detected room on that floor are present, so no arbitrary mapping occurs.
   for (const floor of (plan.floors || [])) {
-    const floorKeyValue = floorKey(floor.name || floor.level);
-    const rooms = (floor.rooms || []).filter((r: any) => !used.has(r.id));
-    const unresolvedLabels = labels.filter(l => floorKey(l.floor) === floorKeyValue && !resolveRoom(plan, l));
-    if (!rooms.length || unresolvedLabels.length !== rooms.length) continue;
-    unresolvedLabels.forEach((l, i) => { const r = rooms[i]; used.add(r.id); resolved++; copyLabel(r, l); });
+    const key = floorKey(floor.name || floor.level), rooms = (floor.rooms || []).filter((r: any) => !used.has(r.id));
+    const unresolved = labels.filter(l => floorKey(l.floor) === key && !resolveRoom(plan, l));
+    if (!rooms.length || unresolved.length !== rooms.length) continue;
+    unresolved.forEach((l, i) => { const r = rooms[i]; used.add(r.id); resolved++; copyLabel(r, l); });
   }
   return resolved;
 }
+function extractLabels(result: any): RoomLabel[] {
+  const candidates = [result?.roomLabels, result?.rooms, result?.room_labels, result?.analysis?.roomLabels, result?.data?.roomLabels];
+  const labels = candidates.find(Array.isArray);
+  return Array.isArray(labels) ? labels.filter((x: any) => x && typeof x === "object") : [];
+}
+function labelCoverage(plan: any, labels: RoomLabel[]): number {
+  const rooms = plan.floors.flatMap((f: any) => f.rooms);
+  const resolved = new Set(labels.map(l => resolveRoom(plan, l)?.id).filter(Boolean));
+  return rooms.length ? resolved.size / rooms.length : 0;
+}
 function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
+async function recoverRoomLabels(plan: any, annotatedImage: string, existing: RoomLabel[]): Promise<RoomLabel[]> {
+  if (labelCoverage(plan, existing) >= 0.9) return existing;
+  const rooms = plan.floors.flatMap((f: any) => (f.rooms || []).map((r: any) => ({ id: r.id, floor: f.name, x: r.x, y: r.y, width: r.width, height: r.height, areaSqm: r.approxAreaSqm })));
+  const geometry = JSON.stringify(rooms);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const response = await openai.responses.create({
+        model: "gpt-5-mini",
+        max_output_tokens: 5000,
+        input: [{ role: "user", content: [
+          { type: "input_text", text: `You are the room-classification recovery step for a floor-plan system. The image contains magenta room IDs drawn over the real plan. Classify EVERY supplied room ID from the visible printed room name, fixtures, doors, windows and geometry. Return JSON ONLY as {"roomLabels":[...]}. Return exactly one item for every supplied ID. Never invent or omit IDs. Allowed type values: bedroom,living,dining,kitchen,bathroom,shower,wc,circulation,utility,storage,other. For windows and doors use only top,bottom,left,right and only visible walls. Geometry list: ${geometry}` },
+          { type: "input_image", image_url: annotatedImage, detail: "high" },
+        ] }],
+      });
+      const parsed = JSON.parse(cleanJson(response.output_text || "{}")), labels = extractLabels(parsed);
+      if (labelCoverage(plan, labels) >= 0.9) return labels;
+    } catch (error) { console.warn(`Room label recovery attempt ${attempt} failed`, error); }
+  }
+  return existing;
+}
 async function annotate(filePath: string, plan: any) {
   const source = fs.readFileSync(filePath), metadata = await sharp(source).metadata();
   const width = metadata.width || plan.metadata?.imageWidth || 1600, height = metadata.height || plan.metadata?.imageHeight || 1200;
@@ -77,12 +103,12 @@ export async function POST(req: Request) {
     original.metadata = { imageWidth: meta.width, imageHeight: meta.height, imageDpi: meta.density };
     const prompt = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(original, null, 2));
     const image = await annotate(filePath, original);
-    const response = await openai.responses.create({ model: "gpt-5", input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
+    const response = await openai.responses.create({ model: "gpt-5", max_output_tokens: 6000, input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
     const result = JSON.parse(cleanJson(response.output_text || "{}")), labelled = structuredClone(original);
-    const labels: RoomLabel[] = Array.isArray(result.roomLabels) ? result.roomLabels : (Array.isArray(result.rooms) ? result.rooms : []);
+    let labels: RoomLabel[] = extractLabels(result);
+    labels = await recoverRoomLabels(original, image, labels);
     const resolvedLabels = applyLabels(labelled, labels);
-    const labelBedrooms = labels.filter(l => norm(`${l.type} ${l.name}`).includes("bedroom")).length;
-    if (labels.length > 0 && labelBedrooms > 0 && resolvedLabels === 0) throw new Error("The AI identified bedrooms but none could be matched to the detected floor-plan geometry. No unverified layout was generated.");
+    if (labelCoverage(original, labels) < 0.9 || resolvedLabels < Math.ceil(original.floors.flatMap((f: any) => f.rooms).length * 0.9)) throw new Error("Room classification could not be recovered for the detected floor plan. Analysis was stopped instead of producing a false 0-bedroom result.");
     const aiChanges: RoomChange[] = Array.isArray(result.changes) ? result.changes.filter((c: any) => c && typeof c.roomId === "string") : [];
     const maximum = findMaximumHMO(labelled, aiChanges), ensuites = applyBestEnsuites(maximum.plan, maximum.ensuiteCandidates), proposed = ensuites.plan;
     const appliedChanges = [...maximum.appliedChanges, ...ensuites.applied], rejectedChanges = [...maximum.rejectedChanges, ...ensuites.rejected];
