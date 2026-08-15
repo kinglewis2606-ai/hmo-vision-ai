@@ -10,6 +10,8 @@ type Room = {
   type?: string;
   floor?: string;
   approxAreaSqm?: number;
+  approxWidthM?: number;
+  approxDepthM?: number;
   width?: number;
   height?: number;
 };
@@ -32,6 +34,13 @@ function bedroomDescription(room: Room, ensuite: boolean) {
   const area = Number(room.approxAreaSqm || 0);
   const size = area >= 10.5 ? "Double" : area >= 8 ? "Comfortable" : "Single";
   return ensuite ? `${size} with Ensuite` : size;
+}
+
+function bedroomDimensions(room: Room) {
+  const width = Number(room.approxWidthM || 0);
+  const depth = Number(room.approxDepthM || 0);
+  if (width > 0 && depth > 0) return `${width.toFixed(2)}m × ${depth.toFixed(2)}m`; 
+  return "Validated geometry";
 }
 
 export default function NewProjectPage() {
@@ -85,7 +94,7 @@ export default function NewProjectPage() {
   const currentBedrooms = Number(report?.summary?.bedrooms ?? 0);
   const proposedBedrooms = Number(report?.geometryFeasibility?.proposedBedrooms ?? report?.highestPossibleHMO?.bedrooms ?? report?.summary?.possibleHMOBedrooms ?? finalBedrooms.length);
   const proposedEnsuites = Number(report?.geometryFeasibility?.proposedEnsuites ?? report?.highestPossibleHMO?.ensuites ?? finalEnsuites.length);
-  const allEnsuites = proposedBedrooms > 0 && proposedEnsuites >= proposedBedrooms;
+  const allEnsuites = proposedBedrooms > 0 && proposedEnsuites >= proposedBedrooms && finalEnsuites.length >= proposedBedrooms;
   const annualRent = Number(report?.estimatedAnnualRent || Number(report?.estimatedMonthlyRent || 0) * 12);
   const rent = Number(report?.estimatedMonthlyRent || 0);
   const conversion = report?.estimatedConversionCost || {};
@@ -228,7 +237,7 @@ export default function NewProjectPage() {
                               <div className="font-semibold text-white">Bedroom {index + 1} <span className="text-xs font-normal text-slate-500">({floorName(room, proposedFloorPlan.floors)})</span></div>
                               <span className="text-xs font-semibold text-cyan-300">{bedroomDescription(room, hasPrivateEnsuite || allEnsuites)}</span>
                             </div>
-                            <div className="mt-1 text-xs text-slate-400">{Number(room.approxAreaSqm || 0) > 0 ? `${Number(room.approxAreaSqm).toFixed(1)} sqm usable geometry` : "Validated bedroom geometry"}{hasPrivateEnsuite || allEnsuites ? " • Private ensuite" : ""}</div>
+                            <div className="mt-1 text-xs text-slate-400">{Number(room.approxAreaSqm || 0) > 0 ? `${Number(room.approxAreaSqm).toFixed(1)} sqm usable geometry` : "Validated bedroom geometry"} • {bedroomDimensions(room)}{hasPrivateEnsuite || allEnsuites ? " • Private ensuite" : ""}</div>
                           </div>
                         </div>
                       );
