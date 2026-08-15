@@ -6,6 +6,7 @@ on:
       - fix/real-floorplan-pipeline
       - fix/max-hmo-geometry-output
       - fix/hmo-production-recovery
+      - fix/analysis-timeout-recovery
   pull_request:
 
 jobs:
@@ -21,6 +22,24 @@ jobs:
       - run: npx prisma generate
       - run: npm run test:geometry
       - run: npm run build
+      - name: Validate production Nginx configuration
+        run: |
+          bash scripts/validate-nginx-config.sh
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx
+          mkdir -p /tmp/nginx-smoke/conf /tmp/nginx-smoke/logs /tmp/nginx-smoke/client_body_temp
+          sed -e 's/^    listen 80;$/    listen 8080;/' -e 's/^    listen \[::\]:80;$/    listen [::]:8080;/' deploy/nginx/hmo-vision-ai.conf > /tmp/nginx-smoke/hmo-vision-ai.conf
+          cat > /tmp/nginx-smoke/nginx.conf <<'EOF'
+          pid /tmp/nginx-smoke/nginx.pid;
+          error_log /tmp/nginx-smoke/logs/error.log;
+          events {}
+          http {
+            include /etc/nginx/mime.types;
+            access_log /tmp/nginx-smoke/logs/access.log;
+            include /tmp/nginx-smoke/hmo-vision-ai.conf;
+          }
+          EOF
+          nginx -t -c /tmp/nginx-smoke/nginx.conf -p /tmp/nginx-smoke
       - name: Start production server
         run: |
           nohup npm run start -- -H 127.0.0.1 -p 3000 > /tmp/hmo-next.log 2>&1 &

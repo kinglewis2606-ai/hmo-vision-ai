@@ -5,8 +5,8 @@ const configPath = "/etc/nginx/sites-enabled/hmo-vision-ai";
 const upstream = "proxy_pass http://127.0.0.1:3000;";
 const directives = [
   "    proxy_connect_timeout 10s;",
-  "    proxy_send_timeout 300s;",
-  "    proxy_read_timeout 300s;",
+  "    proxy_send_timeout 360s;",
+  "    proxy_read_timeout 360s;",
   "    proxy_buffering off;",
 ];
 
@@ -33,7 +33,7 @@ for (const [pattern, replacement] of replacements) {
   updated = updated.replace(pattern, replacement);
 }
 
-if (!/^\s*proxy_read_timeout\s+300s;\s*$/m.test(updated)) {
+if (!/^\s*proxy_read_timeout\s+360s;\s*$/m.test(updated)) {
   updated = updated.replace(upstream, `${upstream}\n${directives.join("\n")}`);
 }
 
@@ -44,7 +44,7 @@ if (updated !== original) {
 try {
   execFileSync("nginx", ["-t"], { stdio: "inherit" });
   execFileSync("systemctl", ["reload", "nginx"], { stdio: "inherit" });
-  console.log("[nginx] Analysis proxy timeout is 300s and response buffering is disabled.");
+  console.log("[nginx] Analysis proxy timeout is 360s and response buffering is disabled.");
 } catch (error) {
   fs.writeFileSync(configPath, original, "utf8");
   console.error("[nginx] Validation/reload failed; original config restored.");
