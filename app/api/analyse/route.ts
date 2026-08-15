@@ -70,24 +70,32 @@ function normalizeRecoveredLabels(plan: any, labels: RoomLabel[]): RoomLabel[] {
     normalized.push(...orderedMatches.map(x => ({ ...x.label, roomId: x.room.id, floor: floor.name })));
   }
   if (normalized.length === rooms.length) return normalized;
-  // Final controlled fallback: the recovery prompt explicitly requests the same
-  // floor/room order as the geometry list. If it returned the right number of
-  // labels but malformed IDs/floor strings, bind by that canonical order.
   if (labels.length === rooms.length) return labels.map((label, i) => ({ ...label, roomId: rooms[i].id, floor: rooms[i].floor }));
   return labels;
 }
 function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim(); }
+function parseModelJson(text: string): any {
+  const cleaned = cleanJson(text || "");
+  try { return JSON.parse(cleaned); } catch (firstError) {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try { return JSON.parse(cleaned.slice(start, end + 1)); } catch {}
+    }
+    throw firstError;
+  }
+}
 async function recoverRoomLabels(plan: any, annotatedImage: string, existing: RoomLabel[]): Promise<RoomLabel[]> {
   const initial = normalizeRecoveredLabels(plan, existing);
   if (labelCoverage(plan, initial) >= 0.9) return initial;
   const geometry = JSON.stringify(roomList(plan));
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const response = await openai.responses.create({ model: "gpt-5-mini", max_output_tokens: 6000, input: [{ role: "user", content: [
+      const response = await openai.responses.create({ model: "gpt-5-mini", max_output_tokens: 8000, input: [{ role: "user", content: [
         { type: "input_text", text: `Classify EVERY room in this supplied floor-plan geometry. The image has a magenta canonical room ID printed over every detected room. Return JSON ONLY: {"roomLabels":[...]}. Return exactly one item for EVERY supplied room, in the same floor order as the supplied geometry. roomId MUST be copied exactly from the supplied geometry list, not invented. Use type values only: bedroom,living,dining,kitchen,bathroom,shower,wc,circulation,utility,storage,other. Read the original printed room labels and dimensions. Windows and doors: only top,bottom,left,right and only when visibly supported. Geometry list: ${geometry}` },
         { type: "input_image", image_url: annotatedImage, detail: "high" },
       ] }], });
-      const parsed = JSON.parse(cleanJson(response.output_text || "{}"));
+      const parsed = parseModelJson(response.output_text || "{}");
       const recovered = normalizeRecoveredLabels(plan, extractLabels(parsed));
       if (labelCoverage(plan, recovered) >= 0.9) return recovered;
     } catch (error) { console.warn(`Room label recovery attempt ${attempt} failed`, error); }
@@ -120,8 +128,15 @@ export async function POST(req: Request) {
     original.metadata = { imageWidth: meta.width, imageHeight: meta.height, imageDpi: meta.density };
     const prompt = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(original, null, 2));
     const image = await annotate(filePath, original);
-    const response = await openai.responses.create({ model: "gpt-5", max_output_tokens: 6000, input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
-    const result = JSON.parse(cleanJson(response.output_text || "{}")), labelled = structuredClone(original);
+    const response = await openai.responses.create({ model: "gpt-5", max_output_tokens: 12000, input: [{ role: "user", content: [{ type: "input_text", text: `${prompt}\n\nOUTPUT LIMIT: Keep every narrative field concise. Return compact JSON only. Do not repeat the supplied geometry.` }, { type: "input_image", image_url: image, detail: "high" }] }] });
+    let result: any;
+    try { result = parseModelJson(response.output_text || ""); }
+    catch (error) {
+      console.error("Primary AI JSON parse failed", { status: response.status, incomplete: (response as any).incomplete_details, outputLength: (response.output_text || "").length });
+      const retry = await openai.responses.create({ model: "gpt-5", max_output_tokens: 16000, input: [{ role: "user", content: [{ type: "input_text", text: `${prompt}\n\nRETRY: Return the requested JSON object compactly. Do not include markdown, commentary, or repeated geometry. Keep verdict, recommendations, compliance, fireSafety and investorSummary concise.` }, { type: "input_image", image_url: image, detail: "high" }] }] });
+      result = parseModelJson(retry.output_text || "");
+    }
+    const labelled = structuredClone(original);
     let labels: RoomLabel[] = await recoverRoomLabels(original, image, extractLabels(result));
     const resolvedLabels = applyLabels(labelled, labels);
     const roomCount = original.floors.flatMap((f: any) => f.rooms).length;
