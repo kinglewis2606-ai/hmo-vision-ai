@@ -32,10 +32,10 @@ test("accepts a genuine split only when both resulting rooms remain valid bedroo
 });
 
 test("carves the ensuite from the bedroom and reduces the bedroom area", () => {
-  const sourcePolygon = rectangle(0, 0, 600, 500);
+  const sourcePolygon = rectangle(0, 0, 640, 500);
   const plan = { floors: [{ name: "First Floor", level: 1, rooms: [{
-    id: "room-c", name: "Bedroom", type: "bedroom", x: 0, y: 0, width: 600, height: 500,
-    polygon: sourcePolygon, approxAreaSqm: 15, approxWidthM: 3, approxDepthM: 2.5, adjacentRooms: [], shape: "rectangle",
+    id: "room-c", name: "Bedroom", type: "bedroom", x: 0, y: 0, width: 640, height: 500,
+    polygon: sourcePolygon, approxAreaSqm: 15, approxWidthM: 3.2, approxDepthM: 2.5, adjacentRooms: [], shape: "rectangle",
     windows: [{ wall: "top" as const }], doors: [{ wall: "left" as const }],
   }] }] };
   const result = applyRoomChanges(plan as any, [{ roomId: "room-c", action: "ConvertToEnsuite", newType: "ensuite" }]);
@@ -46,7 +46,6 @@ test("carves the ensuite from the bedroom and reduces the bedroom area", () => {
   assert.ok(bedroom.approxAreaSqm >= BEDROOM_MIN_SQM);
   assert.ok(bedroom.approxAreaSqm < 15, "bedroom area must be reduced after carving the ensuite");
   assert.ok(ensuite.approxAreaSqm >= 2.52);
-  assert.ok(ensuite.approxWidthM >= 1.2 || ensuite.approxDepthM >= 1.2);
   assert.ok((ensuite.approxWidthM >= 1.2 && ensuite.approxDepthM >= 2.1) || (ensuite.approxWidthM >= 2.1 && ensuite.approxDepthM >= 1.2));
   assert.ok(ensuite.polygon.every((point: any) => pointInPolygon(point, sourcePolygon)));
   const sourceArea = polygonArea(sourcePolygon);
