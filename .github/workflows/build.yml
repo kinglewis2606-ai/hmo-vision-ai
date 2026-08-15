@@ -42,6 +42,11 @@ jobs:
           grep -q "Analyse a Property" /tmp/new.html
           grep -q "Upload Floor Plan" /tmp/new.html
           grep -q "Analyse Floor Plan" /tmp/new.html
+      - name: Verify /new is not cacheable
+        run: |
+          curl --fail --silent --show-error -D /tmp/new.headers -o /dev/null http://127.0.0.1:3000/new
+          grep -qi "cache-control: no-store, no-cache" /tmp/new.headers
+          grep -qi "pragma: no-cache" /tmp/new.headers
       - name: Verify upload API is reachable
         run: |
           printf 'x' > /tmp/smoke.txt
