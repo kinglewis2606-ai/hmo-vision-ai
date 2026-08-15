@@ -28,6 +28,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq nginx
           mkdir -p /tmp/nginx-smoke/conf /tmp/nginx-smoke/logs /tmp/nginx-smoke/client_body_temp
+          sed -e 's/^    listen 80;$/    listen 8080;/' -e 's/^    listen \[::\]:80;$/    listen [::]:8080;/' deploy/nginx/hmo-vision-ai.conf > /tmp/nginx-smoke/hmo-vision-ai.conf
           cat > /tmp/nginx-smoke/nginx.conf <<'EOF'
           pid /tmp/nginx-smoke/nginx.pid;
           error_log /tmp/nginx-smoke/logs/error.log;
@@ -35,7 +36,7 @@ jobs:
           http {
             include /etc/nginx/mime.types;
             access_log /tmp/nginx-smoke/logs/access.log;
-            include /home/runner/work/hmo-vision-ai/hmo-vision-ai/deploy/nginx/hmo-vision-ai.conf;
+            include /tmp/nginx-smoke/hmo-vision-ai.conf;
           }
           EOF
           nginx -t -c /tmp/nginx-smoke/nginx.conf -p /tmp/nginx-smoke
