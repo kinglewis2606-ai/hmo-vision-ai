@@ -47,10 +47,11 @@ function sourceRoomForEnsuite(ensuite: Room, proposed: Map<string, Room>, origin
 
 function validEnsuite(ensuite: Room, proposed: Map<string, Room>, originals: Map<string, Room>) {
   const { parent, source } = sourceRoomForEnsuite(ensuite, proposed, originals);
-  const sourcePolygon = polygon(source?.polygon);
-  const parentPolygon = polygon(parent?.polygon);
+  if (!parent || !source) return false;
+  const sourcePolygon = polygon(source.polygon);
+  const parentPolygon = polygon(parent.polygon);
   const ensuitePolygon = polygon(ensuite.polygon);
-  if (!parent || !sourcePolygon || !parentPolygon || !ensuitePolygon) return false;
+  if (!sourcePolygon || !parentPolygon || !ensuitePolygon) return false;
   if (!polygonInside(sourcePolygon, ensuitePolygon)) return false;
   if (!polygonInside(sourcePolygon, parentPolygon)) return false;
 
