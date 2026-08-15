@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
-import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
@@ -159,9 +158,6 @@ export async function POST(req: Request) {
     const final = finalRoomSummary(proposed), current = finalRoomSummary(labelled), currentBedrooms = current.bedrooms;
     const compliance = deterministicCompliance(final);
     const finalBathrooms = proposed.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length;
-    const extension = path.extname(filename).toLowerCase();
-    const originalMime = extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : "image/jpeg";
-    const originalImage = `data:${originalMime};base64,${fs.readFileSync(filePath).toString("base64")}`;
     result.originalFloorPlan = labelled; result.proposedFloorPlan = proposed; result.changes = appliedChanges;
     result.rejectedChanges = rejectedChanges.map(c => ({ roomId: c.roomId, action: c.action, reason: "Rejected by deterministic geometry validation." }));
     result.summary = { ...(result.summary || {}), bedrooms: currentBedrooms, bathrooms: finalBathrooms, possibleHMOBedrooms: final.bedrooms, compliance: compliance.compliant ? "Deterministically geometry-validated" : "No fully compliant proposed scheme" };
@@ -173,7 +169,6 @@ export async function POST(req: Request) {
       ? (final.bedrooms > currentBedrooms ? `Maximum geometry-feasible ${final.bedrooms}-bedroom HMO layout selected, with ${final.ensuites} private en-suites carved from existing bedroom space. Final bedroom areas are measured after the en-suite deduction.` : `Final deterministic geometry supports ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}, with all en-suites carved from existing bedroom space.`)
       : `No fully geometry-compliant en-suite scheme was accepted. ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} survived the bedroom geometry rules, but the private-en-suite requirements were not all satisfied. No invented space is reported.`;
     result.investorSummary = `Final applied geometry contains ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Bedroom usable areas are calculated after subtracting the carved en-suite polygons. Only successfully applied geometry is reported.`;
-    result.generatedLayoutImage = renderFloorPlan(labelled, proposed, originalImage, appliedChanges);
     return NextResponse.json({ success: true, result });
   } catch (error: any) { console.error("ANALYSE ERROR:", error); return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 }); }
 }
