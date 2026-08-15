@@ -14,7 +14,6 @@ fi
 
 echo "== HMO Vision AI VPS recovery =="
 echo "Branch: $BRANCH"
-
 echo "Pulling latest recovery branch..."
 git pull --ff-only origin "$EXPECTED_BRANCH"
 
@@ -36,7 +35,6 @@ if ! curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3000/ >/dev
 fi
 
 echo "Starting/restarting PM2 application..."
-pm2 status >/dev/null 2>&1 || true
 pm2 startOrRestart ecosystem.config.cjs --update-env
 pm2 save
 
