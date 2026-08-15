@@ -85,17 +85,15 @@ async function recoverRoomLabels(plan: any, annotatedImage: string, existing: Ro
   const initial = normalizeRecoveredLabels(plan, existing);
   if (labelCoverage(plan, initial) >= 0.9) return initial;
   const geometry = JSON.stringify(roomList(plan));
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const response = await openai.responses.create({ model: "gpt-5-mini", max_output_tokens: 8000, input: [{ role: "user", content: [
-        { type: "input_text", text: `Classify EVERY room in this supplied floor-plan geometry. The image has a magenta canonical room ID printed over every detected room. Return JSON ONLY: {"roomLabels":[...]}. Return exactly one item for EVERY supplied room, in the same floor order as the supplied geometry. roomId MUST be copied exactly from the supplied geometry list, not invented. Use type values only: bedroom,living,dining,kitchen,bathroom,shower,wc,circulation,utility,storage,other. Read the original printed room labels and dimensions. Windows and doors: only top,bottom,left,right and only when visibly supported. Geometry list: ${geometry}` },
-        { type: "input_image", image_url: annotatedImage, detail: "high" },
-      ] }], });
-      const parsed = parseModelJson(response.output_text || "{}");
-      const recovered = normalizeRecoveredLabels(plan, extractLabels(parsed));
-      if (labelCoverage(plan, recovered) >= 0.9) return recovered;
-    } catch (error) { console.warn(`Room label recovery attempt ${attempt} failed`, error); }
-  }
+  try {
+    const response = await openai.responses.create({ model: "gpt-5-mini", max_output_tokens: 5000, input: [{ role: "user", content: [
+      { type: "input_text", text: `Classify EVERY room in this supplied floor-plan geometry. The image has a magenta canonical room ID printed over every detected room. Return JSON ONLY: {"roomLabels":[...]}. Return exactly one item for EVERY supplied room, in the same floor order as the supplied geometry. roomId MUST be copied exactly from the supplied geometry list, not invented. Use type values only: bedroom,living,dining,kitchen,bathroom,shower,wc,circulation,utility,storage,other. Read the original printed room labels and dimensions. Windows and doors: only top,bottom,left,right and only when visibly supported. Geometry list: ${geometry}` },
+      { type: "input_image", image_url: annotatedImage, detail: "high" },
+    ] }], });
+    const parsed = parseModelJson(response.output_text || "{}");
+    const recovered = normalizeRecoveredLabels(plan, extractLabels(parsed));
+    if (labelCoverage(plan, recovered) >= 0.9) return recovered;
+  } catch (error) { console.warn("Room label recovery failed", error); }
   return initial;
 }
 async function annotate(filePath: string, plan: any) {
@@ -139,12 +137,12 @@ export async function POST(req: Request) {
     original.metadata = { imageWidth: meta.width, imageHeight: meta.height, imageDpi: meta.density };
     const prompt = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(original, null, 2));
     const image = await annotate(filePath, original);
-    const response = await openai.responses.create({ model: "gpt-5", max_output_tokens: 12000, input: [{ role: "user", content: [{ type: "input_text", text: `${prompt}\n\nOUTPUT LIMIT: Keep every narrative field concise. Return compact JSON only. Do not repeat the supplied geometry.` }, { type: "input_image", image_url: image, detail: "high" }] }] });
+    const response = await openai.responses.create({ model: "gpt-5", max_output_tokens: 6000, input: [{ role: "user", content: [{ type: "input_text", text: `${prompt}\n\nOUTPUT LIMIT: Keep every narrative field concise. Return compact JSON only. Do not repeat the supplied geometry.` }, { type: "input_image", image_url: image, detail: "high" }] }] });
     let result: any;
     try { result = parseModelJson(response.output_text || ""); }
     catch (error) {
       console.error("Primary AI JSON parse failed", { status: response.status, incomplete: (response as any).incomplete_details, outputLength: (response.output_text || "").length });
-      const retry = await openai.responses.create({ model: "gpt-5", max_output_tokens: 16000, input: [{ role: "user", content: [{ type: "input_text", text: `${prompt}\n\nRETRY: Return the requested JSON object compactly. Do not include markdown, commentary, or repeated geometry. Keep verdict, recommendations, compliance, fireSafety and investorSummary concise.` }, { type: "input_image", image_url: image, detail: "high" }] }] });
+      const retry = await openai.responses.create({ model: "gpt-5", max_output_tokens: 6000, input: [{ role: "user", content: [{ type: "input_text", text: `${prompt}\n\nRETRY: Return the requested JSON object compactly. Do not include markdown, commentary, or repeated geometry. Keep verdict, recommendations, compliance, fireSafety and investorSummary concise.` }, { type: "input_image", image_url: image, detail: "high" }] }] });
       result = parseModelJson(retry.output_text || "");
     }
     const labelled = structuredClone(original);
