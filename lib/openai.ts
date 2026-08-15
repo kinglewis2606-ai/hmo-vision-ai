@@ -4,10 +4,6 @@ import OpenAI from "openai";
  * Keep the client lazy. Next.js evaluates route modules during `next build`,
  * so constructing OpenAI at module scope makes CI fail when the secret is not
  * available.
- *
- * Vision calls are deliberately bounded. A hung upstream request must become a
- * normal application error/fallback, not a dead HTTP connection that makes the
- * browser report "Failed to fetch" after several minutes.
  */
 function getClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -15,11 +11,11 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-// The analysis route is allowed to run for up to 300s. The previous 110s
-// client-side abort was shorter than the real vision/geometry pipeline and was
-// the source of the recurring "ANALYSE ERROR: Request was aborted" failures.
-// Keep a hard upper bound, but leave enough headroom for the production route.
-const OPENAI_REQUEST_TIMEOUT_MS = 240_000;
+// The HMO analysis can legitimately perform several vision/geometry passes.
+// The browser, Next route and Nginx are now aligned to allow the complete
+// request to finish instead of the browser disconnecting while the server is
+// still working.
+const OPENAI_REQUEST_TIMEOUT_MS = 120_000;
 
 export const openai = {
   get responses() {
@@ -31,7 +27,7 @@ export const openai = {
           ? {
               ...params,
               model: "gpt-5-mini",
-              max_output_tokens: params.max_output_tokens ?? 3500,
+              max_output_tokens: Math.min(Number(params.max_output_tokens ?? 5000), 6000),
             }
           : params;
         const requestOptions = {
