@@ -31,11 +31,11 @@ test("accepts a genuine split only when both resulting rooms remain valid bedroo
   assert.equal(Math.round(result.floors[0].rooms.reduce((sum: number, room: any) => sum + polygonArea(room.polygon), 0)), 320000);
 });
 
-test("carves a real ensuite from a final bedroom polygon without consuming the principal window", () => {
-  const sourcePolygon = rectangle(0, 0, 600, 400);
+test("carves the ensuite from the bedroom, reduces usable bedroom area, and preserves the original footprint", () => {
+  const sourcePolygon = rectangle(0, 0, 800, 800);
   const plan = { floors: [{ name: "First Floor", level: 1, rooms: [{
-    id: "room-c", name: "Bedroom", type: "bedroom", x: 0, y: 0, width: 600, height: 400,
-    polygon: sourcePolygon, approxAreaSqm: 12, approxWidthM: 3, approxDepthM: 2, adjacentRooms: [], shape: "rectangle",
+    id: "room-c", name: "Bedroom", type: "bedroom", x: 0, y: 0, width: 800, height: 800,
+    polygon: sourcePolygon, approxAreaSqm: 16, approxWidthM: 4, approxDepthM: 4, adjacentRooms: [], shape: "rectangle",
     windows: [{ wall: "top" as const }], doors: [{ wall: "left" as const }],
   }] }] };
   const result = applyRoomChanges(plan as any, [{ roomId: "room-c", action: "ConvertToEnsuite", newType: "ensuite" }]);
@@ -44,10 +44,36 @@ test("carves a real ensuite from a final bedroom polygon without consuming the p
   const ensuite: any = result.floors[0].rooms.find((room: any) => room.type === "ensuite");
   assert.ok(bedroom && ensuite);
   assert.ok(bedroom.approxAreaSqm >= BEDROOM_MIN_SQM);
-  assert.ok(ensuite.approxAreaSqm > 0);
+  assert.ok(bedroom.approxAreaSqm < 16, "bedroom usable area must be reduced after carving the ensuite");
+  assert.ok(ensuite.approxAreaSqm >= 2.52);
+  assert.ok((ensuite.approxWidthM >= 1.2 && ensuite.approxDepthM >= 2.1) || (ensuite.approxWidthM >= 2.1 && ensuite.approxDepthM >= 1.2));
   assert.ok(ensuite.polygon.every((point: any) => pointInPolygon(point, sourcePolygon)));
   const sourceArea = polygonArea(sourcePolygon);
-  assert.ok(Math.abs((polygonArea(bedroom.polygon) + polygonArea(ensuite.polygon)) - sourceArea) / sourceArea <= 0.02);
+  const bedroomArea = polygonArea(bedroom.polygon);
+  const ensuiteArea = polygonArea(ensuite.polygon);
+  assert.ok(bedroomArea < sourceArea, "bedroom polygon must physically shrink");
+  assert.ok(Math.abs((bedroomArea + ensuiteArea) - sourceArea) / sourceArea <= 0.002, "bedroom + ensuite must conserve the original room footprint");
   assert.ok(bedroom.windows.some((window: any) => window.wall === "top"));
   assert.ok(bedroom.doors.some((door: any) => door.wall === "left"));
+});
+
+test("rejects an ensuite that would consume the only external window wall", () => {
+  const plan = { floors: [{ name: "First Floor", level: 1, rooms: [{
+    id: "room-d", name: "Bedroom", type: "bedroom", x: 0, y: 0, width: 600, height: 500,
+    polygon: rectangle(0, 0, 600, 500), approxAreaSqm: 15, approxWidthM: 3, approxDepthM: 2.5, adjacentRooms: [], shape: "rectangle",
+    windows: [{ wall: "top" as const }], doors: [{ wall: "bottom" as const }],
+  }] }] };
+  const result = applyRoomChanges(plan as any, [{ roomId: "room-d", action: "ConvertToEnsuite", newType: "ensuite" }]);
+  assert.equal(result.floors[0].rooms.length, 1);
+  assert.equal(result.floors[0].rooms[0].type, "bedroom");
+});
+
+test("stairs and circulation cannot be converted into bedrooms", () => {
+  const plan = { floors: [{ name: "First Floor", level: 1, rooms: [{
+    id: "stairs", name: "Stairs / Landing", type: "circulation", x: 0, y: 0, width: 900, height: 500,
+    polygon: rectangle(0, 0, 900, 500), approxAreaSqm: 12, adjacentRooms: [], shape: "rectangle",
+    windows: [{ wall: "top" as const }], doors: [{ wall: "bottom" as const }],
+  }] }] };
+  const result = applyRoomChanges(plan as any, [{ roomId: "stairs", action: "ConvertToBedroom", newType: "bedroom" }]);
+  assert.equal(result.floors[0].rooms[0].type, "circulation");
 });

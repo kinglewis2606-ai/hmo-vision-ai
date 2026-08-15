@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node scripts/ensure-nginx-analysis-timeout.js",
     "start": "next start",
     "lint": "eslint",
     "test:geometry": "rm -rf .geometry-test && tsc tests/geometry.test.ts tests/deterministicGeometry.test.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .geometry-test --rootDir . --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node --test .geometry-test/tests/*.test.js"

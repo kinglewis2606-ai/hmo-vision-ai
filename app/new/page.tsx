@@ -10,6 +10,8 @@ type Room = {
   type?: string;
   floor?: string;
   approxAreaSqm?: number;
+  approxWidthM?: number;
+  approxDepthM?: number;
   width?: number;
   height?: number;
 };
@@ -32,6 +34,13 @@ function bedroomDescription(room: Room, ensuite: boolean) {
   const area = Number(room.approxAreaSqm || 0);
   const size = area >= 10.5 ? "Double" : area >= 8 ? "Comfortable" : "Single";
   return ensuite ? `${size} with Ensuite` : size;
+}
+
+function bedroomDimensions(room: Room) {
+  const width = Number(room.approxWidthM || 0);
+  const depth = Number(room.approxDepthM || 0);
+  if (width > 0 && depth > 0) return `${width.toFixed(2)}m × ${depth.toFixed(2)}m`; 
+  return "Validated geometry";
 }
 
 export default function NewProjectPage() {
@@ -85,7 +94,7 @@ export default function NewProjectPage() {
   const currentBedrooms = Number(report?.summary?.bedrooms ?? 0);
   const proposedBedrooms = Number(report?.geometryFeasibility?.proposedBedrooms ?? report?.highestPossibleHMO?.bedrooms ?? report?.summary?.possibleHMOBedrooms ?? finalBedrooms.length);
   const proposedEnsuites = Number(report?.geometryFeasibility?.proposedEnsuites ?? report?.highestPossibleHMO?.ensuites ?? finalEnsuites.length);
-  const allEnsuites = proposedBedrooms > 0 && proposedEnsuites >= proposedBedrooms;
+  const allEnsuites = proposedBedrooms > 0 && proposedEnsuites >= proposedBedrooms && finalEnsuites.length >= proposedBedrooms;
   const annualRent = Number(report?.estimatedAnnualRent || Number(report?.estimatedMonthlyRent || 0) * 12);
   const rent = Number(report?.estimatedMonthlyRent || 0);
   const conversion = report?.estimatedConversionCost || {};
@@ -98,7 +107,7 @@ export default function NewProjectPage() {
           <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ["AI Analysis", "60 sec"],
-              ["Supported Files", "PDF • JPG"],
+              ["Supported Files", "JPG • PNG • WebP"],
               ["Outputs", "Report + ROI"],
               ["Purpose", "HMO Ready"],
             ].map(([label, value]) => (
@@ -124,7 +133,7 @@ export default function NewProjectPage() {
 
           <div className="mt-4 rounded-xl border border-dashed border-slate-600 bg-[#0d1924] p-4">
             <h3 className="text-base font-bold text-white">📐 Upload Floor Plan</h3>
-            <p className="mt-1 text-xs text-slate-500">Upload a PDF, JPG or PNG floor plan to begin the AI analysis.</p>
+            <p className="mt-1 text-xs text-slate-500">Upload the floor plan as JPG, PNG or WebP so the original image can be preserved and used for the aligned proposed HMO overlay.</p>
             <div className="mt-3">
               <UploadBox onUploaded={(name) => { setFilename(name); setImageUrl(`/api/uploads/${encodeURIComponent(name)}`); }} />
             </div>
@@ -185,7 +194,11 @@ export default function NewProjectPage() {
                     <span className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-[10px] font-bold text-emerald-300">{proposedBedrooms} BEDROOMS{allEnsuites ? " | ALL WITH ENSUITES" : ` | ${proposedEnsuites} ENSUITES`}</span>
                   </div>
                   <div className="overflow-hidden rounded-xl border border-slate-700 bg-white shadow-lg">
-                    {report.generatedLayoutImage ? <img src={report.generatedLayoutImage} className="h-auto w-full object-contain" alt="Proposed HMO layout" /> : <FloorPlanOverlay image={`/api/uploads/${encodeURIComponent(filename)}`} />}
+                    <FloorPlanOverlay
+                      image={`/api/uploads/${encodeURIComponent(filename)}`}
+                      originalFloorPlan={originalFloorPlan}
+                      proposedFloorPlan={proposedFloorPlan}
+                    />
                   </div>
                 </div>
               </div>
@@ -224,7 +237,7 @@ export default function NewProjectPage() {
                               <div className="font-semibold text-white">Bedroom {index + 1} <span className="text-xs font-normal text-slate-500">({floorName(room, proposedFloorPlan.floors)})</span></div>
                               <span className="text-xs font-semibold text-cyan-300">{bedroomDescription(room, hasPrivateEnsuite || allEnsuites)}</span>
                             </div>
-                            <div className="mt-1 text-xs text-slate-400">{Number(room.approxAreaSqm || 0) > 0 ? `${Number(room.approxAreaSqm).toFixed(1)} sqm usable geometry` : "Validated bedroom geometry"}{hasPrivateEnsuite || allEnsuites ? " • Private ensuite" : ""}</div>
+                            <div className="mt-1 text-xs text-slate-400">{Number(room.approxAreaSqm || 0) > 0 ? `${Number(room.approxAreaSqm).toFixed(1)} sqm usable geometry` : "Validated bedroom geometry"} • {bedroomDimensions(room)}{hasPrivateEnsuite || allEnsuites ? " • Private ensuite" : ""}</div>
                           </div>
                         </div>
                       );
