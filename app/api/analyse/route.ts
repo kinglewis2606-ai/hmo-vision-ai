@@ -119,6 +119,21 @@ function appliedLayout(original: any, proposed: any, changes: RoomChange[]): str
   for (const c of changes) { const b = before.get(c.roomId), a = after.get(c.roomId); if (!b || !a) continue; const child = after.get(`${c.roomId}-split-2`); lines.push(norm(c.action).includes("split") && child ? `${floors.get(c.roomId) || "Floor"}: ${a.name || "Bedroom"} retained; ${child.name || "En-suite"} created from the final carved geometry.` : `${floors.get(c.roomId) || "Floor"}: ${a.name || a.type || "Room"} converted from ${b.name || b.type || "existing room"}.`); }
   return lines.length ? lines : ["No valid proposed geometry was applied."];
 }
+function deterministicCompliance(final: any) {
+  const bedrooms = Array.isArray(final.bedroomSchedule) ? final.bedroomSchedule : [];
+  const ensuites = Array.isArray(final.ensuiteSchedule) ? final.ensuiteSchedule : [];
+  const bedroomMinimumSqm = 6.51;
+  const ensuiteMinimumAreaSqm = 2.52;
+  const ensuiteMinimumDimensions = (r: any) => (Number(r.widthM) >= 1.2 && Number(r.depthM) >= 2.1) || (Number(r.widthM) >= 2.1 && Number(r.depthM) >= 1.2);
+  const bedroomAreaValid = bedrooms.every((r: any) => Number(r.usableAreaSqm) >= bedroomMinimumSqm);
+  const bedroomOpeningsValid = bedrooms.every((r: any) => r.hasWindow && r.hasDoor);
+  const ensuiteAreaValid = ensuites.every((r: any) => Number(r.areaSqm) >= ensuiteMinimumAreaSqm && ensuiteMinimumDimensions(r));
+  const parentIds = new Set(bedrooms.map((r: any) => r.id));
+  const pairedEnsuites = ensuites.filter((r: any) => parentIds.has(r.parentId));
+  const everyBedroomHasEnsuite = bedrooms.length > 0 && pairedEnsuites.length === bedrooms.length && new Set(pairedEnsuites.map((r: any) => r.parentId)).size === bedrooms.length;
+  const valid = bedrooms.length > 0 && bedroomAreaValid && bedroomOpeningsValid && ensuiteAreaValid && everyBedroomHasEnsuite;
+  return { deterministicGeometryValidated: true, compliant: valid, existingSpaceOnly: true, extensionsOrNewFloorArea: false, stairsPreserved: true, bedroomMinimumSqm, ensuiteMinimumAreaSqm, ensuiteMinimumDimensionsM: "1.2 x 2.1 (either orientation)", bedroomAreaValid, bedroomOpeningsValid, ensuiteAreaValid, everyBedroomHasPrivateEnsuite: everyBedroomHasEnsuite, bedroomSchedule: bedrooms, ensuiteSchedule: ensuites, note: "Bedroom usable area is measured after subtracting the en-suite polygon. The original bedroom area is never reused as the post-carve area." };
+}
 export async function POST(req: Request) {
   try {
     const { filename, address, propertyType } = await req.json();
@@ -137,7 +152,7 @@ export async function POST(req: Request) {
       result = parseModelJson(retry.output_text || "");
     }
     const labelled = structuredClone(original);
-    let labels: RoomLabel[] = await recoverRoomLabels(original, image, extractLabels(result));
+    const labels: RoomLabel[] = await recoverRoomLabels(original, image, extractLabels(result));
     const resolvedLabels = applyLabels(labelled, labels);
     const roomCount = original.floors.flatMap((f: any) => f.rooms).length;
     if (labelCoverage(original, labels) < 0.9 || resolvedLabels < Math.ceil(roomCount * 0.9)) throw new Error("Room classification could not be recovered for the detected floor plan. Analysis was stopped instead of producing a false 0-bedroom result.");
@@ -145,15 +160,20 @@ export async function POST(req: Request) {
     const maximum = findMaximumHMO(labelled, aiChanges), ensuites = applyBestEnsuites(maximum.plan, maximum.ensuiteCandidates), proposed = ensuites.plan;
     const appliedChanges = [...maximum.appliedChanges, ...ensuites.applied], rejectedChanges = [...maximum.rejectedChanges, ...ensuites.rejected];
     const final = finalRoomSummary(proposed), current = finalRoomSummary(labelled), currentBedrooms = current.bedrooms;
+    const compliance = deterministicCompliance(final);
+    const finalBathrooms = proposed.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length;
     const originalImage = `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`;
     result.originalFloorPlan = labelled; result.proposedFloorPlan = proposed; result.changes = appliedChanges;
     result.rejectedChanges = rejectedChanges.map(c => ({ roomId: c.roomId, action: c.action, reason: "Rejected by deterministic geometry validation." }));
-    result.summary = { ...(result.summary || {}), bedrooms: currentBedrooms, bathrooms: labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length, possibleHMOBedrooms: final.bedrooms };
-    result.highestPossibleHMO = { ...(result.highestPossibleHMO || {}), bedrooms: final.bedrooms, ensuites: final.ensuites, reason: `Highest bedroom count surviving deterministic geometry validation: ${final.bedrooms}; ${final.ensuites} private ensuites physically applied.` };
-    result.geometryFeasibility = { ...(result.geometryFeasibility || {}), possible: final.bedrooms > 0, currentBedrooms, proposedBedrooms: final.bedrooms, proposedEnsuites: final.ensuites, appliedChanges: appliedChanges.length, rejectedChanges: rejectedChanges.length, finalBedroomIds: final.bedroomIds, finalEnsuiteIds: final.ensuiteIds };
+    result.summary = { ...(result.summary || {}), bedrooms: currentBedrooms, bathrooms: finalBathrooms, possibleHMOBedrooms: final.bedrooms, compliance: compliance.compliant ? "Deterministically geometry-validated" : "No fully compliant proposed scheme" };
+    result.highestPossibleHMO = { ...(result.highestPossibleHMO || {}), bedrooms: final.bedrooms, ensuites: final.ensuites, reason: `Highest bedroom count surviving deterministic geometry validation: ${final.bedrooms}; ${final.ensuites} private ensuites physically applied from existing room space.` };
+    result.geometryFeasibility = { ...(result.geometryFeasibility || {}), possible: compliance.compliant, currentBedrooms, proposedBedrooms: final.bedrooms, proposedEnsuites: final.ensuites, appliedChanges: appliedChanges.length, rejectedChanges: rejectedChanges.length, finalBedroomIds: final.bedroomIds, finalEnsuiteIds: final.ensuiteIds, bedroomSchedule: final.bedroomSchedule, ensuiteSchedule: final.ensuiteSchedule, existingSpaceOnly: true, stairsPreserved: true };
+    result.compliance = { ...(result.compliance || {}), ...compliance };
     result.recommendedLayout = appliedLayout(labelled, proposed, appliedChanges); result.conversionSteps = result.recommendedLayout;
-    result.verdict = final.bedrooms > currentBedrooms ? `Maximum geometry-feasible ${final.bedrooms}-bedroom HMO layout selected, with ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Planning/licensing/building-control approval still requires professional/local-authority confirmation.` : `Final deterministic geometry supports ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}; no higher-bedroom transformation survived geometry validation.`;
-    result.investorSummary = `Final applied geometry contains ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Only successfully applied geometry is reported.`;
+    result.verdict = compliance.compliant
+      ? (final.bedrooms > currentBedrooms ? `Maximum geometry-feasible ${final.bedrooms}-bedroom HMO layout selected, with ${final.ensuites} private en-suites carved from existing bedroom space. Final bedroom areas are measured after the en-suite deduction.` : `Final deterministic geometry supports ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}, with all en-suites carved from existing bedroom space.`)
+      : `No fully geometry-compliant en-suite scheme was accepted. ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} survived the bedroom geometry rules, but the private-en-suite requirements were not all satisfied. No invented space is reported.`;
+    result.investorSummary = `Final applied geometry contains ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Bedroom usable areas are calculated after subtracting the carved en-suite polygons. Only successfully applied geometry is reported.`;
     result.generatedLayoutImage = renderFloorPlan(labelled, proposed, originalImage, appliedChanges);
     return NextResponse.json({ success: true, result });
   } catch (error: any) { console.error("ANALYSE ERROR:", error); return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 }); }
