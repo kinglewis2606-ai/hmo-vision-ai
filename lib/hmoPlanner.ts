@@ -1,6 +1,6 @@
 import { FloorPlan, Room, RoomChange } from "@/lib/types/floorPlan";
 import { applyRoomChanges } from "@/lib/deterministicGeometryEngine";
-import { BEDROOM_MIN_SQM, polygonArea, sqmForPolygon, validateBedroomGeometry } from "@/lib/geometryValidation";
+import { BEDROOM_MIN_SQM, polygonArea, validateBedroomGeometry } from "@/lib/geometryValidation";
 
 const COMMUNAL_MIN_SQM = 8;
 
@@ -52,6 +52,8 @@ export function findMaximumHMO(plan: FloorPlan, aiChanges: RoomChange[] = []): P
   let current = structuredClone(plan);
   const appliedChanges: RoomChange[] = [], rejectedChanges: RoomChange[] = [];
   for (const change of aiChanges) {
+    const source = allRooms(current).find(r => r.id === change.roomId);
+    if (source && isCirculationOrStair(source)) { rejectedChanges.push(change); continue; }
     if (norm(change.action) === "converttoensuite" || /ensuite/i.test(String(change.split?.secondType || ""))) continue;
     const beforeCount = bedrooms(current).length, candidate = applyAndCount(current, [change]);
     if (candidate.changesApplied.length && candidate.bedrooms >= beforeCount) { current = candidate.plan; appliedChanges.push(...candidate.changesApplied); } else rejectedChanges.push(change);
