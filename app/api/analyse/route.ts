@@ -77,11 +77,8 @@ function cleanJson(s: string) { return s.replace(/^```json/i, "").replace(/^```/
 function parseModelJson(text: string): any {
   const cleaned = cleanJson(text || "");
   try { return JSON.parse(cleaned); } catch (firstError) {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try { return JSON.parse(cleaned.slice(start, end + 1)); } catch {}
-    }
+    const start = cleaned.indexOf("{"); const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) { try { return JSON.parse(cleaned.slice(start, end + 1)); } catch {} }
     throw firstError;
   }
 }
@@ -122,8 +119,7 @@ function appliedLayout(original: any, proposed: any, changes: RoomChange[]): str
 function deterministicCompliance(final: any) {
   const bedrooms = Array.isArray(final.bedroomSchedule) ? final.bedroomSchedule : [];
   const ensuites = Array.isArray(final.ensuiteSchedule) ? final.ensuiteSchedule : [];
-  const bedroomMinimumSqm = 6.51;
-  const ensuiteMinimumAreaSqm = 2.52;
+  const bedroomMinimumSqm = 6.51, ensuiteMinimumAreaSqm = 2.52;
   const ensuiteMinimumDimensions = (r: any) => (Number(r.widthM) >= 1.2 && Number(r.depthM) >= 2.1) || (Number(r.widthM) >= 2.1 && Number(r.depthM) >= 1.2);
   const bedroomAreaValid = bedrooms.every((r: any) => Number(r.usableAreaSqm) >= bedroomMinimumSqm);
   const bedroomOpeningsValid = bedrooms.every((r: any) => r.hasWindow && r.hasDoor);
@@ -138,6 +134,7 @@ export async function POST(req: Request) {
   try {
     const { filename, address, propertyType } = await req.json();
     if (!filename || typeof filename !== "string" || /\.\.|[\\/]/.test(filename)) return NextResponse.json({ success: false, error: "Invalid uploaded filename." }, { status: 400 });
+    if (!/\.(jpe?g|png|webp)$/i.test(filename)) return NextResponse.json({ success: false, error: "Unsupported floor plan format. Please upload the floor plan as JPG, PNG or WebP. PDF files are not passed into the image analysis pipeline." }, { status: 400 });
     const filePath = path.join(process.cwd(), "public", "uploads", filename); if (!fs.existsSync(filePath)) return NextResponse.json({ success: false, error: "Uploaded floor plan not found." }, { status: 404 });
     const floors = await detectFloors(filePath), detectedRooms = await detectRooms(filePath, floors), original = buildOriginalFloorPlan(floors, detectedRooms), meta = await sharp(filePath).metadata();
     original.metadata = { imageWidth: meta.width, imageHeight: meta.height, imageDpi: meta.density };
@@ -162,7 +159,9 @@ export async function POST(req: Request) {
     const final = finalRoomSummary(proposed), current = finalRoomSummary(labelled), currentBedrooms = current.bedrooms;
     const compliance = deterministicCompliance(final);
     const finalBathrooms = proposed.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length;
-    const originalImage = `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`;
+    const extension = path.extname(filename).toLowerCase();
+    const originalMime = extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : "image/jpeg";
+    const originalImage = `data:${originalMime};base64,${fs.readFileSync(filePath).toString("base64")}`;
     result.originalFloorPlan = labelled; result.proposedFloorPlan = proposed; result.changes = appliedChanges;
     result.rejectedChanges = rejectedChanges.map(c => ({ roomId: c.roomId, action: c.action, reason: "Rejected by deterministic geometry validation." }));
     result.summary = { ...(result.summary || {}), bedrooms: currentBedrooms, bathrooms: finalBathrooms, possibleHMOBedrooms: final.bedrooms, compliance: compliance.compliant ? "Deterministically geometry-validated" : "No fully compliant proposed scheme" };
