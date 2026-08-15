@@ -185,7 +185,11 @@ export default function NewProjectPage() {
                     <span className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-[10px] font-bold text-emerald-300">{proposedBedrooms} BEDROOMS{allEnsuites ? " | ALL WITH ENSUITES" : ` | ${proposedEnsuites} ENSUITES`}</span>
                   </div>
                   <div className="overflow-hidden rounded-xl border border-slate-700 bg-white shadow-lg">
-                    {report.generatedLayoutImage ? <img src={report.generatedLayoutImage} className="h-auto w-full object-contain" alt="Proposed HMO layout" /> : <FloorPlanOverlay image={`/api/uploads/${encodeURIComponent(filename)}`} />}
+                    <FloorPlanOverlay
+                      image={`/api/uploads/${encodeURIComponent(filename)}`}
+                      originalFloorPlan={originalFloorPlan}
+                      proposedFloorPlan={proposedFloorPlan}
+                    />
                   </div>
                 </div>
               </div>
