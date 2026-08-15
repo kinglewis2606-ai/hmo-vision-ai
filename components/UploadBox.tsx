@@ -13,7 +13,6 @@ export default function UploadBox({
   const onDrop = async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;
     setMessage("");
-
     const formData = new FormData();
     formData.append("file", acceptedFiles[0]);
 
@@ -50,7 +49,7 @@ export default function UploadBox({
         <>
           <h2 className="text-2xl font-bold mb-2">Upload Floor Plan</h2>
           <p>JPG, PNG or WebP</p>
-          <p className="mt-2 text-xs text-slate-400">PDF uploads are rejected until PDF-to-image conversion is implemented.</p>
+          <p className="mt-2 text-xs text-slate-400">The analysis pipeline preserves the uploaded raster image and uses the same coordinate space for the proposed overlay.</p>
           <p className="mt-4 text-sm">{message}</p>
         </>
       )}
