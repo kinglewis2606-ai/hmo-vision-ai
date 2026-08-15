@@ -11,11 +11,12 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-// The HMO analysis can legitimately perform several vision/geometry passes.
-// The browser, Next route and Nginx are now aligned to allow the complete
-// request to finish instead of the browser disconnecting while the server is
-// still working.
-const OPENAI_REQUEST_TIMEOUT_MS = 120_000;
+// The browser waits just under five minutes. Keep each upstream vision call
+// bounded so the route either returns a normal error or completes before the
+// browser/Nginx connection can be abandoned. The analysis pipeline has at most
+// three sequential OpenAI passes (primary, JSON retry, label recovery), so the
+// worst-case upstream time remains below the browser's current 290s guard.
+const OPENAI_REQUEST_TIMEOUT_MS = 90_000;
 
 export const openai = {
   get responses() {
