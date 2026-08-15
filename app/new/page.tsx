@@ -107,7 +107,7 @@ export default function NewProjectPage() {
           <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ["AI Analysis", "60 sec"],
-              ["Supported Files", "PDF • JPG"],
+              ["Supported Files", "JPG • PNG • WebP"],
               ["Outputs", "Report + ROI"],
               ["Purpose", "HMO Ready"],
             ].map(([label, value]) => (
@@ -133,7 +133,7 @@ export default function NewProjectPage() {
 
           <div className="mt-4 rounded-xl border border-dashed border-slate-600 bg-[#0d1924] p-4">
             <h3 className="text-base font-bold text-white">📐 Upload Floor Plan</h3>
-            <p className="mt-1 text-xs text-slate-500">Upload a PDF, JPG or PNG floor plan to begin the AI analysis.</p>
+            <p className="mt-1 text-xs text-slate-500">Upload the floor plan as JPG, PNG or WebP so the original image can be preserved and used for the aligned proposed HMO overlay.</p>
             <div className="mt-3">
               <UploadBox onUploaded={(name) => { setFilename(name); setImageUrl(`/api/uploads/${encodeURIComponent(name)}`); }} />
             </div>
