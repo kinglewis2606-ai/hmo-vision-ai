@@ -15,7 +15,11 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-const OPENAI_REQUEST_TIMEOUT_MS = 110_000;
+// The analysis route is allowed to run for up to 300s. The previous 110s
+// client-side abort was shorter than the real vision/geometry pipeline and was
+// the source of the recurring "ANALYSE ERROR: Request was aborted" failures.
+// Keep a hard upper bound, but leave enough headroom for the production route.
+const OPENAI_REQUEST_TIMEOUT_MS = 240_000;
 
 export const openai = {
   get responses() {
