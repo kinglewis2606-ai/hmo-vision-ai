@@ -7,7 +7,15 @@ const COMMUNAL_MIN_SQM = 8;
 function norm(value: unknown): string { return String(value ?? "").toLowerCase().replace(/[^a-z]/g, ""); }
 export function isBedroom(room: Room): boolean { return norm(room.type).includes("bedroom") || norm(room.name).includes("bedroom"); }
 export function isLiving(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("living") || value.includes("lounge") || value.includes("reception"); }
-export function isCommunal(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("living") || value.includes("lounge") || value.includes("reception") || value.includes("dining") || value.includes("communal"); }
+export function isDining(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("dining") || value.includes("diner"); }
+export function isCommunal(room: Room): boolean {
+  const value = norm(`${room.type} ${room.name}`);
+  if (value.includes("living") || value.includes("lounge") || value.includes("reception") || value.includes("dining") || value.includes("communal")) return true;
+  // A sufficiently large kitchen can be the remaining kitchen/dining communal
+  // space after a ground-floor lounge/dining conversion. The geometry gate and
+  // 8 sqm threshold prevent a small galley kitchen being treated as a lounge.
+  return value.includes("kitchen") && roomArea(room) >= COMMUNAL_MIN_SQM && hasWindow(room);
+}
 export function isKitchen(room: Room): boolean { return norm(`${room.type} ${room.name}`).includes("kitchen"); }
 export function isWetRoom(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("bath") || value.includes("shower") || value.includes("ensuite") || value.includes("toilet") || value === "wc"; }
 export function roomArea(room: Room): number { return Number(room.approxAreaSqm || 0); }
@@ -35,9 +43,11 @@ function applyAndCount(plan: FloorPlan, changes: RoomChange[]): { plan: FloorPla
   return { plan: candidate, changesApplied: applied, bedrooms: bedrooms(candidate).length };
 }
 
-function livingCandidates(plan: FloorPlan): Room[] {
+function groundConversionCandidates(plan: FloorPlan): Room[] {
   const ground = groundFloor(plan); if (!ground) return [];
-  return ground.rooms.filter(room => isLiving(room) && roomArea(room) >= BEDROOM_MIN_SQM && hasWindow(room) && hasDoor(room)).sort((a, b) => roomArea(b) - roomArea(a));
+  return ground.rooms
+    .filter(room => !isBedroom(room) && !isWetRoom(room) && !isKitchen(room) && roomArea(room) >= BEDROOM_MIN_SQM && hasWindow(room) && hasDoor(room) && !!room.polygon && room.polygon.length >= 3 && (isLiving(room) || isDining(room)))
+    .sort((a, b) => roomArea(b) - roomArea(a));
 }
 function splitCandidates(plan: FloorPlan): Room[] {
   return allRooms(plan).filter(room => !isWetRoom(room) && !isKitchen(room) && roomArea(room) >= BEDROOM_MIN_SQM * 2 && hasWindow(room) && hasDoor(room) && !!room.polygon && room.polygon.length >= 3).sort((a, b) => roomArea(b) - roomArea(a));
@@ -50,16 +60,32 @@ export type PlanningResult = { plan: FloorPlan; appliedChanges: RoomChange[]; re
 export function findMaximumHMO(plan: FloorPlan, aiChanges: RoomChange[] = []): PlanningResult {
   let current = structuredClone(plan);
   const appliedChanges: RoomChange[] = [], rejectedChanges: RoomChange[] = [];
+
+  // AI supplies strategy, but every proposed conversion is still physically
+  // applied by the deterministic geometry engine before it is counted.
   for (const change of aiChanges) {
     if (norm(change.action) === "converttoensuite" || /ensuite/i.test(String(change.split?.secondType || ""))) continue;
     const beforeCount = bedrooms(current).length, candidate = applyAndCount(current, [change]);
     if (candidate.changesApplied.length && candidate.bedrooms >= beforeCount) { current = candidate.plan; appliedChanges.push(...candidate.changesApplied); } else rejectedChanges.push(change);
   }
-  for (const room of livingCandidates(current)) {
-    if (!separateKitchenExists(current, room.id) || !meaningfulCommunalSpace(current, room.id)) continue;
-    const beforeCount = bedrooms(current).length, candidate = applyAndCount(current, [livingChange(room)]);
-    if (candidate.bedrooms > beforeCount && candidate.changesApplied.length) { current = candidate.plan; appliedChanges.push(...candidate.changesApplied); }
+
+  // Do not depend on the AI remembering a particular ground-floor room. Test
+  // every labelled living/dining candidate and keep the change only when a
+  // separate kitchen and meaningful communal space survive.
+  for (const room of groundConversionCandidates(current)) {
+    if (!separateKitchenExists(current, room.id)) continue;
+    const change = livingChange(room);
+    const beforeCount = bedrooms(current).length;
+    const candidate = applyAndCount(current, [change]);
+    if (!candidate.changesApplied.length || candidate.bedrooms <= beforeCount) continue;
+    if (!meaningfulCommunalSpace(candidate.plan)) {
+      rejectedChanges.push(change);
+      continue;
+    }
+    current = candidate.plan;
+    appliedChanges.push(...candidate.changesApplied);
   }
+
   let improved = true;
   while (improved) {
     improved = false;
@@ -70,6 +96,7 @@ export function findMaximumHMO(plan: FloorPlan, aiChanges: RoomChange[] = []): P
     }
     if (best) { current = best.candidate.plan; appliedChanges.push(...best.candidate.changesApplied); improved = true; }
   }
+
   const ensuiteCandidates: RoomChange[] = bedrooms(current).map(room => ({ roomId: room.id, action: "ConvertToEnsuite", newType: "ensuite", split: { firstName: room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite" }, reason: "Deterministic ensuite search across the final bedroom geometry." }));
   return { plan: current, appliedChanges, rejectedChanges, bedrooms: bedrooms(current).length, ensuiteCandidates };
 }
