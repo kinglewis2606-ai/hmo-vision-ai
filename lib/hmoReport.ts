@@ -18,11 +18,11 @@ function moneyRange(value: any, fallbackLow: number, fallbackHigh: number) {
 }
 
 function defaultScore(bedrooms: number, ensuites: number, applied: number, rejected: number): number {
-  const bedroomScore = Math.min(30, bedrooms * 5);
-  const ensuiteScore = Math.min(20, ensuites * 3.33);
-  const geometryScore = applied > 0 ? 25 : 10;
-  const reliabilityScore = rejected <= 2 ? 15 : 10;
-  return Math.max(0, Math.min(100, Math.round(10 + bedroomScore + ensuiteScore + geometryScore + reliabilityScore)));
+  const bedroomScore = Math.min(18, bedrooms * 3);
+  const ensuiteScore = Math.min(12, ensuites * 2);
+  const geometryScore = applied > 0 ? 5 : 0;
+  const reliabilityScore = rejected <= 2 ? 5 : 0;
+  return Math.max(0, Math.min(100, Math.round(47 + bedroomScore + ensuiteScore + geometryScore + reliabilityScore)));
 }
 
 function finalRoomLayout(plan: FloorPlan) {
@@ -63,8 +63,12 @@ export function normaliseHMOReport(
 
   const monthly = Number(report.estimatedMonthlyRent);
   const hasMonthly = Number.isFinite(monthly) && monthly > 0;
-  const monthlyLow = bedrooms * 650;
-  const monthlyHigh = bedrooms * 716.67;
+  const monthlyRange = moneyRange(report.estimatedMonthlyRentRange, bedrooms * 650, bedrooms * 716.67);
+  if (hasMonthly && !report.estimatedMonthlyRentRange) {
+    monthlyRange.low = Math.min(monthlyRange.low, monthly);
+    monthlyRange.high = Math.max(monthlyRange.high, monthly);
+  }
+  const annualRange = moneyRange(report.estimatedAnnualRentRange, Math.round(monthlyRange.low * 12), Math.round(monthlyRange.high * 12));
   const conversion = moneyRange(report.estimatedConversionCost, Math.max(8000, bedrooms * 3000), Math.max(12000, bedrooms * 4667));
 
   report.summary = {
@@ -99,8 +103,10 @@ export function normaliseHMOReport(
     finalEnsuiteIds: finalEnsuites.map((room) => room.id),
   };
 
-  report.estimatedMonthlyRent = hasMonthly ? monthly : Math.round((monthlyLow + monthlyHigh) / 2);
+  report.estimatedMonthlyRent = hasMonthly ? monthly : Math.round((monthlyRange.low + monthlyRange.high) / 2);
+  report.estimatedMonthlyRentRange = monthlyRange;
   report.estimatedAnnualRent = Number(report.estimatedAnnualRent) > 0 ? Number(report.estimatedAnnualRent) : Math.round(report.estimatedMonthlyRent * 12);
+  report.estimatedAnnualRentRange = annualRange;
   report.estimatedConversionCost = conversion;
   report.estimatedYield = report.estimatedYield || `${bedrooms >= 6 ? "12.4%–16.2%" : "Indicative"}`;
   report.estimatedROI = report.estimatedROI || report.estimatedYield;
