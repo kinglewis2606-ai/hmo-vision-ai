@@ -36,13 +36,16 @@ jobs:
           done
           cat /tmp/hmo-next.log
           exit 1
-      - name: Verify pages render
+      - name: Verify pages render and deployment versioning is active
         run: |
           curl --fail --silent --show-error http://127.0.0.1:3000/ | grep -q "HMO Vision AI"
           curl --fail --silent --show-error http://127.0.0.1:3000/new > /tmp/new.html
           grep -q "Analyse a Property" /tmp/new.html
           grep -q "Upload Floor Plan" /tmp/new.html
           grep -q "Analyse Floor Plan" /tmp/new.html
+          deployment_id=$(curl --fail --silent --show-error -D - -o /dev/null http://127.0.0.1:3000/ | awk -F': ' 'tolower($1)=="x-nextjs-deployment-id" {gsub("\r", "", $2); print $2}')
+          test -n "$deployment_id"
+          test "$deployment_id" = "${GITHUB_SHA}"
       - name: Verify upload API is reachable
         run: |
           printf 'x' > /tmp/smoke.txt
