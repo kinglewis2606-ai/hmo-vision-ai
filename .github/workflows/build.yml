@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - hmo-production
       - fix/real-floorplan-pipeline
       - fix/max-hmo-geometry-output
   pull_request:
