@@ -44,8 +44,8 @@ jobs:
           grep -q "Analyse a Property" /tmp/new.html
           grep -q "Upload Floor Plan" /tmp/new.html
           grep -q "Analyse Floor Plan" /tmp/new.html
-          grep -q "dpl=${GITHUB_SHA}" /tmp/home.html
-          grep -q "dpl=${GITHUB_SHA}" /tmp/new.html
+          grep -q "data-dpl-id=\"${GITHUB_SHA}\"" /tmp/home.html
+          grep -q "data-dpl-id=\"${GITHUB_SHA}\"" /tmp/new.html
       - name: Verify upload API is reachable
         run: |
           printf 'x' > /tmp/smoke.txt
