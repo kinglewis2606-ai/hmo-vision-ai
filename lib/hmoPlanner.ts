@@ -1,5 +1,6 @@
 import { FloorPlan, Room, RoomChange } from "@/lib/types/floorPlan";
 import { applyRoomChanges } from "@/lib/deterministicGeometryEngine";
+import { sqmForPolygon } from "@/lib/geometryValidation";
 
 export const BEDROOM_MIN_SQM = 6.51;
 const COMMUNAL_MIN_SQM = 8;
@@ -11,14 +12,22 @@ export function isDining(room: Room): boolean { const value = norm(`${room.type}
 export function isCommunal(room: Room): boolean {
   const value = norm(`${room.type} ${room.name}`);
   if (value.includes("living") || value.includes("lounge") || value.includes("reception") || value.includes("dining") || value.includes("communal")) return true;
-  // A sufficiently large kitchen can be the remaining kitchen/dining communal
-  // space after a ground-floor lounge/dining conversion. The geometry gate and
-  // 8 sqm threshold prevent a small galley kitchen being treated as a lounge.
   return value.includes("kitchen") && roomArea(room) >= COMMUNAL_MIN_SQM && hasWindow(room);
 }
 export function isKitchen(room: Room): boolean { return norm(`${room.type} ${room.name}`).includes("kitchen"); }
 export function isWetRoom(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("bath") || value.includes("shower") || value.includes("ensuite") || value.includes("toilet") || value === "wc"; }
-export function roomArea(room: Room): number { return Number(room.approxAreaSqm || 0); }
+
+// Geometry is authoritative. AI may classify a room, but it is not allowed to
+// change the measured size used by the optimisation engine. This makes two
+// different uploaded plans produce different HMO outcomes from their actual
+// detected polygons rather than from an AI-supplied area guess.
+export function roomArea(room: Room): number {
+  if (room.polygon && room.polygon.length >= 3) {
+    const measured = Number(sqmForPolygon(room, room.polygon));
+    if (Number.isFinite(measured) && measured > 0) return measured;
+  }
+  return Number(room.approxAreaSqm || 0);
+}
 function hasWindow(room: Room): boolean { return Array.isArray(room.windows) && room.windows.length > 0; }
 function hasDoor(room: Room): boolean { return Array.isArray(room.doors) && room.doors.length > 0; }
 function allRooms(plan: FloorPlan): Room[] { return plan.floors.flatMap(f => f.rooms); }
@@ -61,27 +70,19 @@ export function findMaximumHMO(plan: FloorPlan, aiChanges: RoomChange[] = []): P
   let current = structuredClone(plan);
   const appliedChanges: RoomChange[] = [], rejectedChanges: RoomChange[] = [];
 
-  // AI supplies strategy, but every proposed conversion is still physically
-  // applied by the deterministic geometry engine before it is counted.
   for (const change of aiChanges) {
     if (norm(change.action) === "converttoensuite" || /ensuite/i.test(String(change.split?.secondType || ""))) continue;
     const beforeCount = bedrooms(current).length, candidate = applyAndCount(current, [change]);
     if (candidate.changesApplied.length && candidate.bedrooms >= beforeCount) { current = candidate.plan; appliedChanges.push(...candidate.changesApplied); } else rejectedChanges.push(change);
   }
 
-  // Do not depend on the AI remembering a particular ground-floor room. Test
-  // every labelled living/dining candidate and keep the change only when a
-  // separate kitchen and meaningful communal space survive.
   for (const room of groundConversionCandidates(current)) {
     if (!separateKitchenExists(current, room.id)) continue;
     const change = livingChange(room);
     const beforeCount = bedrooms(current).length;
     const candidate = applyAndCount(current, [change]);
     if (!candidate.changesApplied.length || candidate.bedrooms <= beforeCount) continue;
-    if (!meaningfulCommunalSpace(candidate.plan)) {
-      rejectedChanges.push(change);
-      continue;
-    }
+    if (!meaningfulCommunalSpace(candidate.plan)) { rejectedChanges.push(change); continue; }
     current = candidate.plan;
     appliedChanges.push(...candidate.changesApplied);
   }
