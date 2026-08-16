@@ -3,6 +3,7 @@ name: Build and Runtime Smoke Test
 on:
   push:
     branches:
+      - main
       - fix/real-floorplan-pipeline
       - fix/max-hmo-geometry-output
   pull_request:
@@ -19,6 +20,7 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm run test:geometry
+      - run: npm run lint
       - run: npm run build
       - name: Start production server
         run: |
