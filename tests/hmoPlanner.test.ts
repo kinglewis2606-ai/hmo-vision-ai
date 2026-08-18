@@ -36,8 +36,8 @@ test("maximum HMO considers every viable ground-floor living room", () => {
 test("different geometry produces a different maximum HMO outcome", () => {
   const plan: FloorPlan = {
     floors: [{ name: "Ground Floor", level: 0, rooms: [
-      room("gf-lounge", "Lounge", "living", 0, 0, 220, 220),
-      room("gf-kitchen", "Kitchen", "kitchen", 220, 0, 280, 220),
+      room("gf-lounge", "Lounge", "living", 0, 0, 260, 260),
+      room("gf-kitchen", "Kitchen", "kitchen", 260, 0, 280, 220),
     ] }],
   };
   const result = findMaximumHMO(plan);
