@@ -310,12 +310,13 @@ export async function detectFloors(
 
     if (detected?.floors?.length && (detected.rooms?.length ?? 0) >= 2) {
       const normalised = normalisePlanRoomCoordinates(detected);
-      const verified = await verifyAndCorrectRooms(
+      const verifiedRaw = await verifyAndCorrectRooms(
         filePath,
         normalised,
         width,
         height
       );
+      const verified = normalisePlanRoomCoordinates(verifiedRaw);
 
       cachePath = filePath;
       cache = verified;
