@@ -76,20 +76,39 @@ function splitRoomGeometry(floor: { rooms: Room[] }, room: Room, change: RoomCha
 function candidateCorners(room: Room): Corner[] { const windows = new Set(windowWalls(room)), principal = principalWindowWalls(room), doors = new Set(doorWalls(room)), corners: Corner[] = [{ sideX: "left", sideY: "top" }, { sideX: "right", sideY: "top" }, { sideX: "left", sideY: "bottom" }, { sideX: "right", sideY: "bottom" }]; const score = (c: Corner) => { const x = c.sideX as WallSide, y = c.sideY as WallSide; return (windows.has(x) || windows.has(y) ? -1000 : 100) + (principal.has(x) || principal.has(y) ? -2000 : 0) + (doors.has(x) || doors.has(y) ? -150 : 0); }; return corners.sort((a, b) => score(b) - score(a)); }
 function buildCornerRect(room: Room, corner: Corner, width: number, height: number): Bounds { return { x: corner.sideX === "right" ? room.x + room.width - width : room.x, y: corner.sideY === "bottom" ? room.y + room.height - height : room.y, width, height }; }
 function findEnsuite(room: Room): { polygon: Point[]; remainder: Point[]; areaSqm: number } | undefined {
-  if (!room.polygon?.length || !validateBedroomGeometry(room).valid) return undefined; const sourcePx = polygonArea(room.polygon), sourceSqm = Number(room.approxAreaSqm || 0), metresPerPixel = sourcePx > 0 && sourceSqm > 0 ? Math.sqrt(sourceSqm / sourcePx) : 0;
-  const fractions = [0.42, 0.38, 0.34, 0.30, 0.28, 0.26, 0.24, 0.22];
+  if (!room.polygon?.length || !validateBedroomGeometry(room).valid) return undefined;
+  const sourcePx = polygonArea(room.polygon), sourceSqm = Number(room.approxAreaSqm || 0), metresPerPixel = sourcePx > 0 && sourceSqm > 0 ? Math.sqrt(sourceSqm / sourcePx) : 0;
+  const fractions = [0.18,0.20,0.22,0.24,0.26,0.28,0.30,0.32,0.34,0.36,0.38,0.40,0.42];
+  const candidates: Array<{ polygon: Point[]; remainder: Point[]; areaSqm: number; score: number }> = [];
   for (const corner of candidateCorners(room)) for (const wf of fractions) for (const hf of fractions) {
-    const cut = buildCornerRect(room, corner, room.width * wf, room.height * hf); if (openingWallBlocked(room, cut)) continue;
-    const polygon: Point[] = [{ x: cut.x, y: cut.y }, { x: cut.x + cut.width, y: cut.y }, { x: cut.x + cut.width, y: cut.y + cut.height }, { x: cut.x, y: cut.y + cut.height }]; if (!polygonContainsPolygon(room.polygon, polygon)) continue;
-    const remainder = carveCorner(room.polygon, cut, corner); if (!remainder || !areasConserve(room, remainder, polygon)) continue; const openings = preserveOpenings(room, remainder), principal = principalWindowWalls(room);
+    const cut = buildCornerRect(room, corner, room.width * wf, room.height * hf);
+    if (openingWallBlocked(room, cut)) continue;
+    const polygon: Point[] = [{ x: cut.x, y: cut.y }, { x: cut.x + cut.width, y: cut.y }, { x: cut.x + cut.width, y: cut.y + cut.height }, { x: cut.x, y: cut.y + cut.height }];
+    if (!polygonContainsPolygon(room.polygon, polygon)) continue;
+    const remainder = carveCorner(room.polygon, cut, corner); if (!remainder || !areasConserve(room, remainder, polygon)) continue;
+    const openings = preserveOpenings(room, remainder), principal = principalWindowWalls(room);
     if (!openings.doors?.length || (principal.size && !Array.from(principal).every(w => (openings.windows || []).some(x => x.wall === w)))) continue;
-    const bedroomRemainder = { ...structuredClone(room), polygon: remainder, windows: openings.windows, doors: openings.doors, type: "bedroom" }; if (!validateBedroomGeometry(bedroomRemainder).valid) continue;
+    const bedroomRemainder = { ...structuredClone(room), polygon: remainder, windows: openings.windows, doors: openings.doors, type: "bedroom" };
+    if (!validateBedroomGeometry(bedroomRemainder).valid) continue;
     const ensuiteArea = sqmForPolygon(room, polygon); if (ensuiteArea < ENSUITE_MIN_PRACTICAL_SQM) continue;
-    const widthM = room.approxWidthM && room.width ? cut.width * room.approxWidthM / room.width : cut.width * metresPerPixel, heightM = room.approxDepthM && room.height ? cut.height * room.approxDepthM / room.height : cut.height * metresPerPixel; if (widthM < ENSUITE_SHOWER_MIN_M || heightM < ENSUITE_SHOWER_MIN_M) continue;
-    return { polygon, remainder, areaSqm: ensuiteArea };
-  } return undefined;
+    const widthM = room.approxWidthM && room.width ? cut.width * room.approxWidthM / room.width : cut.width * metresPerPixel, heightM = room.approxDepthM && room.height ? cut.height * room.approxDepthM / room.height : cut.height * metresPerPixel;
+    if (widthM < ENSUITE_SHOWER_MIN_M || heightM < ENSUITE_SHOWER_MIN_M) continue;
+    const score = Math.abs(ensuiteArea - 2.5);
+    candidates.push({ polygon, remainder, areaSqm: ensuiteArea, score });
+  }
+  candidates.sort((a,b) => a.score - b.score);
+  return candidates[0] ? { polygon: candidates[0].polygon, remainder: candidates[0].remainder, areaSqm: candidates[0].areaSqm } : undefined;
 }
-function addEnsuiteGeometry(floor: { rooms: Room[] }, room: Room, change: RoomChange): boolean { const candidate = findEnsuite(room); if (!candidate) return false; const original = structuredClone(room), openings = preserveOpenings(original, candidate.remainder), b = bounds(candidate.remainder), remainder: Room = { ...original, polygon: candidate.remainder, x: b.x, y: b.y, width: b.width, height: b.height, windows: openings.windows, doors: openings.doors, type: "bedroom", name: change.split?.firstName || original.name }; const checked = validateBedroomGeometry(remainder); if (!checked.valid || !areasConserve(original, candidate.remainder, candidate.polygon)) return false; Object.assign(room, remainder, { approxAreaSqm: Number(checked.areaSqm.toFixed(2)), confidence: "geometry-proposed" }); const child = childRoom(original, candidate.polygon, "ensuite", "En-suite", `Real geometry carved from ${original.id}`); child.approxAreaSqm = Number(candidate.areaSqm.toFixed(2)); floor.rooms.push(child); return true; }
+function addEnsuiteGeometry(floor: { rooms: Room[] }, room: Room, change: RoomChange): boolean {
+  const candidate = findEnsuite(room); if (!candidate) return false;
+  const original = structuredClone(room), openings = preserveOpenings(original, candidate.remainder), b = bounds(candidate.remainder);
+  const remainder: Room = { ...original, polygon: candidate.remainder, x: b.x, y: b.y, width: b.width, height: b.height, windows: openings.windows, doors: openings.doors, type: "bedroom", name: change.split?.firstName || original.name };
+  const checked = validateBedroomGeometry(remainder); if (!checked.valid || !areasConserve(original, candidate.remainder, candidate.polygon)) return false;
+  Object.assign(room, remainder, { approxAreaSqm: Number(checked.areaSqm.toFixed(2)), confidence: "geometry-proposed" });
+  const child = childRoom(original, candidate.polygon, "ensuite", "En-suite", `Real geometry carved from ${original.id}`);
+  child.approxAreaSqm = Number(candidate.areaSqm.toFixed(2));
+  floor.rooms.push(child); return true;
+}
 function applySimple(room: Room, change: RoomChange): boolean { const requested = String(change.newType || actionType(change.action) || "").toLowerCase(); if (!requested || noOp(room.type || "", requested)) return false; room.type = change.newType || actionType(change.action) || room.type; if (change.newName) room.name = change.newName; else if (requested === "bedroom" && !/bedroom/i.test(room.name)) room.name = "Proposed Bedroom"; if (change.reason) room.notes = [room.notes, change.reason].filter(Boolean).join("; "); return true; }
 export function applyRoomChanges(floorPlan: FloorPlan, changes: RoomChange[]): FloorPlan { const updated = structuredClone(floorPlan); for (const change of changes || []) { if (!change?.roomId) continue; for (const floor of updated.floors) { const room = floor.rooms.find(r => r.id === change.roomId); if (!room) continue; const action = normalise(change.action), requested = String(change.newType || actionType(change.action) || "").toLowerCase(); if (action === "nochange" && !requested) break; if (action === "splitroom" || action === "split") { splitRoomGeometry(floor, room, change); break; } if (requested.includes("ensuite") || action === "converttoensuite") { if (/bedroom/i.test(room.type)) addEnsuiteGeometry(floor, room, change); break; } if (requested) applySimple(room, change); break; } } return updated; }
 export function bedroomGeometryIsValid(room: Room): boolean { return validateBedroomGeometry(room).valid; }
