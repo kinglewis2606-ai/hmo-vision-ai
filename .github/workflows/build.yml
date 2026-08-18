@@ -21,6 +21,11 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm run test:geometry
+      - name: Test HMO planner property-specific optimisation
+        run: |
+          rm -rf .hmo-planner-test
+          tsc tests/hmoPlanner.test.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-planner-test --rootDir . --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck
+          node --test .hmo-planner-test/tests/hmoPlanner.test.js
       - run: npm run build
       - name: Start production server
         run: |
