@@ -1,4 +1,4 @@
-import { FloorPlan, Room, RoomChange } from "@/lib/types/floorPlan";
+import { FloorPlan, Room, RoomChange, WallSide } from "@/lib/types/floorPlan";
 import { applyRoomChanges } from "@/lib/deterministicGeometryEngine";
 import { sqmForPolygon, validateBedroomGeometry } from "@/lib/geometryValidation";
 
@@ -17,8 +17,6 @@ export function isCommunal(room: Room): boolean {
 export function isKitchen(room: Room): boolean { return norm(`${room.type} ${room.name}`).includes("kitchen"); }
 export function isWetRoom(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("bath") || value.includes("shower") || value.includes("ensuite") || value.includes("toilet") || value === "wc"; }
 
-// Polygon geometry is authoritative whenever it exists. AI-supplied areas are
-// only a fallback for legacy detections that have no polygon.
 export function roomArea(room: Room): number {
   if (room.polygon && room.polygon.length >= 3) {
     const measured = Number(sqmForPolygon(room, room.polygon));
@@ -38,13 +36,55 @@ function separateKitchenExists(plan: FloorPlan, excludedRoomId?: string): boolea
 }
 function groundFloor(plan: FloorPlan) { return plan.floors.find(f => f.level === 0 || /ground/i.test(f.name)) || plan.floors[0]; }
 
+// Vision models can conservatively return doors=[] even when the floor-plan
+// geometry clearly joins the room to another detected room. For a proposed
+// ground-floor living-room conversion, infer an access wall only from an
+// existing shared boundary with another detected room. This never invents a
+// standalone exterior entrance and keeps the inference tied to this plan's
+// actual geometry.
+function inferSharedAccessWall(room: Room, plan: FloorPlan): WallSide | undefined {
+  const rooms = allRooms(plan).filter(r => r.id !== room.id && r.id !== `${room.id}-split-2`);
+  let best: { wall: WallSide; length: number } | undefined;
+  const tolerance = 15;
+  for (const other of rooms) {
+    const verticalOverlap = Math.max(0, Math.min(room.y + room.height, other.y + other.height) - Math.max(room.y, other.y));
+    const horizontalOverlap = Math.max(0, Math.min(room.x + room.width, other.x + other.width) - Math.max(room.x, other.x));
+    const candidates: Array<{ wall: WallSide; length: number }> = [
+      { wall: "right", length: Math.abs(room.x + room.width - other.x) <= tolerance ? verticalOverlap : 0 },
+      { wall: "left", length: Math.abs(other.x + other.width - room.x) <= tolerance ? verticalOverlap : 0 },
+      { wall: "bottom", length: Math.abs(room.y + room.height - other.y) <= tolerance ? horizontalOverlap : 0 },
+      { wall: "top", length: Math.abs(other.y + other.height - room.y) <= tolerance ? horizontalOverlap : 0 },
+    ];
+    for (const candidate of candidates) if (candidate.length > (best?.length || 30)) best = candidate;
+  }
+  return best?.wall;
+}
+
+function prepareConversionPlan(plan: FloorPlan, changes: RoomChange[]): FloorPlan {
+  const prepared = structuredClone(plan);
+  for (const change of changes) {
+    if (norm(change.action) !== "converttobedroom" && norm(change.newType) !== "bedroom") continue;
+    for (const floor of prepared.floors) {
+      const room = floor.rooms.find(r => r.id === change.roomId);
+      if (!room || isBedroom(room) || hasDoor(room)) continue;
+      if (!isLiving(room) && !isDining(room)) continue;
+      const inferredWall = inferSharedAccessWall(room, prepared);
+      if (inferredWall) {
+        room.doors = [{ wall: inferredWall }];
+        room.notes = [room.notes, `Usable access wall inferred from shared detected geometry: ${inferredWall}`].filter(Boolean).join("; ");
+      }
+    }
+  }
+  return prepared;
+}
+
 function isValidBedroomGeometry(room: Room): boolean {
   if (!room.polygon || room.polygon.length < 3) return false;
   return validateBedroomGeometry(room).valid;
 }
 
 function applyAndCount(plan: FloorPlan, changes: RoomChange[]): { plan: FloorPlan; changesApplied: RoomChange[]; bedrooms: number } {
-  const candidate = applyRoomChanges(plan, changes);
+  const candidate = applyRoomChanges(prepareConversionPlan(plan, changes), changes);
   const applied: RoomChange[] = [];
   for (const change of changes) {
     const before = allRooms(plan).find(r => r.id === change.roomId);
@@ -66,9 +106,7 @@ function applyAndCount(plan: FloorPlan, changes: RoomChange[]): { plan: FloorPla
 
 function groundConversionCandidates(plan: FloorPlan): Room[] {
   const ground = groundFloor(plan); if (!ground) return [];
-  return ground.rooms
-    .filter(room => !isBedroom(room) && !isWetRoom(room) && !isKitchen(room) && roomArea(room) >= BEDROOM_MIN_SQM && hasWindow(room) && !!room.polygon && room.polygon.length >= 3 && (isLiving(room) || isDining(room)))
-    .sort((a, b) => roomArea(b) - roomArea(a));
+  return ground.rooms.filter(room => !isBedroom(room) && !isWetRoom(room) && !isKitchen(room) && roomArea(room) >= BEDROOM_MIN_SQM && hasWindow(room) && !!room.polygon && room.polygon.length >= 3 && (isLiving(room) || isDining(room))).sort((a, b) => roomArea(b) - roomArea(a));
 }
 function splitCandidates(plan: FloorPlan): Room[] {
   return allRooms(plan).filter(room => !isWetRoom(room) && !isKitchen(room) && roomArea(room) >= BEDROOM_MIN_SQM * 2 && hasWindow(room) && hasDoor(room) && !!room.polygon && room.polygon.length >= 3).sort((a, b) => roomArea(b) - roomArea(a));
@@ -93,13 +131,11 @@ export function findMaximumHMO(plan: FloorPlan, aiChanges: RoomChange[] = []): P
     if (candidate.changesApplied.length && candidate.bedrooms >= beforeCount) { current = candidate.plan; appliedChanges.push(...candidate.changesApplied); } else rejectedChanges.push(change);
   }
 
-  // Search actual ground-floor communal rooms rather than relying on the AI to
-  // request every conversion. This makes the result property-specific.
+  // Search every actual ground-floor living/dining candidate. The result is
+  // therefore driven by this upload's detected rooms and geometry.
   for (const room of groundConversionCandidates(current)) {
     if (!separateKitchenExists(current, room.id)) continue;
-    const change = livingChange(room);
-    const beforeCount = bedrooms(current).length;
-    const candidate = applyAndCount(current, [change]);
+    const change = livingChange(room), beforeCount = bedrooms(current).length, candidate = applyAndCount(current, [change]);
     if (!candidate.changesApplied.length || candidate.bedrooms <= beforeCount) { rejectedChanges.push(change); continue; }
     if (!meaningfulCommunalSpace(candidate.plan)) { rejectedChanges.push(change); continue; }
     current = candidate.plan;
