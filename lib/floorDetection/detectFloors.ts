@@ -83,6 +83,61 @@ function normalisePolygon(room: VisionRoom): Point[] | undefined {
   return polygon;
 }
 
+function normaliseRoomCoordinates(room: VisionRoom, floors: NonNullable<VisionPlan["floors"]>): VisionRoom {
+  const floorIndex = Number(room.floorIndex);
+  const floor = Number.isInteger(floorIndex) ? floors[floorIndex] : undefined;
+  if (!floor) return room;
+
+  const x = Number(room.x);
+  const y = Number(room.y);
+  const width = Number(room.width);
+  const height = Number(room.height);
+  const floorX = Number(floor.x ?? 0);
+  const floorY = Number(floor.y ?? 0);
+  const floorWidth = Number(floor.width ?? 0);
+  const floorHeight = Number(floor.height ?? 0);
+  if (![x, y, width, height, floorX, floorY, floorWidth, floorHeight].every(Number.isFinite)) return room;
+  if (!(floorWidth > 0 && floorHeight > 0)) return room;
+
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  const insideGlobalFloor =
+    centerX >= floorX && centerX <= floorX + floorWidth &&
+    centerY >= floorY && centerY <= floorY + floorHeight;
+
+  // Vision sometimes returns coordinates relative to each detected floor panel
+  // even though the prompt requests original-image coordinates. Convert those
+  // local coordinates to the single global image coordinate system used by the
+  // renderer. This is especially important when floors are side-by-side.
+  const looksLikeFloorLocal =
+    centerX >= 0 && centerY >= 0 &&
+    centerX <= floorWidth && centerY <= floorHeight;
+
+  if (insideGlobalFloor || !looksLikeFloorLocal) return room;
+
+  const offsetX = floorX;
+  const offsetY = floorY;
+  const polygon = Array.isArray(room.polygon)
+    ? room.polygon.map((p) => ({ x: Number(p.x) + offsetX, y: Number(p.y) + offsetY }))
+    : room.polygon;
+
+  return {
+    ...room,
+    x: x + offsetX,
+    y: y + offsetY,
+    polygon,
+  };
+}
+
+function normalisePlanRoomCoordinates(detected: VisionPlan): VisionPlan {
+  const floors = Array.isArray(detected.floors) ? detected.floors : [];
+  if (!floors.length || !Array.isArray(detected.rooms)) return detected;
+  return {
+    ...detected,
+    rooms: detected.rooms.map((room) => normaliseRoomCoordinates(room, floors)),
+  };
+}
+
 async function detectWithVision(filePath: string): Promise<VisionPlan | null> {
   const source = fs.readFileSync(filePath);
   const metadata = await sharp(source).metadata();
@@ -109,7 +164,7 @@ async function detectWithVision(filePath: string): Promise<VisionPlan | null> {
         content: [
           {
             type: "input_text",
-            text: `Act as a strict architectural floor-plan geometry detector. Detect the actual floor-plan panels and every distinct enclosed room in this image. Do not assume three floors, equal-sized panels, a fixed orientation, or a fixed room count. Return JSON only: {"floors":[{"name":"","x":0,"y":0,"width":0,"height":0}],"rooms":[{"floorIndex":0,"x":0,"y":0,"width":0,"height":0,"polygon":[{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0}]}]}. Coordinates MUST be pixels in the original ${width}x${height} image. A room boundary is the interior face of its enclosing walls; do not draw a box around text, furniture, whitespace, compass, watermark or a whole floor panel. Every returned room geometry MUST sit directly over a genuinely enclosed room visible in the source image. Follow wall lines and door openings. Do not invent or split rooms. Prefer a conservative boundary inside the walls over a floating or oversized rectangle.`,
+            text: `Act as a strict architectural floor-plan geometry detector. Detect the actual floor-plan panels and every distinct enclosed room in this image. Do not assume three floors, equal-sized panels, a fixed orientation, or a fixed room count. Return JSON only: {"floors":[{"name":"","x":0,"y":0,"width":0,"height":0}],"rooms":[{"floorIndex":0,"x":0,"y":0,"width":0,"height":0,"polygon":[{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0}]}]}. Coordinates MUST be pixels in the original ${width}x${height} image. A room boundary is the interior face of its enclosing walls; do not draw a box around text, furniture, whitespace, compass, watermark or a whole floor panel. Every returned room geometry MUST sit directly over a genuinely enclosed room visible in the source image. Follow wall lines and door openings. Do not invent or split rooms. Prefer a conservative boundary inside the walls over a floating or oversized rectangle. If you reason about a floor panel using its local coordinates, convert every room coordinate back to the original full-image coordinate system before returning it.`,
           },
           {
             type: "input_image",
@@ -171,7 +226,7 @@ async function verifyAndCorrectRooms(
           content: [
             {
               type: "input_text",
-              text: `You are the final geometry verification pass for a floor-plan analysis. The supplied image is the ORIGINAL floor plan. Candidate room rectangles are listed below. Inspect the actual wall lines and correct each candidate so it overlays the real enclosed room, not blank page space, text, watermark, compass or a neighbouring room. Preserve a candidate only if it is a real enclosed room. You may adjust x/y/width/height and return an optional polygon following the visible room boundary. Do not invent rooms and do not move a room to another floor. Coordinates are ORIGINAL ${width}x${height} image pixels. Return JSON only: {"rooms":[{"candidateId":1,"floorIndex":0,"x":0,"y":0,"width":0,"height":0,"polygon":[{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0}]}]}. A candidate is valid only when it visibly overlays an enclosed room. Reject floating squares/rectangles that do not coincide with walls. Candidates: ${JSON.stringify(candidates)}`,
+              text: `You are the final geometry verification pass for a floor-plan analysis. The supplied image is the ORIGINAL floor plan. Candidate room rectangles are listed below. Inspect the actual wall lines and correct each candidate so it overlays the real enclosed room, not blank page space, text, watermark, compass or a neighbouring room. Preserve a candidate only if it is a real enclosed room. You may adjust x/y/width/height and return an optional polygon following the visible room boundary. Do not invent rooms and do not move a room to another floor. Coordinates are ORIGINAL ${width}x${height} image pixels. A candidate is valid only when it visibly overlays an enclosed room. Reject floating squares/rectangles that do not coincide with walls. Candidates: ${JSON.stringify(candidates)}`,
             },
             {
               type: "input_image",
@@ -254,9 +309,10 @@ export async function detectFloors(
     const detected = await detectWithVision(filePath);
 
     if (detected?.floors?.length && (detected.rooms?.length ?? 0) >= 2) {
+      const normalised = normalisePlanRoomCoordinates(detected);
       const verified = await verifyAndCorrectRooms(
         filePath,
-        detected,
+        normalised,
         width,
         height
       );
@@ -264,7 +320,7 @@ export async function detectFloors(
       cachePath = filePath;
       cache = verified;
 
-      return (verified.floors || detected.floors).map((floor, index) => ({
+      return (verified.floors || normalised.floors || detected.floors).map((floor, index) => ({
         name: floor.name || `Floor ${index + 1}`,
         level: index,
         top: Math.max(0, Math.round(floor.y || 0)),
