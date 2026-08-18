@@ -1,6 +1,6 @@
 import { FloorPlan, Room, RoomChange } from "@/lib/types/floorPlan";
 import { applyRoomChanges } from "@/lib/deterministicGeometryEngine";
-import { sqmForPolygon } from "@/lib/geometryValidation";
+import { sqmForPolygon, validateBedroomGeometry } from "@/lib/geometryValidation";
 
 export const BEDROOM_MIN_SQM = 6.51;
 const COMMUNAL_MIN_SQM = 8;
@@ -17,10 +17,8 @@ export function isCommunal(room: Room): boolean {
 export function isKitchen(room: Room): boolean { return norm(`${room.type} ${room.name}`).includes("kitchen"); }
 export function isWetRoom(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("bath") || value.includes("shower") || value.includes("ensuite") || value.includes("toilet") || value === "wc"; }
 
-// Geometry is authoritative. AI may classify a room, but it is not allowed to
-// change the measured size used by the optimisation engine. This makes two
-// different uploaded plans produce different HMO outcomes from their actual
-// detected polygons rather than from an AI-supplied area guess.
+// Polygon geometry is authoritative whenever it exists. AI-supplied areas are
+// only a fallback for legacy detections that have no polygon.
 export function roomArea(room: Room): number {
   if (room.polygon && room.polygon.length >= 3) {
     const measured = Number(sqmForPolygon(room, room.polygon));
@@ -32,9 +30,18 @@ function hasWindow(room: Room): boolean { return Array.isArray(room.windows) && 
 function hasDoor(room: Room): boolean { return Array.isArray(room.doors) && room.doors.length > 0; }
 function allRooms(plan: FloorPlan): Room[] { return plan.floors.flatMap(f => f.rooms); }
 function bedrooms(plan: FloorPlan): Room[] { return allRooms(plan).filter(isBedroom); }
-function meaningfulCommunalSpace(plan: FloorPlan, excludedRoomId?: string): boolean { return allRooms(plan).some(room => room.id !== excludedRoomId && isCommunal(room) && roomArea(room) >= COMMUNAL_MIN_SQM && hasWindow(room)); }
-function separateKitchenExists(plan: FloorPlan, excludedRoomId?: string): boolean { return allRooms(plan).some(room => room.id !== excludedRoomId && isKitchen(room)); }
+function meaningfulCommunalSpace(plan: FloorPlan, excludedRoomId?: string): boolean {
+  return allRooms(plan).some(room => room.id !== excludedRoomId && isCommunal(room) && roomArea(room) >= COMMUNAL_MIN_SQM && hasWindow(room));
+}
+function separateKitchenExists(plan: FloorPlan, excludedRoomId?: string): boolean {
+  return allRooms(plan).some(room => room.id !== excludedRoomId && isKitchen(room));
+}
 function groundFloor(plan: FloorPlan) { return plan.floors.find(f => f.level === 0 || /ground/i.test(f.name)) || plan.floors[0]; }
+
+function isValidBedroomGeometry(room: Room): boolean {
+  if (!room.polygon || room.polygon.length < 3) return false;
+  return validateBedroomGeometry(room).valid;
+}
 
 function applyAndCount(plan: FloorPlan, changes: RoomChange[]): { plan: FloorPlan; changesApplied: RoomChange[]; bedrooms: number } {
   const candidate = applyRoomChanges(plan, changes);
@@ -44,7 +51,12 @@ function applyAndCount(plan: FloorPlan, changes: RoomChange[]): { plan: FloorPla
     const after = allRooms(candidate).find(r => r.id === change.roomId);
     const child = allRooms(candidate).find(r => r.id === `${change.roomId}-split-2`);
     if (!before || !after) continue;
-    const action = norm(change.action), childIsEnsuite = !!child && /ensuite/i.test(`${child.type} ${child.name}`);
+    const action = norm(change.action), requested = norm(change.newType || ""), childIsEnsuite = !!child && /ensuite/i.test(`${child.type} ${child.name}`);
+    const isBedroomConversion = action === "converttobedroom" || requested === "bedroom";
+    if (isBedroomConversion) {
+      if (isBedroom(after) && isValidBedroomGeometry(after)) applied.push(change);
+      continue;
+    }
     if ((action === "splitroom" || action === "split") && child?.polygon?.length && isBedroom(child)) applied.push(change);
     else if (action === "converttoensuite" && childIsEnsuite && child.polygon?.length && after.polygon?.length) applied.push(change);
     else if (after.type !== before.type || after.name !== before.name) applied.push(change);
@@ -55,14 +67,19 @@ function applyAndCount(plan: FloorPlan, changes: RoomChange[]): { plan: FloorPla
 function groundConversionCandidates(plan: FloorPlan): Room[] {
   const ground = groundFloor(plan); if (!ground) return [];
   return ground.rooms
-    .filter(room => !isBedroom(room) && !isWetRoom(room) && !isKitchen(room) && roomArea(room) >= BEDROOM_MIN_SQM && hasWindow(room) && hasDoor(room) && !!room.polygon && room.polygon.length >= 3 && (isLiving(room) || isDining(room)))
+    .filter(room => !isBedroom(room) && !isWetRoom(room) && !isKitchen(room) && roomArea(room) >= BEDROOM_MIN_SQM && hasWindow(room) && !!room.polygon && room.polygon.length >= 3 && (isLiving(room) || isDining(room)))
     .sort((a, b) => roomArea(b) - roomArea(a));
 }
 function splitCandidates(plan: FloorPlan): Room[] {
   return allRooms(plan).filter(room => !isWetRoom(room) && !isKitchen(room) && roomArea(room) >= BEDROOM_MIN_SQM * 2 && hasWindow(room) && hasDoor(room) && !!room.polygon && room.polygon.length >= 3).sort((a, b) => roomArea(b) - roomArea(a));
 }
-function livingChange(room: Room): RoomChange { return { roomId: room.id, action: "ConvertToBedroom", newType: "bedroom", reason: "Deterministic maximum-bedroom search: ground-floor living/lounge/reception room meets geometry, opening and communal-space constraints." }; }
-function splitChange(room: Room): RoomChange { const direction = (room.windows || []).some(w => w.wall === "top" || w.wall === "bottom") ? "horizontal" : "vertical"; return { roomId: room.id, action: "SplitRoom", split: { firstName: room.name || "Bedroom", firstType: "bedroom", secondName: "Bedroom", secondType: "bedroom", direction, firstRatio: 0.5 }, reason: "Deterministic split search: both resulting polygons must independently satisfy the bedroom geometry rules." }; }
+function livingChange(room: Room): RoomChange {
+  return { roomId: room.id, action: "ConvertToBedroom", newType: "bedroom", newName: `Bedroom - ${room.name || "Converted Room"}`, reason: "Deterministic maximum-bedroom search: ground-floor living/lounge/dining space meets minimum bedroom geometry and a separate communal kitchen remains available." };
+}
+function splitChange(room: Room): RoomChange {
+  const direction = (room.windows || []).some(w => w.wall === "top" || w.wall === "bottom") ? "horizontal" : "vertical";
+  return { roomId: room.id, action: "SplitRoom", split: { firstName: room.name || "Bedroom", firstType: "bedroom", secondName: "Bedroom", secondType: "bedroom", direction, firstRatio: 0.5 }, reason: "Deterministic split search: both resulting polygons must independently satisfy the bedroom geometry rules." };
+}
 
 export type PlanningResult = { plan: FloorPlan; appliedChanges: RoomChange[]; rejectedChanges: RoomChange[]; bedrooms: number; ensuiteCandidates: RoomChange[] };
 
@@ -76,12 +93,14 @@ export function findMaximumHMO(plan: FloorPlan, aiChanges: RoomChange[] = []): P
     if (candidate.changesApplied.length && candidate.bedrooms >= beforeCount) { current = candidate.plan; appliedChanges.push(...candidate.changesApplied); } else rejectedChanges.push(change);
   }
 
+  // Search actual ground-floor communal rooms rather than relying on the AI to
+  // request every conversion. This makes the result property-specific.
   for (const room of groundConversionCandidates(current)) {
     if (!separateKitchenExists(current, room.id)) continue;
     const change = livingChange(room);
     const beforeCount = bedrooms(current).length;
     const candidate = applyAndCount(current, [change]);
-    if (!candidate.changesApplied.length || candidate.bedrooms <= beforeCount) continue;
+    if (!candidate.changesApplied.length || candidate.bedrooms <= beforeCount) { rejectedChanges.push(change); continue; }
     if (!meaningfulCommunalSpace(candidate.plan)) { rejectedChanges.push(change); continue; }
     current = candidate.plan;
     appliedChanges.push(...candidate.changesApplied);
