@@ -10,6 +10,7 @@ on:
       - fix/max-hmo-geometry-output
       - hmo-max-conversion
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
