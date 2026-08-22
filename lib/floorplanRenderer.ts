@@ -38,16 +38,29 @@ function fill(type: string): string {
 function renderRoom(room: any, label: string, isEnsuite = false, clipId?: string): string {
   const x = Number(room.x), y = Number(room.y), w = Number(room.width), h = Number(room.height);
   if (!(w > 0 && h > 0)) return "";
-  const badgeW = Math.max(1, Math.min(w - 6, Math.min(220, Math.max(48, w * 0.72))));
-  const badgeH = Math.max(18, Math.min(h - 6, 24));
+  const badgeW = Math.max(1, Math.min(w - 6, Math.min(220, Math.max(56, w * 0.72))));
+  const badgeH = Math.max(22, Math.min(h - 6, 28));
   const bx = x + (w - badgeW) / 2, by = y + (h - badgeH) / 2;
-  const font = Math.max(8, Math.min(16, Math.min(w, h) / 7));
+  const font = Math.max(9, Math.min(17, Math.min(w, h) / 7));
   const clip = clipId ? ` clip-path="url(#${clipId})"` : "";
   return `<g${clip}>
-    <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill(room.type || "")}" fill-opacity="0.22" stroke="${isEnsuite ? "#047857" : "#1d4ed8"}" stroke-width="3" stroke-dasharray="8 5"/>
-    <rect x="${bx}" y="${by}" width="${badgeW}" height="${badgeH}" rx="4" fill="#111827" fill-opacity="0.92"/>
-    <text x="${x + w / 2}" y="${y + h / 2 + font * 0.34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${font}" font-weight="700" fill="white">${escapeXml(label)}</text>
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill(room.type || "")}" fill-opacity="0.38" stroke="${isEnsuite ? "#047857" : "#1d4ed8"}" stroke-width="4" stroke-dasharray="10 6"/>
+    <rect x="${bx}" y="${by}" width="${badgeW}" height="${badgeH}" rx="5" fill="#111827" fill-opacity="0.96"/>
+    <text x="${x + w / 2}" y="${y + h / 2 + font * 0.34}" text-anchor="middle" font-family="Arial,sans-serif" font-size="${font}" font-weight="800" fill="white">${escapeXml(label)}</text>
   </g>`;
+}
+function renderDivider(a: any, b: any): string {
+  const ax = Number(a.x), ay = Number(a.y), aw = Number(a.width), ah = Number(a.height);
+  const bx = Number(b.x), by = Number(b.y), bw = Number(b.width), bh = Number(b.height);
+  const vertical = Math.abs((ax + aw) - bx) <= 2 || Math.abs((bx + bw) - ax) <= 2;
+  if (vertical) {
+    const x = Math.abs((ax + aw) - bx) <= 2 ? (ax + aw + bx) / 2 : (bx + bw + ax) / 2;
+    const top = Math.max(ay, by), bottom = Math.min(ay + ah, by + bh);
+    return `<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}" stroke="#047857" stroke-width="7"/>`;
+  }
+  const y = Math.abs((ay + ah) - by) <= 2 ? (ay + ah + by) / 2 : (by + bh + ay) / 2;
+  const left = Math.max(ax, bx), right = Math.min(ax + aw, bx + bw);
+  return `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="#047857" stroke-width="7"/>`;
 }
 export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, originalImageDataUri: string, changes: RoomChange[] = []): string {
   const width = original.metadata?.imageWidth ?? proposed.metadata?.imageWidth ?? 1600;
@@ -64,18 +77,23 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
     const clipId = `clip-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
     defs.push(`<clipPath id="${clipId}"><rect x="${Number(before.x)}" y="${Number(before.y)}" width="${Number(before.width)}" height="${Number(before.height)}"/></clipPath>`);
     const action = normaliseAction(change.action);
-    const label = action === "converttobedroom" ? (change.newName || "Bedroom") : action === "converttobathroom" ? (change.newName || "Shower Room") : action === "splitroom" ? (change.split?.firstName || after.name || "Bedroom") : after.name || after.type || "Proposed Room";
+    const label = action === "converttobedroom" ? (change.newName || "BEDROOM") : action === "converttobathroom" ? (change.newName || "SHOWER ROOM") : action === "splitroom" ? (change.split?.firstName || after.name || "BEDROOM") : after.name || after.type || "PROPOSED ROOM";
     overlays.push(renderRoom(after, label, false, clipId));
-    rendered.add(id);
     if (action === "converttoensuite") {
       const ensuite = proposedRooms.get(`${id}-ensuite`);
-      if (ensuite) overlays.push(renderRoom(ensuite, "EN-SUITE", true, clipId));
+      if (ensuite) overlays.push(renderRoom(ensuite, "EN-SUITE", true, clipId), renderDivider(after, ensuite));
     }
     if (action === "splitroom") {
       const second = [...proposedRooms.values()].find((candidate: any) => String(candidate?.notes || "").includes(`Created by split of ${before.id}`));
-      if (second) overlays.push(renderRoom(second, /ensuite|bath|shower/i.test(String(second.type || "")) ? "EN-SUITE" : (change.split?.secondName || "Bedroom"), /ensuite|bath|shower/i.test(String(second.type || "")), clipId));
+      if (second) {
+        const ensuite = /ensuite|bath|shower/i.test(String(second.type || ""));
+        overlays.push(renderRoom(second, ensuite ? "EN-SUITE" : (change.split?.secondName || "BEDROOM"), ensuite, clipId));
+        overlays.push(renderDivider(after, second));
+      }
     }
+    rendered.add(id);
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs>${defs.join("")}</defs><image href="${escapeXml(originalImageDataUri)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${overlays.join("")}</g></svg>`;
+  const legend = `<rect x="8" y="8" width="330" height="44" rx="8" fill="#111827" fill-opacity="0.94"/><text x="22" y="37" font-family="Arial,sans-serif" font-size="18" font-weight="800" fill="white">BLUE = BEDROOM  •  GREEN = EN-SUITE</text>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs>${defs.join("")}</defs><image href="${escapeXml(originalImageDataUri)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${overlays.join("")}</g>${legend}</svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
