@@ -38,6 +38,10 @@ function applyRoomLabels(floorPlan: any, labels: any[]): void {
       const allowed = new Set(["top", "bottom", "left", "right"]);
       room.windows = label.windowWalls.map((wall: any) => String(wall).toLowerCase()).filter((wall: string) => allowed.has(wall)).map((wall: "top" | "bottom" | "left" | "right") => ({ wall }));
     }
+    if (Array.isArray(label.doorWalls)) {
+      const allowed = new Set(["top", "bottom", "left", "right"]);
+      room.doors = label.doorWalls.map((wall: any) => String(wall).toLowerCase()).filter((wall: string) => allowed.has(wall)).map((wall: "top" | "bottom" | "left" | "right") => ({ wall }));
+    }
   }
 }
 
@@ -58,18 +62,13 @@ function recoverMissingRooms(floorPlan: any, labels: any[], detectedFloors: any[
     const floorName = String(label?.floor ?? "").trim().toLowerCase();
     const floorIndex = detectedFloors.findIndex((floor: any) => String(floor.name).trim().toLowerCase() === floorName);
     if (floorIndex < 0 || !label?.bbox) continue;
-
     let { x, y, width, height } = label.bbox;
     x = Number(x); y = Number(y); width = Number(width); height = Number(height);
     if ([x, y, width, height].some(value => !Number.isFinite(value))) continue;
-
     const imageWidth = Number(floorPlan.metadata?.imageWidth || 0);
     const imageHeight = Number(floorPlan.metadata?.imageHeight || 0);
     if (imageWidth <= 0 || imageHeight <= 0) continue;
-    if (Math.abs(x) <= 1 && Math.abs(y) <= 1 && Math.abs(width) <= 1 && Math.abs(height) <= 1) {
-      x *= imageWidth; y *= imageHeight; width *= imageWidth; height *= imageHeight;
-    }
-
+    if (Math.abs(x) <= 1 && Math.abs(y) <= 1 && Math.abs(width) <= 1 && Math.abs(height) <= 1) { x *= imageWidth; y *= imageHeight; width *= imageWidth; height *= imageHeight; }
     const sourceFloor = detectedFloors[floorIndex];
     const floorLeft = Number(sourceFloor.left ?? 0);
     const floorTop = Number(sourceFloor.top ?? 0);
@@ -79,37 +78,14 @@ function recoverMissingRooms(floorPlan: any, labels: any[], detectedFloors: any[
     y = Math.max(floorTop, Math.min(floorBottom - 1, y));
     width = Math.min(width, floorRight - x);
     height = Math.min(height, floorBottom - y);
-
     if (width < 25 || height < 25 || width * height > (floorRight - floorLeft) * (floorBottom - floorTop) * 0.55) continue;
     const aspect = Math.max(width / height, height / width);
     if (aspect > 6) continue;
-
     const floor = floorPlan.floors[floorIndex];
     const existing = floor.rooms.find((room: any) => intersectionRatio({ x, y, width, height }, room) >= 0.35);
-    if (existing) {
-      label.roomId = existing.id;
-      continue;
-    }
-
+    if (existing) { label.roomId = existing.id; continue; }
     const roomId = `room-recovered-${++recovered}`;
-    floor.rooms.push({
-      id: roomId,
-      name: "Unknown Room",
-      type: "unknown",
-      x: Math.round(x),
-      y: Math.round(y),
-      width: Math.round(width),
-      height: Math.round(height),
-      approxAreaSqm: Number(((width * height) / 10000).toFixed(1)),
-      approxWidthM: Number((width / 100).toFixed(1)),
-      approxDepthM: Number((height / 100).toFixed(1)),
-      shape: "rectangle",
-      adjacentRooms: [],
-      doors: [],
-      windows: [],
-      notes: "Recovered from visually validated room boundary because pixel segmentation missed the doorway-connected room.",
-      confidence: "Visual Geometry Recovery",
-    });
+    floor.rooms.push({ id: roomId, name: "Unknown Room", type: "unknown", x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height), approxAreaSqm: Number(((width * height) / 10000).toFixed(1)), approxWidthM: Number((width / 100).toFixed(1)), approxDepthM: Number((height / 100).toFixed(1)), shape: "rectangle", adjacentRooms: [], doors: [], windows: [], notes: "Recovered from visually validated room boundary because pixel segmentation missed the doorway-connected room.", confidence: "Visual Geometry Recovery" });
     label.roomId = roomId;
     label.geometryValid = true;
   }
@@ -135,15 +111,8 @@ function reconcileCurrentCounts(result: any, changes: any[], proposedFloorPlan?:
   if (!result.summary || typeof result.summary !== "object") result.summary = {};
   result.summary.bedrooms = detectedBedrooms;
   result.summary.bathrooms = detectedBathrooms;
-  if (proposedFloorPlan) {
-    result.summary.possibleHMOBedrooms = countRoomsByType(proposedFloorPlan, isBedroomType);
-    return;
-  }
-  const bedroomConversions = changes.filter((change: any) => {
-    if (!isBedroomChange(change)) return false;
-    const label = labels.find((candidate: any) => String(candidate?.roomId ?? "") === String(change?.roomId ?? ""));
-    return label?.geometryValid !== false && !isBedroomType(label?.type);
-  }).length;
+  if (proposedFloorPlan) { result.summary.possibleHMOBedrooms = countRoomsByType(proposedFloorPlan, isBedroomType); return; }
+  const bedroomConversions = changes.filter((change: any) => { if (!isBedroomChange(change)) return false; const label = labels.find((candidate: any) => String(candidate?.roomId ?? "") === String(change?.roomId ?? "")); return label?.geometryValid !== false && !isBedroomType(label?.type); }).length;
   result.summary.possibleHMOBedrooms = detectedBedrooms + bedroomConversions;
 }
 
@@ -160,10 +129,15 @@ function ensureLargeBedroomEnsuites(floorPlan: any, labels: any[], changes: any[
       const area = Number(room.approxAreaSqm || 0);
       if (!Number.isFinite(area) || area < 18) continue;
       if (output.some(change => String(change?.roomId ?? "") === room.id && (normaliseType(change?.action) === "splitroom" || normaliseType(change?.action) === "converttoensuite"))) continue;
+      const doorWalls = new Set((room.doors || []).map((door: any) => door.wall));
       const windowWalls = new Set((room.windows || []).map((window: any) => window.wall));
-      const direction: "horizontal" | "vertical" = windowWalls.has("bottom") || windowWalls.has("top") ? "horizontal" : "vertical";
+      let direction: "horizontal" | "vertical" = Number(room.width) >= Number(room.height) ? "horizontal" : "vertical";
+      if ((doorWalls.has("top") || doorWalls.has("bottom")) && !(doorWalls.has("left") || doorWalls.has("right"))) direction = "vertical";
+      else if ((doorWalls.has("left") || doorWalls.has("right")) && !(doorWalls.has("top") || doorWalls.has("bottom"))) direction = "horizontal";
+      else if (windowWalls.has("bottom") || windowWalls.has("top")) direction = "horizontal";
+      else direction = "vertical";
       const remainingRatio = 0.72;
-      output.push({ roomId: room.id, action: "SplitRoom", reason: `Large bedroom (${area.toFixed(1)} sqm) is a strong internal ensuite candidate. Retain approximately ${(remainingRatio * area).toFixed(1)} sqm as bedroom and place the compact ensuite on the internal side, preserving the bedroom's external window wall.`, split: { firstName: label.name || room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction, firstRatio: remainingRatio } });
+      output.push({ roomId: room.id, action: "SplitRoom", reason: `Large bedroom (${area.toFixed(1)} sqm) is a strong internal ensuite candidate. Retain approximately ${(remainingRatio * area).toFixed(1)} sqm as bedroom and place the compact ensuite on the internal side without blocking the existing entrance wall.`, split: { firstName: label.name || room.name || "Bedroom", firstType: "bedroom", secondName: "En-suite", secondType: "ensuite", direction, firstRatio: remainingRatio } });
     }
   }
   return output;
@@ -179,11 +153,7 @@ function isNoOpChange(change: any, floorPlan: any): boolean {
   const current = normaliseType(room.type);
   const explicit = normaliseType(change?.newType);
   let target = explicit;
-  if (!target) {
-    if (action === "converttobedroom") target = "bedroom";
-    else if (action === "converttokitchen") target = "kitchen";
-    else if (action === "converttobathroom") target = "bathroom";
-  }
+  if (!target) { if (action === "converttobedroom") target = "bedroom"; else if (action === "converttokitchen") target = "kitchen"; else if (action === "converttobathroom") target = "bathroom"; }
   if (!target) return false;
   if (target.includes("bedroom")) return current.includes("bedroom");
   if (target.includes("bath") || target.includes("shower") || target.includes("ensuite") || target === "wc" || target.includes("toilet")) return isBathroomType(room.type);
