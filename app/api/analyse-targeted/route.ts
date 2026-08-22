@@ -6,7 +6,7 @@ import { labelDetectedRooms } from "@/lib/floorDetection/labelDetectedRooms";
 import { detectFloors } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
 import { buildHMOTargetedDesignPrompt } from "@/lib/prompts/hmoTargetedDesignPrompt";
-import { buildMaximumHMOLayout } from "@/lib/hmoLayoutPipeline";
+import { buildTargetedHMOLayout } from "@/lib/targetedHMOLayout";
 import { finalRoomSummary } from "@/lib/hmoPlanner";
 import { normaliseHMOReport } from "@/lib/hmoReport";
 import { RoomChange } from "@/lib/types/floorPlan";
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     const labelled = structuredClone(original);
     if (Array.isArray(result.roomLabels)) applyLabels(labelled, result.roomLabels);
     const changes: RoomChange[] = Array.isArray(result.changes) ? result.changes : [];
-    const layout = buildMaximumHMOLayout(labelled, changes, requested);
+    const layout = buildTargetedHMOLayout(labelled, changes, requested);
     const current = finalRoomSummary(labelled);
     const originalImage = `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`;
     const report: any = normaliseHMOReport(result, labelled, layout.plan, current.bedrooms, layout.appliedChanges, layout.rejectedChanges, address, propertyType);
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
     report.proposedFloorPlan = layout.plan;
     report.changes = layout.appliedChanges;
     report.rejectedChanges = layout.rejectedChanges.map(c => ({ roomId: c.roomId, action: c.action, reason: "Rejected by deterministic geometry validation or target-count constraint." }));
-    report.geometryFeasibility = { ...(report.geometryFeasibility || {}), possible: layout.bedrooms >= requested, requestedBedrooms: requested, currentBedrooms: current.bedrooms, proposedBedrooms: layout.bedrooms, proposedEnsuites: layout.ensuites, appliedChanges: layout.appliedChanges.length, rejectedChanges: layout.rejectedChanges.length, finalBedroomIds: layout.bedroomIds, finalEnsuiteIds: layout.ensuiteIds };
+    report.geometryFeasibility = { ...(report.geometryFeasibility || {}), possible: layout.bedrooms === requested, requestedBedrooms: requested, currentBedrooms: current.bedrooms, proposedBedrooms: layout.bedrooms, proposedEnsuites: layout.ensuites, appliedChanges: layout.appliedChanges.length, rejectedChanges: layout.rejectedChanges.length, finalBedroomIds: layout.bedroomIds, finalEnsuiteIds: layout.ensuiteIds };
     report.highestPossibleHMO = { ...(report.highestPossibleHMO || {}), bedrooms: layout.bedrooms, ensuites: layout.ensuites, reason: `Requested ${requested}; deterministic geometry produced ${layout.bedrooms}.` };
     report.verdict = layout.bedrooms === requested ? `Requested ${requested}-bedroom HMO layout achieved and rendered from validated geometry, with ${layout.ensuites} private en-suite${layout.ensuites === 1 ? "" : "s"}.` : `Requested ${requested} bedrooms could not all be created inside the fixed footprint. The deterministic geometry engine produced ${layout.bedrooms} physically valid bedroom${layout.bedrooms === 1 ? "" : "s"} instead.`;
     report.generatedLayoutImage = renderFloorPlan(labelled, layout.plan, originalImage, layout.appliedChanges);
