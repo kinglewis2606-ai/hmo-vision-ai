@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - hmo-production
+      - hmo-pipeline-v2
       - fix/real-floorplan-pipeline
       - fix/max-hmo-geometry-output
   pull_request:
@@ -20,6 +22,21 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm run test:geometry
+      - name: Test HMO planner property-specific optimisation
+        run: |
+          rm -rf .hmo-planner-test
+          tsc --ignoreConfig tests/hmoPlanner.test.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-planner-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
+          node --test .hmo-planner-test/tests/hmoPlanner.test.js
+      - name: Test reference-style HMO layout pipeline
+        run: |
+          rm -rf .hmo-layout-test
+          tsc --ignoreConfig tests/hmoLayoutPipeline.test.ts lib/hmoLayoutPipeline.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-layout-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
+          node --test .hmo-layout-test/tests/hmoLayoutPipeline.test.js
+      - name: Test source-dependent HMO outcome
+        run: |
+          rm -rf .hmo-source-test
+          tsc --ignoreConfig tests/hmoPipelineSmoke.test.ts lib/hmoLayoutPipeline.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-source-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
+          node --test .hmo-source-test/tests/hmoPipelineSmoke.test.js
       - run: npm run build
       - name: Start production server
         run: |
@@ -35,13 +52,16 @@ jobs:
           done
           cat /tmp/hmo-next.log
           exit 1
-      - name: Verify pages render
+      - name: Verify pages render and deployment versioning is active
         run: |
-          curl --fail --silent --show-error http://127.0.0.1:3000/ | grep -q "HMO Vision AI"
+          curl --fail --silent --show-error http://127.0.0.1:3000/ > /tmp/home.html
+          grep -q "HMO Vision AI" /tmp/home.html
           curl --fail --silent --show-error http://127.0.0.1:3000/new > /tmp/new.html
           grep -q "Analyse a Property" /tmp/new.html
           grep -q "Upload Floor Plan" /tmp/new.html
           grep -q "Analyse Floor Plan" /tmp/new.html
+          grep -q "data-dpl-id=\"${GITHUB_SHA}\"" /tmp/home.html
+          grep -q "data-dpl-id=\"${GITHUB_SHA}\"" /tmp/new.html
       - name: Verify upload API is reachable
         run: |
           printf 'x' > /tmp/smoke.txt

@@ -54,15 +54,16 @@ export function buildOriginalFloorPlan(floors: DetectedFloor[], rooms: DetectedR
           const polygon = authoritativePolygon(room);
           const windowWalls = Array.from(new Set<WallSide>([...(room.openingWalls || []), ...exteriorFacingWalls(room, floorRooms)]));
           const doorWalls = inferredDoorWall(room, floorRooms);
+          const labelledRoom = room as DetectedRoom & { name?: string; type?: string; confidence?: string; approxAreaSqm?: number; approxWidthM?: number; approxDepthM?: number };
           return {
             id: room.id,
-            name: "Unknown Room",
-            type: "unknown",
+            name: labelledRoom.name || "Unknown Room",
+            type: labelledRoom.type || "unknown",
             x: room.x, y: room.y, width: room.width, height: room.height,
             polygon,
-            approxAreaSqm: Number(((room.width * room.height) / 10000).toFixed(1)),
-            approxWidthM: Number((room.width / 100).toFixed(1)),
-            approxDepthM: Number((room.height / 100).toFixed(1)),
+            approxAreaSqm: labelledRoom.approxAreaSqm ?? Number(((room.width * room.height) / 10000).toFixed(1)),
+            approxWidthM: labelledRoom.approxWidthM ?? Number((room.width / 100).toFixed(1)),
+            approxDepthM: labelledRoom.approxDepthM ?? Number((room.height / 100).toFixed(1)),
             shape: polygon.length > 4 ? "polygon" : "rectangle",
             adjacentRooms: getAdjacentRooms(room, floorRooms),
             doors: doorWalls.map(wall => ({ wall })),
@@ -71,7 +72,7 @@ export function buildOriginalFloorPlan(floors: DetectedFloor[], rooms: DetectedR
               windowWalls.length ? "Exterior-facing wall preserved as a potential window/opening wall" : "",
               doorWalls.length ? `Likely access wall inferred from shared geometry: ${doorWalls[0]}` : "",
             ].filter(Boolean).join("; "),
-            confidence: "Geometry Detection",
+            confidence: labelledRoom.confidence || "Geometry Detection",
           };
         }),
       };
