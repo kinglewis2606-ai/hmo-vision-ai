@@ -104,7 +104,11 @@ export async function POST(req: Request) {
     const prompt = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(original, null, 2));
     const image = await annotate(filePath, original);
     const response = await openai.responses.create({ model: "gpt-5", input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
-    const result = cleanJson(response.output_text || "{}"); const labelled = structuredClone(original); let labels = fallbackLabelsFromResult(result); let appliedLabelCount = applyLabels(labelled, labels);
+    const result = cleanJson(response.output_text || "{}");
+    const labelled = structuredClone(original);
+    const detectedGross = Number(result.grossFloorAreaSqm);
+    if (Number.isFinite(detectedGross) && detectedGross > 0) labelled.metadata = { ...(labelled.metadata || {}), grossFloorAreaSqm: detectedGross };
+    let labels = fallbackLabelsFromResult(result); let appliedLabelCount = applyLabels(labelled, labels);
     canonicaliseLabelTypes(labelled);
     const retryLabels = await classifyRoomsAgain(original, image);
     if (retryLabels.length === detectedRooms.length) {
@@ -122,7 +126,7 @@ export async function POST(req: Request) {
     }
     const mappedBedrooms = labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBedroom(`${r.type} ${r.name}`)).length;
     if (mappedBedrooms === 0 && detectedRooms.length > 0) return NextResponse.json({ success: false, error: "Room recognition completed, but the room labels could not be mapped back to the detected geometry after two classification passes." }, { status: 422 });
-    console.log(`HMO room mapping: detected=${detectedRooms.length}, labels=${labels.length}, mapped=${appliedLabelCount}, bedrooms=${mappedBedrooms}`);
+    console.log(`HMO room mapping: detected=${detectedRooms.length}, labels=${labels.length}, mapped=${appliedLabelCount}, bedrooms=${mappedBedrooms}, gross=${labelled.metadata?.grossFloorAreaSqm ?? "unknown"}`);
 
     const aiChanges: RoomChange[] = Array.isArray(result.changes) ? result.changes : [];
     console.log(`HMO AI strategy: ${aiChanges.length} proposed room transformation(s)`);
@@ -137,9 +141,9 @@ export async function POST(req: Request) {
     const report: any = normaliseHMOReport(result, labelled, proposed, currentBedrooms, appliedChanges, rejectedChanges, address, propertyType);
     report.originalFloorPlan = labelled; report.proposedFloorPlan = proposed; report.changes = appliedChanges;
     report.rejectedChanges = rejectedChanges.map(c => ({ roomId: c.roomId, action: c.action, reason: "Rejected by deterministic geometry validation." }));
-    report.summary = { ...(report.summary || {}), bedrooms: currentBedrooms, bathrooms: labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length, possibleHMOBedrooms: final.bedrooms };
+    report.summary = { ...(report.summary || {}), bedrooms: currentBedrooms, bathrooms: labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length, possibleHMOBedrooms: final.bedrooms, grossFloorAreaSqm: labelled.metadata?.grossFloorAreaSqm || 0 };
     report.highestPossibleHMO = { ...(report.highestPossibleHMO || {}), bedrooms: final.bedrooms, ensuites: final.ensuites, reason: `Highest bedroom count surviving deterministic geometry validation: ${final.bedrooms}; ${final.ensuites} private ensuites physically applied.` };
-    report.geometryFeasibility = { ...(report.geometryFeasibility || {}), possible: final.bedrooms > 0, currentBedrooms, proposedBedrooms: final.bedrooms, proposedEnsuites: final.ensuites, appliedChanges: appliedChanges.length, rejectedChanges: rejectedChanges.length, finalBedroomIds: final.bedroomIds, finalEnsuiteIds: final.ensuiteIds };
+    report.geometryFeasibility = { ...(report.geometryFeasibility || {}), possible: final.bedrooms > 0 && layout.grossAreaAudit.roomGeometryAreaConserved, currentBedrooms, proposedBedrooms: final.bedrooms, proposedEnsuites: final.ensuites, appliedChanges: appliedChanges.length, rejectedChanges: rejectedChanges.length, finalBedroomIds: final.bedroomIds, finalEnsuiteIds: final.ensuiteIds, grossAreaAudit: layout.grossAreaAudit };
     report.recommendedLayout = appliedLayout(labelled, proposed, appliedChanges).length ? report.recommendedLayout : ["No valid proposed geometry was applied."];
     report.conversionSteps = report.recommendedLayout;
     report.verdict = final.bedrooms > currentBedrooms ? `Maximum geometry-feasible ${final.bedrooms}-bedroom HMO layout selected, with ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Planning/licensing/building-control approval still requires professional/local-authority confirmation.` : `Final deterministic geometry supports ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}; no higher-bedroom transformation survived geometry validation.`;

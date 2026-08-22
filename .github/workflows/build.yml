@@ -8,7 +8,9 @@ on:
       - hmo-pipeline-v2
       - fix/real-floorplan-pipeline
       - fix/max-hmo-geometry-output
+      - hmo-max-conversion
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,21 +24,26 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm run test:geometry
-      - name: Test HMO planner property-specific optimisation
+      - name: Test HMO planner geometry invariants
         run: |
           rm -rf .hmo-planner-test
           tsc --ignoreConfig tests/hmoPlanner.test.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-planner-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
           node --test .hmo-planner-test/tests/hmoPlanner.test.js
-      - name: Test reference-style HMO layout pipeline
+      - name: Test generic HMO layout geometry invariants
         run: |
           rm -rf .hmo-layout-test
           tsc --ignoreConfig tests/hmoLayoutPipeline.test.ts lib/hmoLayoutPipeline.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-layout-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
           node --test .hmo-layout-test/tests/hmoLayoutPipeline.test.js
-      - name: Test source-dependent HMO outcome
+      - name: Test generic source-dependent HMO outcome
         run: |
           rm -rf .hmo-source-test
           tsc --ignoreConfig tests/hmoPipelineSmoke.test.ts lib/hmoLayoutPipeline.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-source-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
           node --test .hmo-source-test/tests/hmoPipelineSmoke.test.js
+      - name: Test target-bedroom HMO selection
+        run: |
+          rm -rf .hmo-target-test
+          tsc --ignoreConfig tests/targetedHMOLayout.test.ts lib/targetedHMOLayout.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-target-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
+          node --test .hmo-target-test/tests/targetedHMOLayout.test.js
       - run: npm run build
       - name: Start production server
         run: |
@@ -60,6 +67,10 @@ jobs:
           grep -q "Analyse a Property" /tmp/new.html
           grep -q "Upload Floor Plan" /tmp/new.html
           grep -q "Analyse Floor Plan" /tmp/new.html
+          curl --fail --silent --show-error http://127.0.0.1:3000/new-targeted > /tmp/targeted.html
+          grep -q "Create the HMO you want" /tmp/targeted.html
+          grep -q "Target HMO Bedrooms" /tmp/targeted.html
+          grep -q "Create 6-Bedroom HMO Layout" /tmp/targeted.html
           grep -q "data-dpl-id=\"${GITHUB_SHA}\"" /tmp/home.html
           grep -q "data-dpl-id=\"${GITHUB_SHA}\"" /tmp/new.html
       - name: Verify upload API is reachable
@@ -68,11 +79,14 @@ jobs:
           status=$(curl --silent --output /tmp/upload.json --write-out "%{http_code}" -X POST -F 'file=@/tmp/smoke.txt;type=text/plain' http://127.0.0.1:3000/api/upload)
           test "$status" = "400"
           grep -Eq 'Unsupported file type|No file uploaded' /tmp/upload.json
-      - name: Verify analysis API initializes
+      - name: Verify analysis APIs initialize
         run: |
           status=$(curl --silent --output /tmp/analyse.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse)
           test "$status" = "400"
           grep -Eq 'No uploaded file|Invalid uploaded filename|Missing' /tmp/analyse.json
+          status=$(curl --silent --output /tmp/targeted.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse-targeted)
+          test "$status" = "400"
+          grep -Eq 'Invalid uploaded filename|Choose a target' /tmp/targeted.json
       - name: Verify server remains alive
         run: kill -0 $(cat /tmp/hmo-next.pid)
       - name: Show server log on failure
