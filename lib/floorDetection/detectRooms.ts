@@ -4,6 +4,8 @@ import { DetectedRoom, DetectedFloor } from "@/lib/types/floorPlan";
 const DARK_THRESHOLD = 130;
 const DILATION_SIZE = 5;
 const MAX_ANALYSIS_DIMENSION = 1000;
+const MIN_BOUNDARY_COVERAGE = 0.28;
+const MIN_STRONG_SIDES = 3;
 
 interface Region {
   area: number;
@@ -75,6 +77,61 @@ function dilateBinary(
   return output;
 }
 
+function sideCoverage(
+  barrier: Uint8Array,
+  width: number,
+  height: number,
+  region: Region,
+  side: "top" | "bottom" | "left" | "right"
+): number {
+  const band = 4;
+  let dark = 0;
+  let total = 0;
+
+  if (side === "top" || side === "bottom") {
+    const yStart = side === "top" ? Math.max(0, region.y - band) : Math.min(height - 1, region.y + region.height);
+    const yEnd = side === "top" ? Math.min(height - 1, region.y - 1) : Math.min(height - 1, region.y + region.height + band - 1);
+    for (let y = yStart; y <= yEnd; y++) {
+      for (let x = region.x; x < region.x + region.width; x++) {
+        if (x < 0 || x >= width) continue;
+        total++;
+        if (barrier[y * width + x]) dark++;
+      }
+    }
+  } else {
+    const xStart = side === "left" ? Math.max(0, region.x - band) : Math.min(width - 1, region.x + region.width);
+    const xEnd = side === "left" ? Math.min(width - 1, region.x - 1) : Math.min(width - 1, region.x + region.width + band - 1);
+    for (let x = xStart; x <= xEnd; x++) {
+      for (let y = region.y; y < region.y + region.height; y++) {
+        if (y < 0 || y >= height) continue;
+        total++;
+        if (barrier[y * width + x]) dark++;
+      }
+    }
+  }
+
+  return total ? dark / total : 0;
+}
+
+function hasStrongWallBoundary(
+  barrier: Uint8Array,
+  width: number,
+  height: number,
+  region: Region
+): boolean {
+  const sides = [
+    sideCoverage(barrier, width, height, region, "top"),
+    sideCoverage(barrier, width, height, region, "bottom"),
+    sideCoverage(barrier, width, height, region, "left"),
+    sideCoverage(barrier, width, height, region, "right"),
+  ];
+
+  const strongSides = sides.filter(value => value >= MIN_BOUNDARY_COVERAGE).length;
+  const average = sides.reduce((sum, value) => sum + value, 0) / sides.length;
+
+  return strongSides >= MIN_STRONG_SIDES && average >= 0.36;
+}
+
 function findEnclosedRegions(
   barrier: Uint8Array,
   width: number,
@@ -140,7 +197,12 @@ function findEnclosedRegions(
   return regions;
 }
 
-function isRoomRegion(region: Region, floorWidth: number, floorHeight: number): boolean {
+function isRoomRegion(
+  region: Region,
+  floorWidth: number,
+  floorHeight: number,
+  barrier: Uint8Array
+): boolean {
   const floorArea = floorWidth * floorHeight;
   const fraction = region.area / floorArea;
   const aspect = Math.max(
@@ -153,7 +215,8 @@ function isRoomRegion(region: Region, floorWidth: number, floorHeight: number): 
     fraction <= 0.18 &&
     region.width >= 8 &&
     region.height >= 8 &&
-    aspect <= 6
+    aspect <= 6 &&
+    hasStrongWallBoundary(barrier, floorWidth, floorHeight, region)
   );
 }
 
@@ -222,7 +285,7 @@ export async function detectRooms(
     }
 
     const regions = findEnclosedRegions(local, floorWidth, floorHeight)
-      .filter(region => isRoomRegion(region, floorWidth, floorHeight));
+      .filter(region => isRoomRegion(region, floorWidth, floorHeight, local));
     const uniqueRegions = dedupeRegions(regions);
 
     for (const region of uniqueRegions) {
@@ -235,7 +298,7 @@ export async function detectRooms(
       });
     }
 
-    console.log(`${floor.name}: ${uniqueRegions.length} enclosed room regions`);
+    console.log(`${floor.name}: ${uniqueRegions.length} enclosed room regions with strong wall boundaries`);
   }
 
   console.log(`Detected ${rooms.length} rooms from real pixel geometry`);
