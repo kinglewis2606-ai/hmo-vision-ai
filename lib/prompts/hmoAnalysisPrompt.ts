@@ -38,6 +38,7 @@ For EVERY detected candidate return exactly one roomLabels item. Read the visibl
 - Landing / Hall / Entrance / stairs -> circulation
 Every roomLabels.roomId must exist in the JSON and every roomLabels.floor must exactly match the JSON floor.
 windowWalls must list only clearly visible external window walls from: top,bottom,left,right. Do not invent windows.
+doorWalls must list only clearly visible bedroom entrance-door walls from: top,bottom,left,right. If no door wall can be identified confidently, return [].
 
 MAXIMUM-VIABLE-HMO OPTIMISATION — MANDATORY
 Do not choose the first acceptable HMO. Enumerate the viable options from the actual geometry: existing bedroom count, +1, +2, +3 and higher while suitable rooms remain. The selected option must be the highest practical bedroom count that still leaves a defensible communal area, access/escape and wet-room provision.
@@ -65,18 +66,20 @@ For every existing OR proposed bedroom large enough for an internal ensuite, act
 
 DOOR / ACCESS RULE — CRITICAL
 Never place an ensuite partition through a visible door, doorway swing, stair opening or required circulation route.
-- Before selecting the split direction, inspect the actual floor-plan image for the bedroom entrance door.
+- Before selecting the split direction, inspect the actual floor-plan image for the bedroom entrance door and return its wall in doorWalls.
 - The bedroom portion must retain its existing entrance and a usable path from the entrance into the bedroom.
 - The ensuite must be placed on an internal wall/end that does NOT occupy the existing bedroom doorway.
-- If a proposed split would cut across the doorway or trap the bedroom behind the ensuite, reject that split and try the opposite direction/end.
+- If the bedroom entrance door is on the TOP or BOTTOM wall, do NOT use a HORIZONTAL ensuite split. Use a VERTICAL split so the entrance wall remains intact, provided the resulting bedroom remains large enough.
+- If the bedroom entrance door is on the LEFT or RIGHT wall, do NOT use a VERTICAL ensuite split. Use a HORIZONTAL split so the entrance wall remains intact, provided the resulting bedroom remains large enough.
+- If both possible directions conflict with the door/access route, reject the ensuite rather than inventing a physically impossible partition.
 - If no physically safe ensuite position can be established from the image, do NOT invent one just to satisfy the ensuite rule.
 
 WINDOW / NATURAL LIGHT RULE
 Always preserve the bedroom's external window wall.
-- If windowWalls contains bottom only, the bedroom portion must remain on the bottom/external side and the ensuite must be above it.
-- If windowWalls contains top only, the bedroom portion must remain on the top/external side and the ensuite must be below it.
-- If windowWalls contains left only, the bedroom portion must remain on the left/external side and the ensuite must be to the right.
-- If windowWalls contains right only, the bedroom portion must remain on the right/external side and the ensuite must be to the left.
+- If windowWalls contains bottom only, the bedroom portion must remain on the bottom/external side where the split direction permits; otherwise use the perpendicular split and retain a usable portion of the window wall.
+- If windowWalls contains top only, the bedroom portion must remain on the top/external side where the split direction permits; otherwise use the perpendicular split and retain a usable portion of the window wall.
+- If windowWalls contains left only, the bedroom portion must remain on the left/external side where the split direction permits; otherwise use the perpendicular split and retain a usable portion of the window wall.
+- If windowWalls contains right only, the bedroom portion must remain on the right/external side where the split direction permits; otherwise use the perpendicular split and retain a usable portion of the window wall.
 - Never recommend an ensuite that removes or isolates the bedroom's principal window, materially reduces usable natural light/ventilation, or compromises escape/access.
 - If no window wall is confidently visible, do not claim that a window has been preserved; choose the most conservative internal split or reject the ensuite.
 
@@ -109,15 +112,16 @@ FINAL SELF-CHECK
 6. If a higher option is rejected, give a concrete geometry, amenity, escape, fire, planning or licensing reason in highestPossibleHMO.reason and the verdict.
 7. For every bedroom around 18 sqm+, explicitly decide whether it gets an ensuite and state why.
 8. Check the bedroom entrance door before every ensuite split; never partition through the door or its access route.
-9. Every ID exists and every floor matches.
-10. Every proposed conversion appears exactly once.
-11. Bedroom windows remain with the bedroom portion after ensuite splits.
-12. No proposed room lies outside the original source room rectangle.
-13. hmoScore, verdict, highestPossibleHMO, investorSummary, rent, cost and changes describe the SAME selected option.
+9. For a bedroom with a TOP/BOTTOM entrance door, SplitRoom direction must be VERTICAL; for LEFT/RIGHT entrance door, SplitRoom direction must be HORIZONTAL.
+10. Every ID exists and every floor matches.
+11. Every proposed conversion appears exactly once.
+12. Bedroom windows remain with the bedroom portion after ensuite splits.
+13. No proposed room lies outside the original source room rectangle.
+14. hmoScore, verdict, highestPossibleHMO, investorSummary, rent, cost and changes describe the SAME selected option.
 
 RETURN JSON ONLY:
 {
-  "roomLabels": [{"roomId":"","name":"","type":"","floor":"","confidence":"","geometryValid":true,"windowWalls":[]}],
+  "roomLabels": [{"roomId":"","name":"","type":"","floor":"","confidence":"","geometryValid":true,"windowWalls":[],"doorWalls":[]}],
   "summary": {"bedrooms":0,"bathrooms":0,"possibleHMOBedrooms":0,"kitchen":false,"livingRoom":false,"confidence":""},
   "changes": [{"roomId":"","action":"","newName":"","newType":"","reason":"","split":{"firstName":"","firstType":"","secondName":"","secondType":"","direction":"vertical","firstRatio":0.7}}],
   "hmoScore":0,
