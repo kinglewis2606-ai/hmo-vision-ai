@@ -8,6 +8,7 @@ on:
       - hmo-pipeline-v2
       - fix/real-floorplan-pipeline
       - fix/max-hmo-geometry-output
+      - hmo-max-conversion
   pull_request:
 
 jobs:
@@ -22,17 +23,17 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm run test:geometry
-      - name: Test HMO planner property-specific optimisation
+      - name: Test HMO planner geometry invariants
         run: |
           rm -rf .hmo-planner-test
           tsc --ignoreConfig tests/hmoPlanner.test.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-planner-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
           node --test .hmo-planner-test/tests/hmoPlanner.test.js
-      - name: Test reference-style HMO layout pipeline
+      - name: Test generic HMO layout geometry invariants
         run: |
           rm -rf .hmo-layout-test
           tsc --ignoreConfig tests/hmoLayoutPipeline.test.ts lib/hmoLayoutPipeline.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-layout-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
           node --test .hmo-layout-test/tests/hmoLayoutPipeline.test.js
-      - name: Test source-dependent HMO outcome
+      - name: Test generic source-dependent HMO outcome
         run: |
           rm -rf .hmo-source-test
           tsc --ignoreConfig tests/hmoPipelineSmoke.test.ts lib/hmoLayoutPipeline.ts lib/hmoPlanner.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/types/floorPlan.ts --outDir .hmo-source-test --rootDir . --module Node16 --moduleResolution Node16 --target es2020 --esModuleInterop --types node --skipLibCheck
