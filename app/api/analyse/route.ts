@@ -100,13 +100,6 @@ function isNoOpChange(change: any, floorPlan: any): boolean {
   return current === target;
 }
 
-/*
- * The model's prose and its `changes` array can disagree. That is unacceptable:
- * the rendered plan and the investor numbers must come from the same applied geometry.
- * When a property has separate kitchen + dining and two suitable ground-floor
- * living/lounge/reception rooms, both are explicit, physically bounded bedroom
- * conversion candidates. Preserve the kitchen and dining room as communal space.
- */
 function enforceGroundFloorConversions(floorPlan: any, labels: any[], changes: any[]): any[] {
   const output = [...changes];
   const ground = floorPlan.floors.find((floor: any) => String(floor.name).toLowerCase() === "ground floor");
@@ -212,7 +205,15 @@ export async function POST(req: Request) {
     originalFloorPlan.metadata = { imageWidth: imageMetadata.width, imageHeight: imageMetadata.height, imageDpi: imageMetadata.density };
     const promptText = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(originalFloorPlan, null, 2));
     const annotated = await buildAnnotatedAnalysisImage(filePath, originalFloorPlan);
-    const response = await openai.responses.create({ model: "gpt-5", input: [{ role: "user", content: [{ type: "input_text", text: promptText }, { type: "input_image", image_url: annotated.dataUri, detail: "high" }] }] });
+
+    // gpt-5 was intermittently taking longer than the UI's four-minute request window.
+    // gpt-4.1 is the proven vision-capable model used by the earlier working analyser and
+    // is fast enough for this structured room/geometry task while retaining high-detail vision.
+    const response = await openai.responses.create({
+      model: "gpt-4.1",
+      max_output_tokens: 6000,
+      input: [{ role: "user", content: [{ type: "input_text", text: promptText }, { type: "input_image", image_url: annotated.dataUri, detail: "high" }] }]
+    });
     const cleaned = (response.output_text ?? "").replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim();
 
     try {
