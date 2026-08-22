@@ -2,9 +2,13 @@ import { loadImage } from "./loadImage";
 import { DetectedRoom, DetectedFloor } from "@/lib/types/floorPlan";
 
 const DARK_THRESHOLD = 130;
-const DILATION_SIZE = 5;
+// Door openings are intentional gaps in otherwise continuous walls. A small
+// square dilation was leaving those gaps open, causing flood-fill to merge a
+// bedroom into the hall and then reject the oversized region. Use a fast
+// separable dilation to close normal door gaps without the O(n*r^2) cost.
+const DOOR_CLOSING_SIZE = 17;
 const MAX_ANALYSIS_DIMENSION = 1000;
-const MIN_BOUNDARY_COVERAGE = 0.28;
+const MIN_BOUNDARY_COVERAGE = 0.22;
 const MIN_STRONG_SIDES = 3;
 
 interface Region {
@@ -46,31 +50,33 @@ function resizeNearest(
   return { data: output, width: outWidth, height: outHeight };
 }
 
-function dilateBinary(
-  source: Uint8Array,
-  width: number,
-  height: number,
-  size: number
-): Uint8Array {
+function dilateBinary(source: Uint8Array, width: number, height: number, size: number): Uint8Array {
   const radius = Math.floor(size / 2);
+  const horizontal = new Uint8Array(source.length);
   const output = new Uint8Array(source.length);
 
+  // Horizontal max filter using a prefix sum: O(width * height).
+  const prefix = new Int32Array(width + 1);
   for (let y = 0; y < height; y++) {
+    prefix[0] = 0;
+    const row = y * width;
+    for (let x = 0; x < width; x++) prefix[x + 1] = prefix[x] + source[row + x];
     for (let x = 0; x < width; x++) {
-      let found = false;
-      for (let dy = -radius; dy <= radius && !found; dy++) {
-        const yy = y + dy;
-        if (yy < 0 || yy >= height) continue;
-        for (let dx = -radius; dx <= radius; dx++) {
-          const xx = x + dx;
-          if (xx < 0 || xx >= width) continue;
-          if (source[yy * width + xx]) {
-            found = true;
-            break;
-          }
-        }
-      }
-      output[y * width + x] = found ? 1 : 0;
+      const left = Math.max(0, x - radius);
+      const right = Math.min(width - 1, x + radius);
+      horizontal[row + x] = prefix[right + 1] - prefix[left] > 0 ? 1 : 0;
+    }
+  }
+
+  // Vertical max filter using the same technique.
+  const columnPrefix = new Int32Array(height + 1);
+  for (let x = 0; x < width; x++) {
+    columnPrefix[0] = 0;
+    for (let y = 0; y < height; y++) columnPrefix[y + 1] = columnPrefix[y] + horizontal[y * width + x];
+    for (let y = 0; y < height; y++) {
+      const top = Math.max(0, y - radius);
+      const bottom = Math.min(height - 1, y + radius);
+      output[y * width + x] = columnPrefix[bottom + 1] - columnPrefix[top] > 0 ? 1 : 0;
     }
   }
 
@@ -113,12 +119,7 @@ function sideCoverage(
   return total ? dark / total : 0;
 }
 
-function hasStrongWallBoundary(
-  barrier: Uint8Array,
-  width: number,
-  height: number,
-  region: Region
-): boolean {
+function hasStrongWallBoundary(barrier: Uint8Array, width: number, height: number, region: Region): boolean {
   const sides = [
     sideCoverage(barrier, width, height, region, "top"),
     sideCoverage(barrier, width, height, region, "bottom"),
@@ -128,16 +129,11 @@ function hasStrongWallBoundary(
 
   const strongSides = sides.filter(value => value >= MIN_BOUNDARY_COVERAGE).length;
   const average = sides.reduce((sum, value) => sum + value, 0) / sides.length;
-
-  return strongSides >= MIN_STRONG_SIDES && average >= 0.36;
+  return strongSides >= MIN_STRONG_SIDES && average >= 0.30;
 }
 
-function findEnclosedRegions(
-  barrier: Uint8Array,
-  width: number,
-  height: number
-): Region[] {
-  const closed = dilateBinary(barrier, width, height, DILATION_SIZE);
+function findEnclosedRegions(barrier: Uint8Array, width: number, height: number): Region[] {
+  const closed = dilateBinary(barrier, width, height, DOOR_CLOSING_SIZE);
   const visited = new Uint8Array(width * height);
   const queue = new Int32Array(width * height);
   const regions: Region[] = [];
@@ -197,12 +193,7 @@ function findEnclosedRegions(
   return regions;
 }
 
-function isRoomRegion(
-  region: Region,
-  floorWidth: number,
-  floorHeight: number,
-  barrier: Uint8Array
-): boolean {
+function isRoomRegion(region: Region, floorWidth: number, floorHeight: number, barrier: Uint8Array): boolean {
   const floorArea = floorWidth * floorHeight;
   const fraction = region.area / floorArea;
   const aspect = Math.max(
@@ -211,7 +202,7 @@ function isRoomRegion(
   );
 
   return (
-    region.area >= Math.max(80, floorArea * 0.008) &&
+    region.area >= Math.max(80, floorArea * 0.006) &&
     fraction <= 0.18 &&
     region.width >= 8 &&
     region.height >= 8 &&
@@ -234,17 +225,13 @@ function dedupeRegions(regions: Region[]): Region[] {
       const smaller = Math.min(region.width * region.height, existing.width * existing.height);
       return smaller > 0 && intersection / smaller > 0.75;
     });
-
     if (!overlaps) kept.push(region);
   }
 
   return kept.sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
-export async function detectRooms(
-  imagePath: string,
-  floors: DetectedFloor[]
-): Promise<DetectedRoom[]> {
+export async function detectRooms(imagePath: string, floors: DetectedFloor[]): Promise<DetectedRoom[]> {
   if (!floors?.length) {
     console.log("Room detector received no floor bounds");
     return [];
@@ -254,9 +241,7 @@ export async function detectRooms(
   const scale = Math.max(1, Math.ceil(Math.max(image.width, image.height) / MAX_ANALYSIS_DIMENSION));
   const source = resizeNearest(buildBarrier(image.data), image.width, image.height, scale);
 
-  console.log(
-    `Room geometry analysis: ${image.width}x${image.height} -> ${source.width}x${source.height} (scale ${scale})`
-  );
+  console.log(`Room geometry analysis: ${image.width}x${image.height} -> ${source.width}x${source.height} (scale ${scale})`);
 
   const rooms: DetectedRoom[] = [];
   let nextId = 1;
@@ -298,9 +283,9 @@ export async function detectRooms(
       });
     }
 
-    console.log(`${floor.name}: ${uniqueRegions.length} enclosed room regions with strong wall boundaries`);
+    console.log(`${floor.name}: ${uniqueRegions.length} room regions after door-gap closing`);
   }
 
-  console.log(`Detected ${rooms.length} rooms from real pixel geometry`);
+  console.log(`Detected ${rooms.length} rooms from wall geometry`);
   return rooms;
 }
