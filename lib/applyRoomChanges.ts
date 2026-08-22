@@ -43,13 +43,28 @@ function splitRatio(change: RoomChange): number {
   return Math.min(0.9, Math.max(0.1, raw));
 }
 
+function safeEnsuiteDirection(room: Room, requestedDirection: "horizontal" | "vertical"): "horizontal" | "vertical" {
+  const doorWalls = new Set((room.doors || []).map(door => door.wall));
+  const hasHorizontalDoorWall = doorWalls.has("top") || doorWalls.has("bottom");
+  const hasVerticalDoorWall = doorWalls.has("left") || doorWalls.has("right");
+
+  // A horizontal partition runs through the top/bottom walls. If the bedroom
+  // entrance is on one of those walls, that partition can block the doorway.
+  // Force a vertical partition instead. Conversely, left/right entrances need
+  // a horizontal partition.
+  if (hasHorizontalDoorWall && !hasVerticalDoorWall) return "vertical";
+  if (hasVerticalDoorWall && !hasHorizontalDoorWall) return "horizontal";
+  return requestedDirection;
+}
+
 function splitRoom(floor: any, room: Room, change: RoomChange): void {
-  const direction = change.split?.direction || "vertical";
+  const requestedDirection = change.split?.direction || "vertical";
   const ratio = splitRatio(change);
   const originalWidth = room.width;
   const originalHeight = room.height;
   const secondType = String(change.split?.secondType || "bedroom").toLowerCase();
   const isEnsuiteSplit = secondType.includes("ensuite") || secondType.includes("bath") || secondType.includes("shower");
+  const direction = isEnsuiteSplit ? safeEnsuiteDirection(room, requestedDirection) : requestedDirection;
   const windowWalls = new Set((room.windows || []).map(window => window.wall));
 
   if (isEnsuiteSplit && direction === "horizontal") {
@@ -66,8 +81,6 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
       room.height = bedroomHeight;
       floor.rooms.push(makeSplitRoom(room, change, room.x, room.y + bedroomHeight, originalWidth, ensuiteHeight));
     } else {
-      // When window detection is unavailable, default to the bedroom on the
-      // lower/external side and put the ensuite at the internal/top end.
       room.y = room.y + ensuiteHeight;
       room.height = bedroomHeight;
       floor.rooms.push(makeSplitRoom(room, change, room.x, room.y - ensuiteHeight, originalWidth, ensuiteHeight));
@@ -75,7 +88,7 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
 
     room.type = change.split?.firstType || "bedroom";
     room.name = change.split?.firstName || room.name || "Bedroom";
-    room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite placed internally"].filter(Boolean).join("; ");
+    room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite placed internally; entrance wall preserved"].filter(Boolean).join("; ");
     return;
   }
 
@@ -99,7 +112,7 @@ function splitRoom(floor: any, room: Room, change: RoomChange): void {
 
     room.type = change.split?.firstType || "bedroom";
     room.name = change.split?.firstName || room.name || "Bedroom";
-    room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite placed internally"].filter(Boolean).join("; ");
+    room.notes = [room.notes, "Bedroom portion retains external window wall; ensuite placed internally; entrance wall preserved"].filter(Boolean).join("; ");
     return;
   }
 
@@ -126,10 +139,40 @@ function addEnsuite(floor: any, room: Room, change: RoomChange): void {
   if (floor.rooms.some((candidate: Room) => candidate.id === `${room.id}-ensuite`)) return;
   const original = structuredClone(room);
   const windowWalls = new Set((original.windows || []).map(window => window.wall));
+  const doorWalls = new Set((original.doors || []).map(door => door.wall));
   const ratio = 0.28;
   let ensuite: Room;
 
-  if (windowWalls.has("bottom") && !windowWalls.has("top")) {
+  // Keep the existing entrance wall with the bedroom. Prefer an internal end
+  // perpendicular to that wall rather than placing a new partition through it.
+  const keepVerticalDoorWall = doorWalls.has("left") || doorWalls.has("right");
+  const keepHorizontalDoorWall = doorWalls.has("top") || doorWalls.has("bottom");
+
+  if (keepHorizontalDoorWall && !keepVerticalDoorWall) {
+    const h = Math.max(1, Math.round(original.height * ratio));
+    const bedroomKeepsBottom = windowWalls.has("bottom") && !windowWalls.has("top");
+    if (bedroomKeepsBottom) {
+      room.y = original.y;
+      room.height = original.height - h;
+      ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: original.y + room.height, height: h, windows: [] };
+    } else {
+      room.y = original.y + h;
+      room.height = original.height - h;
+      ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", y: original.y, height: h, windows: [] };
+    }
+  } else if (keepVerticalDoorWall && !keepHorizontalDoorWall) {
+    const w = Math.max(1, Math.round(original.width * ratio));
+    const bedroomKeepsRight = windowWalls.has("right") && !windowWalls.has("left");
+    if (bedroomKeepsRight) {
+      room.x = original.x + w;
+      room.width = original.width - w;
+      ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x, width: w, windows: [] };
+    } else {
+      room.x = original.x;
+      room.width = original.width - w;
+      ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x + room.width, width: w, windows: [] };
+    }
+  } else if (windowWalls.has("bottom") && !windowWalls.has("top")) {
     const h = Math.max(1, Math.round(original.height * ratio));
     room.y = original.y;
     room.height = original.height - h;
@@ -150,8 +193,6 @@ function addEnsuite(floor: any, room: Room, change: RoomChange): void {
     room.width = original.width - w;
     ensuite = { ...original, id: `${original.id}-ensuite`, name: change.newName || "En-suite", type: "ensuite", x: original.x, width: w, windows: [] };
   } else {
-    // No reliable window wall: keep the bedroom on the lower/external side
-    // and place the ensuite at the internal/top end.
     const h = Math.max(1, Math.round(original.height * ratio));
     room.y = original.y + h;
     room.height = original.height - h;
@@ -160,10 +201,10 @@ function addEnsuite(floor: any, room: Room, change: RoomChange): void {
 
   room.type = "bedroom";
   room.name = original.name;
-  room.notes = [room.notes, "Bedroom retained with external window preserved; ensuite formed internally"].filter(Boolean).join("; ");
+  room.notes = [room.notes, "Bedroom retained with external window preserved; ensuite formed internally without blocking the entrance wall"].filter(Boolean).join("; ");
   room.adjacentRooms = Array.from(new Set([...(room.adjacentRooms || []), ensuite.id]));
   ensuite.adjacentRooms = Array.from(new Set([...(ensuite.adjacentRooms || []), room.id]));
-  ensuite.notes = [original.notes, `Proposed ensuite for ${original.id}`, "Placed on internal side away from bedroom window"].filter(Boolean).join("; ");
+  ensuite.notes = [original.notes, `Proposed ensuite for ${original.id}`, "Placed on internal side away from bedroom window and entrance wall"].filter(Boolean).join("; ");
   ensuite.confidence = "geometry-proposed";
   floor.rooms.push(ensuite);
 }
