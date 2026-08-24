@@ -47,7 +47,7 @@ export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[
   const margin = 45;
   const content: any[] = [{
     type: "input_text",
-    text: `Classify EVERY supplied room candidate from its dedicated crop. This is EXISTING ROOM RECOGNITION, not HMO design. Return exactly one result for every candidate, in the same order. Read the printed room label inside each crop. Never merge candidates. Never invent a room. Never omit an existing bedroom. Bedroom 1/2/3/4/etc MUST be type bedroom. Lounge/Living Room/Reception=living. Dining Room=dining. Kitchen=kitchen. Shower Room/Bathroom/WC/Toilet=bathroom. Landing/Hall/Entrance/Stairs=c irculation. If the printed label is clear, copy it accurately. If the crop is uncertain, use the visible room layout/text conservatively and set confidence low rather than inventing a different room. Return JSON only: {"rooms":[{"candidateId":1,"name":"Bedroom 1","type":"bedroom","confidence":"high"}]}. Candidates: ${JSON.stringify(rooms.map((room, index) => ({ candidateId: index + 1, id: room.id, x: Math.round(room.x), y: Math.round(room.y), width: Math.round(room.width), height: Math.round(room.height) })))}`
+    text: `Classify EVERY supplied room candidate from its dedicated crop. This is EXISTING ROOM RECOGNITION, not HMO design. Return exactly one result for every candidate, in the same order. Read the printed room label inside each crop. Never merge candidates. Never invent a room. Never omit an existing bedroom. Bedroom 1/2/3/4/etc MUST be type bedroom. Lounge/Living Room/Reception=living. Dining Room=dining. Kitchen=kitchen. Shower Room/Bathroom/WC/Toilet=bathroom. Landing/Hall/Entrance/Stairs=circulation. If the printed label is clear, copy it accurately. If the crop is uncertain, use the visible room layout/text conservatively and set confidence low rather than inventing a different room. Return JSON only: {"rooms":[{"candidateId":1,"name":"Bedroom 1","type":"bedroom","confidence":"high"}]}. Candidates: ${JSON.stringify(rooms.map((room, index) => ({ candidateId: index + 1, id: room.id, x: Math.round(room.x), y: Math.round(room.y), width: Math.round(room.width), height: Math.round(room.height) })))}"
   }];
 
   for (let index = 0; index < rooms.length; index += 1) {
@@ -67,26 +67,15 @@ export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[
         .jpeg({ quality: 94, mozjpeg: true })
         .toBuffer();
 
-      content.push({
-        type: "input_text",
-        text: `Candidate ${index + 1}: read ONLY this candidate crop. The red/geometry candidate boundary is the room to classify.`
-      });
-      content.push({
-        type: "input_image",
-        image_url: `data:image/jpeg;base64,${crop.toString("base64")}`,
-        detail: "high",
-      });
+      content.push({ type: "input_text", text: `Candidate ${index + 1}: read ONLY this candidate crop. The room inside this crop is the candidate to classify.` });
+      content.push({ type: "input_image", image_url: `data:image/jpeg;base64,${crop.toString("base64")}`, detail: "high" });
     } catch (error) {
       console.warn(`Could not prepare room-label crop ${index + 1}`, error);
     }
   }
 
   try {
-    const response = await openai.responses.create({
-      model: "gpt-5-mini",
-      input: [{ role: "user", content }],
-    });
-
+    const response = await openai.responses.create({ model: "gpt-5-mini", input: [{ role: "user", content }] });
     const parsed = JSON.parse(cleanJson(response.output_text || "{}"));
     if (!Array.isArray(parsed.rooms) || parsed.rooms.length !== rooms.length) {
       console.warn(`Room label pass returned ${Array.isArray(parsed.rooms) ? parsed.rooms.length : 0}/${rooms.length} candidates`);
