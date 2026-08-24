@@ -1,0 +1,26 @@
+name: HMO Vision Production Gate
+
+on:
+  push:
+    branches:
+      - hmo-max-production-ready
+      - hmo-max-conversion
+  pull_request:
+    branches:
+      - hmo-max-production-ready
+      - hmo-max-conversion
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:production-gate
+      - run: npm run test:geometry
+      - run: npm run build
