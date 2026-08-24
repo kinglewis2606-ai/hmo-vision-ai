@@ -30,11 +30,26 @@ export const openai = {
               max_output_tokens: params.max_output_tokens ?? 3500,
             }
           : params;
+
+        // All current floor-plan Responses calls consume response.output_text
+        // as JSON. Enforce JSON at the API boundary instead of relying on the
+        // prompt's "Return JSON only" instruction, which can still produce
+        // malformed JSON and crash JSON.parse in the analysis route.
+        const structuredParams = {
+          ...nextParams,
+          text: {
+            ...(nextParams?.text || {}),
+            format: {
+              type: "json_object",
+            },
+          },
+        };
+
         const requestOptions = {
           ...(options || {}),
           signal: options?.signal || AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
         };
-        return client.responses.create(nextParams, requestOptions);
+        return client.responses.create(structuredParams, requestOptions);
       },
     };
   },
