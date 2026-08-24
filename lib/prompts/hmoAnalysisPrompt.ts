@@ -15,7 +15,7 @@ Detected floor plan JSON:
 [FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]
 
 EXISTING ROOM LABEL LOCK
-The JSON already contains room labels produced by a dedicated room-recognition pass. For `roomLabels`, COPY the supplied room id, name and type from the JSON VERBATIM. Do NOT re-read the image and do NOT change a detected bedroom into another room. Do NOT omit any supplied room. Return exactly one roomLabels item for every supplied room, in the same order.
+The JSON already contains room labels produced by a dedicated room-recognition pass. For roomLabels, COPY the supplied room id, name and type from the JSON VERBATIM. Do NOT re-read the image and do NOT change a detected bedroom into another room. Do NOT omit any supplied room. Return exactly one roomLabels item for every supplied room, in the same order.
 This rule exists specifically to prevent existing Bedroom 1/2/3/4 rooms from disappearing during the HMO strategy pass.
 
 ROOM TYPES
@@ -67,9 +67,7 @@ RETURN JSON ONLY:
   "roomLabels":[{"roomId":"","name":"","type":"","floor":"","confidence":"","areaSqm":0,"widthM":0,"depthM":0,"windows":[],"doors":[]}],
   "summary":{"bedrooms":0,"bathrooms":0,"possibleHMOBedrooms":0,"kitchen":false,"livingRoom":false,"confidence":""},
   "changes":[{"roomId":"","action":"","newName":"","newType":"","reason":"","split":{"firstName":"","firstType":"bedroom","secondName":"En-suite","secondType":"ensuite","direction":"horizontal","firstRatio":0.72}}],
-  "hmoScore":0,"verdict":"","highestPossibleHMO":{"bedrooms":0,"score":0,"reason":""},
-  "recommendedLayout":[],"conversionSteps":[],"recommendations":[],"compliance":[],"fireSafety":[],"planningRisk":"",
-  "estimatedConversionCost":{"low":0,"high":0},"estimatedMonthlyRent":0,"estimatedAnnualRent":0,"estimatedYield":"","estimatedROI":"","investorSummary":""
+  "hmoScore":0,"verdict":"","highestPossibleHMO":{"bedrooms":0,"score":0,"reason":""},"recommendedLayout":[],"conversionSteps":[],"recommendations":[],"compliance":[],"fireSafety":[],"planningRisk":"","estimatedConversionCost":{"low":0,"high":0},"estimatedMonthlyRent":0,"estimatedAnnualRent":0,"estimatedYield":"","estimatedROI":"","investorSummary":""
 }
 Return JSON only.`;
 }
