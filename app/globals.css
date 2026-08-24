@@ -19,26 +19,30 @@
   }
 }
 
+html,
 body {
-  background: #000418;
+  background: #000418 !important;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* HMO Vision original visual palette — match the approved blue/black design. */
-[class~="bg-[#07101a]"],
-[class~="bg-[#07131d]"] {
+/* Approved HMO Vision visual palette: near-black surfaces with electric blue actions. */
+main[class*="bg-[#07101a]"],
+section[class*="bg-[#07131d]"],
+[class*="bg-[#07101a]"],
+[class*="bg-[#07131d]"] {
   background-color: #000418 !important;
 }
 
-[class~="bg-[#0a1520]"],
-[class~="bg-[#101d29]"],
-[class~="bg-[#0d1924]"],
-[class~="bg-[#0c1924]"] {
-  background-color: #040406 !important;
+[class*="bg-[#0a1520]"],
+[class*="bg-[#101d29]"],
+[class*="bg-[#0d1924]"],
+[class*="bg-[#0c1924]"] {
+  background-color: #000000 !important;
 }
 
-.bg-cyan-600 {
+.bg-cyan-600,
+button.bg-cyan-600 {
   background-color: #003cff !important;
 }
 
