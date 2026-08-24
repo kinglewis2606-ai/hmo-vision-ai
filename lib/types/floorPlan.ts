@@ -27,7 +27,15 @@ export interface Floor { name: string; level: number; rooms: Room[]; }
 export interface FloorPlan {
   floors: Floor[];
   walls?: WallLine[];
-  metadata?: { pixelsPerMeter?: number; imageWidth?: number; imageHeight?: number; imageDpi?: number; };
+  metadata?: {
+    pixelsPerMeter?: number;
+    imageWidth?: number;
+    imageHeight?: number;
+    imageDpi?: number;
+    grossFloorAreaSqm?: number;
+    proposedGrossFloorAreaSqm?: number;
+    grossAreaReserved?: boolean;
+  };
 }
 
 // AI labels real detected geometry; it does not create geometry.
