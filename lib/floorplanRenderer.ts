@@ -1,4 +1,4 @@
-import { FloorPlan, RoomChange, Point, WallSide, Room } from "./types/floorPlan";
+import { FloorPlan, RoomChange, Point, WallSide } from "./types/floorPlan";
 import { polygonContainsPolygon } from "./geometryValidation";
 
 function escapeXml(text: string): string {
@@ -100,20 +100,12 @@ function openingGap(room: any, opening: { wall: WallSide; start?: number; end?: 
   const horizontal = opening.wall === "top" || opening.wall === "bottom";
   const axisStart = horizontal ? room.x : room.y;
   const axisEnd = horizontal ? room.x + room.width : room.y + room.height;
-  const s = Number.isFinite(start) && Number.isFinite(end) && end > start
-    ? start
-    : axisStart + (axisEnd - axisStart) * 0.42;
-  const e = Number.isFinite(start) && Number.isFinite(end) && end > start
-    ? end
-    : axisStart + (axisEnd - axisStart) * 0.58;
+  const s = Number.isFinite(start) && Number.isFinite(end) && end > start ? start : axisStart + (axisEnd - axisStart) * 0.42;
+  const e = Number.isFinite(start) && Number.isFinite(end) && end > start ? end : axisStart + (axisEnd - axisStart) * 0.58;
   const pad = Math.max(3, (e - s) * 0.04);
   const a = s + pad, b = e - pad;
-  if (horizontal) {
-    const y = line.y1;
-    return `<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="white" stroke-width="12" vector-effect="non-scaling-stroke"/>`;
-  }
-  const x = line.x1;
-  return `<line x1="${x}" y1="${a}" x2="${x}" y2="${b}" stroke="white" stroke-width="12" vector-effect="non-scaling-stroke"/>`;
+  if (horizontal) return `<line x1="${a}" y1="${line.y1}" x2="${b}" y2="${line.y1}" stroke="white" stroke-width="12" vector-effect="non-scaling-stroke"/>`;
+  return `<line x1="${line.x1}" y1="${a}" x2="${line.x1}" y2="${b}" stroke="white" stroke-width="12" vector-effect="non-scaling-stroke"/>`;
 }
 
 function renderDoorSymbol(room: any, opening: { wall: WallSide; start?: number; end?: number }): string {
@@ -158,8 +150,7 @@ function renderWindowSymbol(room: any, opening: { wall: WallSide; start?: number
 }
 
 function renderBoundary(room: any, stroke = "#172033", width = 7): string {
-  const edges = polygonEdges(room?.polygon);
-  return edges.map(([a, b]) => `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${stroke}" stroke-width="${width}" fill="none" vector-effect="non-scaling-stroke" stroke-linecap="square"/>`).join("");
+  return polygonEdges(room?.polygon).map(([a, b]) => `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${stroke}" stroke-width="${width}" fill="none" vector-effect="non-scaling-stroke" stroke-linecap="square"/>`).join("");
 }
 
 function renderNewInternalWalls(proposedRooms: any[]): string {
@@ -191,8 +182,7 @@ function renderNewInternalWalls(proposedRooms: any[]): string {
 }
 
 function renderLabel(room: any, label: string, kind: "bedroom" | "ensuite"): string {
-  const c = roomCenter(room);
-  const b = bounds(room);
+  const c = roomCenter(room), b = bounds(room);
   const font = Math.max(12, Math.min(24, Math.min(b.width, b.height) / 5));
   const fill = kind === "ensuite" ? "#e0f2fe" : "#ffffff";
   const stroke = kind === "ensuite" ? "#0369a1" : "#172033";
@@ -212,12 +202,8 @@ function sourceOpeningSymbols(room: any): string {
   return doors + windows;
 }
 
-export function renderFloorPlan(
-  original: FloorPlan,
-  proposed: FloorPlan,
-  originalImageDataUri: string,
-  changes: RoomChange[] = [],
-): string {
+export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, originalImageDataUri: string, changes: RoomChange[] = []): string {
+  void changes;
   const width = original.metadata?.imageWidth ?? proposed.metadata?.imageWidth ?? 1600;
   const height = original.metadata?.imageHeight ?? proposed.metadata?.imageHeight ?? 1200;
   const originals = new Map<string, any>();
@@ -225,61 +211,28 @@ export function renderFloorPlan(
 
   const proposedBedrooms: Array<{ room: any; floorIndex: number; id: string; source: any }> = [];
   const proposedEnsuites: Array<{ room: any; floorIndex: number; source: any }> = [];
-
   proposed.floors.forEach((floor, floorIndex) => floor.rooms.forEach(room => {
     const source = sourceFor(room, originals);
     if (isBedroom(room) && source && validAnchored(room, source)) proposedBedrooms.push({ room, floorIndex, id: String(room.id).trim().toLowerCase(), source });
     if (isEnsuite(room) && source && validAnchored(room, source)) proposedEnsuites.push({ room, floorIndex, source });
   }));
 
-  // IMPORTANT: the uploaded drawing remains the shell. We only mask the exact source-room
-  // polygons being modified, then redraw the validated proposed walls on top. This prevents
-  // the old implementation's "coloured blob over the plan" result.
   const changedBedroomSources = proposedBedrooms.filter(x => !sameGeometry(x.source, x.room));
-  const changedEnsuites = proposedEnsuites;
   const modifiedMasks = [
     ...changedBedroomSources.map(x => renderRoomMask(x.source, "#ffffff")),
-    ...changedEnsuites.map(x => renderRoomMask(x.room, "#ffffff")),
+    ...proposedEnsuites.map(x => renderRoomMask(x.room, "#ffffff")),
   ].join("");
 
   const newWalls = [
     ...changedBedroomSources.map(x => renderBoundary(x.room)),
-    ...changedEnsuites.map(x => renderBoundary(x.room, "#172033", 6)),
+    ...proposedEnsuites.map(x => renderBoundary(x.room, "#172033", 6)),
   ].join("");
-
-  const labels = proposedBedrooms.map((x, i) => renderLabel(x.room, `Bedroom ${i + 1}`, "bedroom")).join("") +
-    proposedEnsuites.map(x => renderLabel(x.room, "En-suite", "ensuite")).join("");
-
-  const openingSymbols = changedBedroomSources.map(x => sourceOpeningSymbols(x.source)).join("") +
-    changedEnsuites.map(x => sourceOpeningSymbols(x.room)).join("");
-
-  const internalWalls = renderNewInternalWalls(changedBedroomSources.map(x => x.room).concat(changedEnsuites.map(x => x.room)));
+  const labels = proposedBedrooms.map((x, i) => renderLabel(x.room, `Bedroom ${i + 1}`, "bedroom")).join("") + proposedEnsuites.map(x => renderLabel(x.room, "En-suite", "ensuite")).join("");
+  const openingSymbols = changedBedroomSources.map(x => sourceOpeningSymbols(x.source)).join("") + proposedEnsuites.map(x => sourceOpeningSymbols(x.room)).join("");
+  const internalWalls = renderNewInternalWalls(changedBedroomSources.map(x => x.room).concat(proposedEnsuites.map(x => x.room)));
   const bannerText = `${proposedBedrooms.length} BEDROOMS  |  ${proposedEnsuites.length} PRIVATE EN-SUITES`;
   const bannerWidth = Math.min(width - 30, Math.max(430, bannerText.length * 14));
-
-  const legend = `<g>
-    <rect x="18" y="${height - 54}" width="${Math.min(width - 36, 610)}" height="36" rx="6" fill="#ffffff" fill-opacity="0.94" stroke="#172033" stroke-width="2"/>
-    <rect x="32" y="${height - 44}" width="16" height="16" fill="#ffffff" stroke="#172033" stroke-width="2"/>
-    <text x="58" y="${height - 31}" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#172033">BEDROOM</text>
-    <rect x="150" y="${height - 44}" width="16" height="16" fill="#e0f2fe" stroke="#0369a1" stroke-width="2"/>
-    <text x="176" y="${height - 31}" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#172033">PRIVATE EN-SUITE</text>
-    <text x="390" y="${height - 31}" font-family="Arial,sans-serif" font-size="14" font-weight="600" fill="#475569">SOURCE-LOCKED PROPOSED GEOMETRY</text>
-  </g>`;
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-    <defs>
-      <filter id="blueprint-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" flood-opacity="0.22"/></filter>
-    </defs>
-    <image href="${escapeXml(originalImageDataUri)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/>
-    <g>${modifiedMasks}</g>
-    <g filter="url(#blueprint-shadow)">${newWalls}${internalWalls}${openingSymbols}</g>
-    <g>${labels}</g>
-    <g>
-      <rect x="15" y="15" width="${bannerWidth}" height="46" rx="6" fill="#ffffff" fill-opacity="0.96" stroke="#172033" stroke-width="2"/>
-      <text x="35" y="45" font-family="Arial,sans-serif" font-size="21" font-weight="900" fill="#172033">${escapeXml(bannerText)}</text>
-    </g>
-    ${legend}
-  </svg>`;
-
+  const legend = `<g><rect x="18" y="${height - 54}" width="${Math.min(width - 36, 610)}" height="36" rx="6" fill="#ffffff" fill-opacity="0.94" stroke="#172033" stroke-width="2"/><rect x="32" y="${height - 44}" width="16" height="16" fill="#ffffff" stroke="#172033" stroke-width="2"/><text x="58" y="${height - 31}" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#172033">BEDROOM</text><rect x="150" y="${height - 44}" width="16" height="16" fill="#e0f2fe" stroke="#0369a1" stroke-width="2"/><text x="176" y="${height - 31}" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#172033">PRIVATE EN-SUITE</text><text x="390" y="${height - 31}" font-family="Arial,sans-serif" font-size="14" font-weight="600" fill="#475569">SOURCE-LOCKED PROPOSED GEOMETRY</text></g>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><filter id="blueprint-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" flood-opacity="0.22"/></filter></defs><image href="${escapeXml(originalImageDataUri)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${modifiedMasks}</g><g filter="url(#blueprint-shadow)">${newWalls}${internalWalls}${openingSymbols}</g><g>${labels}</g><g><rect x="15" y="15" width="${bannerWidth}" height="46" rx="6" fill="#ffffff" fill-opacity="0.96" stroke="#172033" stroke-width="2"/><text x="35" y="45" font-family="Arial,sans-serif" font-size="21" font-weight="900" fill="#172033">${escapeXml(bannerText)}</text></g>${legend}</svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
