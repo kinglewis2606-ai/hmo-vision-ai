@@ -29,9 +29,11 @@ function canonicalType(name: string, type: string): string {
 }
 
 /**
- * Labels geometry candidates directly from the unmodified source image.
- * This is deliberately separate from the HMO strategy response: existing
- * bedrooms must be recognised before the optimiser is allowed to change them.
+ * Labels each detected geometry against a dedicated crop of the ORIGINAL plan.
+ * The previous implementation showed the entire plan while asking the model to
+ * map tiny printed labels back to candidate IDs. That is unreliable on multi-
+ * floor plans. Each candidate now gets its own enlarged crop so existing
+ * Bedroom 1/2/3/4 labels cannot be silently lost during HMO planning.
  */
 export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[]): Promise<DetectedRoom[]> {
   if (!rooms.length) return rooms;
@@ -42,33 +44,47 @@ export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[
   const height = metadata.height ?? 0;
   if (!width || !height) return rooms;
 
-  const image = await sharp(source)
-    .resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 90, mozjpeg: true })
-    .toBuffer();
+  const margin = 45;
+  const content: any[] = [{
+    type: "input_text",
+    text: `Classify EVERY supplied room candidate from its dedicated crop. This is EXISTING ROOM RECOGNITION, not HMO design. Return exactly one result for every candidate, in the same order. Read the printed room label inside each crop. Never merge candidates. Never invent a room. Never omit an existing bedroom. Bedroom 1/2/3/4/etc MUST be type bedroom. Lounge/Living Room/Reception=living. Dining Room=dining. Kitchen=kitchen. Shower Room/Bathroom/WC/Toilet=bathroom. Landing/Hall/Entrance/Stairs=c irculation. If the printed label is clear, copy it accurately. If the crop is uncertain, use the visible room layout/text conservatively and set confidence low rather than inventing a different room. Return JSON only: {"rooms":[{"candidateId":1,"name":"Bedroom 1","type":"bedroom","confidence":"high"}]}. Candidates: ${JSON.stringify(rooms.map((room, index) => ({ candidateId: index + 1, id: room.id, x: Math.round(room.x), y: Math.round(room.y), width: Math.round(room.width), height: Math.round(room.height) })))}`
+  }];
 
-  const candidates = rooms.map((room, index) => ({
-    candidateId: index + 1,
-    id: room.id,
-    x: Math.round(room.x),
-    y: Math.round(room.y),
-    width: Math.round(room.width),
-    height: Math.round(room.height),
-  }));
+  for (let index = 0; index < rooms.length; index += 1) {
+    const room = rooms[index];
+    const left = Math.max(0, Math.floor(room.x - margin));
+    const top = Math.max(0, Math.floor(room.y - margin));
+    const right = Math.min(width, Math.ceil(room.x + room.width + margin));
+    const bottom = Math.min(height, Math.ceil(room.y + room.height + margin));
+    const cropWidth = Math.max(40, right - left);
+    const cropHeight = Math.max(40, bottom - top);
+
+    try {
+      const crop = await sharp(source)
+        .extract({ left, top, width: cropWidth, height: cropHeight })
+        .resize({ width: 720, height: 720, fit: "contain", withoutEnlargement: false })
+        .flatten({ background: "#ffffff" })
+        .jpeg({ quality: 94, mozjpeg: true })
+        .toBuffer();
+
+      content.push({
+        type: "input_text",
+        text: `Candidate ${index + 1}: read ONLY this candidate crop. The red/geometry candidate boundary is the room to classify.`
+      });
+      content.push({
+        type: "input_image",
+        image_url: `data:image/jpeg;base64,${crop.toString("base64")}`,
+        detail: "high",
+      });
+    } catch (error) {
+      console.warn(`Could not prepare room-label crop ${index + 1}`, error);
+    }
+  }
 
   try {
     const response = await openai.responses.create({
       model: "gpt-5-mini",
-      input: [{
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: `Classify EVERY geometry candidate against the ORIGINAL floor-plan image. This is a room-recognition task, NOT an HMO design task. Return exactly one result for every supplied candidate, in the same order, even when uncertain. Read the printed room name inside the candidate from the source image. In particular, do NOT omit existing bedrooms. Bedroom 1/2/3/4/etc = type bedroom. Lounge/Living Room/Reception = living. Dining Room = dining. Kitchen = kitchen. Shower Room/Bathroom/WC/Toilet = bathroom. Landing/Hall/Entrance/Stairs = circulation. Never merge candidates, never invent a room, and never return a label for a different candidate. Use the candidate geometry only to know which printed room you are reading. Return JSON only: {"rooms":[{"candidateId":1,"name":"Bedroom 1","type":"bedroom","confidence":"high"}]}. Original image size: ${width}x${height}. Candidates: ${JSON.stringify(candidates)}`,
-          },
-          { type: "input_image", image_url: `data:image/jpeg;base64,${image.toString("base64")}`, detail: "high" },
-        ],
-      }],
+      input: [{ role: "user", content }],
     });
 
     const parsed = JSON.parse(cleanJson(response.output_text || "{}"));
@@ -82,7 +98,10 @@ export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[
       const candidateId = Number(item.candidateId);
       if (Number.isInteger(candidateId) && candidateId >= 1 && candidateId <= rooms.length) byCandidate.set(candidateId, item);
     }
-    if (byCandidate.size !== rooms.length) return rooms;
+    if (byCandidate.size !== rooms.length) {
+      console.warn(`Room label pass mapped ${byCandidate.size}/${rooms.length} candidate IDs`);
+      return rooms;
+    }
 
     return rooms.map((room, index) => {
       const label = byCandidate.get(index + 1)!;
@@ -99,7 +118,7 @@ export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[
       } as DetectedRoom;
     });
   } catch (error) {
-    console.warn("Dedicated room label pass failed; retaining geometry candidates", error);
+    console.warn("Dedicated per-room label pass failed; retaining geometry candidates", error);
     return rooms;
   }
 }
