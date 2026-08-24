@@ -5,7 +5,10 @@ import { sqmForPolygon, validateBedroomGeometry } from "./geometryValidation";
 export const BEDROOM_MIN_SQM = 6.51;
 const COMMUNAL_MIN_SQM = 8;
 function norm(value: unknown): string { return String(value ?? "").toLowerCase().replace(/[^a-z]/g, ""); }
-export function isBedroom(room: Room): boolean { return norm(room.type).includes("bedroom") || norm(room.name).includes("bedroom"); }
+export function isBedroom(room: Room): boolean {
+  const value = norm(`${room.type} ${room.name}`);
+  return value.includes("bedroom") && validateBedroomGeometry(room).valid;
+}
 export function isLiving(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("living") || value.includes("lounge") || value.includes("reception"); }
 export function isDining(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); return value.includes("dining") || value.includes("diner"); }
 export function isCommunal(room: Room): boolean { const value = norm(`${room.type} ${room.name}`); if (value.includes("living") || value.includes("lounge") || value.includes("reception") || value.includes("dining") || value.includes("communal")) return true; return value.includes("kitchen") && roomArea(room) >= COMMUNAL_MIN_SQM && hasWindow(room); }
