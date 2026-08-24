@@ -9,43 +9,63 @@ export default function UploadBox({
   onUploaded?: (filename: string, imageUrl: string) => void;
 }) {
   const [message, setMessage] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   const onDrop = async (acceptedFiles: File[]) => {
-    if (!acceptedFiles.length) return;
+    const file = acceptedFiles[0];
+    if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", acceptedFiles[0]);
+    setUploading(true);
+    setMessage("");
 
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const formData = new FormData();
+      formData.append("file", file, file.name);
 
-    const data = await res.json();
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-    if (data.success) {
-      setMessage("✅ Upload successful");
-
-      if (onUploaded) {
-        onUploaded(
-          data.filename,
-          `/api/uploads/${data.filename}`
-        );
+      const raw = await res.text();
+      let data: any;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        throw new Error(`Upload server returned HTTP ${res.status} without valid JSON.`);
       }
-    } else {
-      setMessage("❌ Upload failed");
+
+      if (!res.ok || !data?.success || !data?.filename) {
+        throw new Error(data?.error || `Upload failed (HTTP ${res.status}).`);
+      }
+
+      const imageUrl = `/api/uploads/${encodeURIComponent(data.filename)}`;
+      setMessage("✅ Upload successful");
+      onUploaded?.(data.filename, imageUrl);
+    } catch (error) {
+      console.error("Upload error:", error);
+      setMessage(`❌ ${error instanceof Error ? error.message : "Upload failed."}`);
+    } finally {
+      setUploading(false);
     }
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: false,
+    disabled: uploading,
+    accept: {
+      "image/jpeg": [".jpg", ".jpeg"],
+      "image/png": [".png"],
+      "image/webp": [".webp"],
+      "application/pdf": [".pdf"],
+    },
   });
 
   return (
     <div
       {...getRootProps()}
-      className="border-2 border-dashed rounded-xl p-10 text-center cursor-pointer"
+      className="cursor-pointer rounded-xl border-2 border-dashed border-slate-600 p-10 text-center"
     >
       <input {...getInputProps()} />
 
@@ -53,13 +73,11 @@ export default function UploadBox({
         <p>Drop your floor plan here…</p>
       ) : (
         <>
-          <h2 className="text-2xl font-bold mb-2">
-            Upload Floor Plan
+          <h2 className="mb-2 text-2xl font-bold">
+            {uploading ? "Uploading…" : "Upload Floor Plan"}
           </h2>
-
           <p>PDF, JPG or PNG</p>
-
-          <p className="mt-4">{message}</p>
+          {message && <p className="mt-4">{message}</p>}
         </>
       )}
     </div>
