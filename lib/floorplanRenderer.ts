@@ -1,6 +1,8 @@
 import { FloorPlan, RoomChange, Point, WallSide } from "./types/floorPlan";
 import { polygonContainsPolygon } from "./geometryValidation";
 
+// ORIGINAL EXTERNAL SHELL PRESERVED: proposed geometry is rendered as an overlay on the uploaded source image.
+
 function escapeXml(text: string): string {
   return String(text)
     .replace(/&/g, "&amp;")
@@ -34,10 +36,7 @@ function polygonEdges(points?: Point[]): Array<[Point, Point]> {
 function roomCenter(room: any): { x: number; y: number } {
   const p = room?.polygon as Point[] | undefined;
   if (!p || p.length < 3) {
-    return {
-      x: Number(room.x) + Number(room.width) / 2,
-      y: Number(room.y) + Number(room.height) / 2,
-    };
+    return { x: Number(room.x) + Number(room.width) / 2, y: Number(room.y) + Number(room.height) / 2 };
   }
   let a2 = 0, cx = 0, cy = 0;
   for (let i = 0; i < p.length; i++) {
@@ -47,14 +46,10 @@ function roomCenter(room: any): { x: number; y: number } {
     cx += (a.x + b.x) * cross;
     cy += (a.y + b.y) * cross;
   }
-  return Math.abs(a2) < 1e-6
-    ? { x: Number(room.x) + Number(room.width) / 2, y: Number(room.y) + Number(room.height) / 2 }
-    : { x: cx / (3 * a2), y: cy / (3 * a2) };
+  return Math.abs(a2) < 1e-6 ? { x: Number(room.x) + Number(room.width) / 2, y: Number(room.y) + Number(room.height) / 2 } : { x: cx / (3 * a2), y: cy / (3 * a2) };
 }
 
-function baseId(id: string): string {
-  return id.replace(/-split-2$/i, "");
-}
+function baseId(id: string): string { return id.replace(/-split-2$/i, ""); }
 
 function sourceFor(room: any, originals: Map<string, any>): any | undefined {
   const id = String(room?.id || "").trim().toLowerCase();
@@ -160,20 +155,18 @@ function renderNewInternalWalls(proposedRooms: any[]): string {
       const a = proposedRooms[i]?.polygon as Point[] | undefined;
       const b = proposedRooms[j]?.polygon as Point[] | undefined;
       if (!a || !b) continue;
-      for (const [a1, a2] of polygonEdges(a)) {
-        for (const [b1, b2] of polygonEdges(b)) {
-          const sameHorizontal = Math.abs(a1.y - a2.y) < 1 && Math.abs(b1.y - b2.y) < 1 && Math.abs(a1.y - b1.y) < 2;
-          const sameVertical = Math.abs(a1.x - a2.x) < 1 && Math.abs(b1.x - b2.x) < 1 && Math.abs(a1.x - b1.x) < 2;
-          if (sameHorizontal) {
-            const lo = Math.max(Math.min(a1.x, a2.x), Math.min(b1.x, b2.x));
-            const hi = Math.min(Math.max(a1.x, a2.x), Math.max(b1.x, b2.x));
-            if (hi - lo > 8) lines.push(`<line x1="${lo}" y1="${a1.y}" x2="${hi}" y2="${a1.y}" stroke="#172033" stroke-width="9" vector-effect="non-scaling-stroke"/>`);
-          }
-          if (sameVertical) {
-            const lo = Math.max(Math.min(a1.y, a2.y), Math.min(b1.y, b2.y));
-            const hi = Math.min(Math.max(a1.y, a2.y), Math.max(b1.y, b2.y));
-            if (hi - lo > 8) lines.push(`<line x1="${a1.x}" y1="${lo}" x2="${a1.x}" y2="${hi}" stroke="#172033" stroke-width="9" vector-effect="non-scaling-stroke"/>`);
-          }
+      for (const [a1, a2] of polygonEdges(a)) for (const [b1, b2] of polygonEdges(b)) {
+        const sameHorizontal = Math.abs(a1.y - a2.y) < 1 && Math.abs(b1.y - b2.y) < 1 && Math.abs(a1.y - b1.y) < 2;
+        const sameVertical = Math.abs(a1.x - a2.x) < 1 && Math.abs(b1.x - b2.x) < 1 && Math.abs(a1.x - b1.x) < 2;
+        if (sameHorizontal) {
+          const lo = Math.max(Math.min(a1.x, a2.x), Math.min(b1.x, b2.x));
+          const hi = Math.min(Math.max(a1.x, a2.x), Math.max(b1.x, b2.x));
+          if (hi - lo > 8) lines.push(`<line x1="${lo}" y1="${a1.y}" x2="${hi}" y2="${a1.y}" stroke="#172033" stroke-width="9" vector-effect="non-scaling-stroke"/>`);
+        }
+        if (sameVertical) {
+          const lo = Math.max(Math.min(a1.y, a2.y), Math.min(b1.y, b2.y));
+          const hi = Math.min(Math.max(a1.y, a2.y), Math.max(b1.y, b2.y));
+          if (hi - lo > 8) lines.push(`<line x1="${a1.x}" y1="${lo}" x2="${a1.x}" y2="${hi}" stroke="#172033" stroke-width="9" vector-effect="non-scaling-stroke"/>`);
         }
       }
     }
@@ -208,7 +201,6 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
   const height = original.metadata?.imageHeight ?? proposed.metadata?.imageHeight ?? 1200;
   const originals = new Map<string, any>();
   for (const floor of original.floors) for (const room of floor.rooms) originals.set(String(room.id).trim().toLowerCase(), room);
-
   const proposedBedrooms: Array<{ room: any; floorIndex: number; id: string; source: any }> = [];
   const proposedEnsuites: Array<{ room: any; floorIndex: number; source: any }> = [];
   proposed.floors.forEach((floor, floorIndex) => floor.rooms.forEach(room => {
@@ -216,17 +208,9 @@ export function renderFloorPlan(original: FloorPlan, proposed: FloorPlan, origin
     if (isBedroom(room) && source && validAnchored(room, source)) proposedBedrooms.push({ room, floorIndex, id: String(room.id).trim().toLowerCase(), source });
     if (isEnsuite(room) && source && validAnchored(room, source)) proposedEnsuites.push({ room, floorIndex, source });
   }));
-
   const changedBedroomSources = proposedBedrooms.filter(x => !sameGeometry(x.source, x.room));
-  const modifiedMasks = [
-    ...changedBedroomSources.map(x => renderRoomMask(x.source, "#ffffff")),
-    ...proposedEnsuites.map(x => renderRoomMask(x.room, "#ffffff")),
-  ].join("");
-
-  const newWalls = [
-    ...changedBedroomSources.map(x => renderBoundary(x.room)),
-    ...proposedEnsuites.map(x => renderBoundary(x.room, "#172033", 6)),
-  ].join("");
+  const modifiedMasks = [...changedBedroomSources.map(x => renderRoomMask(x.source, "#ffffff")), ...proposedEnsuites.map(x => renderRoomMask(x.room, "#ffffff"))].join("");
+  const newWalls = [...changedBedroomSources.map(x => renderBoundary(x.room)), ...proposedEnsuites.map(x => renderBoundary(x.room, "#172033", 6))].join("");
   const labels = proposedBedrooms.map((x, i) => renderLabel(x.room, `Bedroom ${i + 1}`, "bedroom")).join("") + proposedEnsuites.map(x => renderLabel(x.room, "En-suite", "ensuite")).join("");
   const openingSymbols = changedBedroomSources.map(x => sourceOpeningSymbols(x.source)).join("") + proposedEnsuites.map(x => sourceOpeningSymbols(x.room)).join("");
   const internalWalls = renderNewInternalWalls(changedBedroomSources.map(x => x.room).concat(proposedEnsuites.map(x => x.room)));
