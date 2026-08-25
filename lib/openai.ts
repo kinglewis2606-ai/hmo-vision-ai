@@ -6,8 +6,8 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-/** Two bounded AI stages must fit inside the route's 60-second server budget. */
-export const OPENAI_REQUEST_TIMEOUT_MS = 28_000;
+// The analysis route has a 60-second budget and now performs one AI vision request.
+export const OPENAI_REQUEST_TIMEOUT_MS = 50_000;
 const MAX_JSON_OUTPUT_TOKENS = 4_000;
 
 function stripFences(value: string): string {
@@ -17,9 +17,7 @@ function stripFences(value: string): string {
 export function parseAIJson<T = any>(value: unknown): T {
   if (typeof value !== "string" || !value.trim()) throw new Error("AI returned an empty response.");
   const cleaned = stripFences(value);
-  try { return JSON.parse(cleaned) as T; } catch {
-    throw new Error("AI returned incomplete or malformed JSON.");
-  }
+  try { return JSON.parse(cleaned) as T; } catch { throw new Error("AI returned incomplete or malformed JSON."); }
 }
 
 export const openai = {
