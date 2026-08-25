@@ -64,12 +64,12 @@ jobs:
       - name: Verify upload API is reachable
         run: |
           printf 'x' > /tmp/smoke.txt
-          status=$(curl --silent --output /tmp/upload.json --write-out "%{http_code}" -X POST -F 'file=@/tmp/smoke.txt;type=text/plain' http://127.0.0.1:3000/api/upload
+          status=$(curl --silent --output /tmp/upload.json --write-out "%{http_code}" -X POST -F 'file=@/tmp/smoke.txt;type=text/plain' http://127.0.0.1:3000/api/upload)
           test "$status" = "400"
           grep -Eq 'Unsupported file type|No file uploaded' /tmp/upload.json
       - name: Verify analysis API initializes
         run: |
-          status=$(curl --silent --output /tmp/analyse.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse
+          status=$(curl --silent --output /tmp/analyse.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse)
           test "$status" = "400"
           grep -Eq 'No uploaded file|Invalid uploaded filename|Missing' /tmp/analyse.json
       - name: Verify server remains alive
