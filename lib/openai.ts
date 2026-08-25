@@ -16,25 +16,53 @@ function getClient(): OpenAI {
 }
 
 const OPENAI_REQUEST_TIMEOUT_MS = 110_000;
+const MAX_JSON_OUTPUT_TOKENS = 12_000;
+
+function looksLikeCompleteJson(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try {
+    JSON.parse(value.trim().replace(/^```json\s*/i, "").replace(/\s*```$/i, ""));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function addJsonRepairInstruction(input: any): any {
+  const repair = {
+    role: "user",
+    content: [{
+      type: "input_text",
+      text: "Return the complete answer again as one valid JSON object. Do not use markdown fences. Do not truncate any array or object. Ensure every string is correctly escaped and every array/object is closed before returning.",
+    }],
+  };
+  if (Array.isArray(input)) return [...input, repair];
+  if (typeof input === "string") return [repair, { role: "user", content: [{ type: "input_text", text: input }] }];
+  return input;
+}
 
 export const openai = {
   get responses() {
     const client = getClient();
     return {
       ...client.responses,
-      create: (params: any, options?: any) => {
+      create: async (params: any, options?: any) => {
         const nextParams = params?.model === "gpt-5"
           ? {
               ...params,
               model: "gpt-5-mini",
-              max_output_tokens: params.max_output_tokens ?? 3500,
+              max_output_tokens: params.max_output_tokens ?? MAX_JSON_OUTPUT_TOKENS,
             }
-          : params;
+          : {
+              ...params,
+              max_output_tokens: params?.max_output_tokens ?? MAX_JSON_OUTPUT_TOKENS,
+            };
 
         // All current floor-plan Responses calls consume response.output_text
         // as JSON. Enforce JSON at the API boundary instead of relying on the
-        // prompt's "Return JSON only" instruction, which can still produce
-        // malformed JSON and crash JSON.parse in the analysis route.
+        // prompt's "Return JSON only" instruction. OpenAI's JSON mode is designed
+        // to produce valid JSON; the larger output budget prevents a large room
+        // list/report from being cut off mid-array.
         const structuredParams = {
           ...nextParams,
           text: {
@@ -49,7 +77,18 @@ export const openai = {
           ...(options || {}),
           signal: options?.signal || AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
         };
-        return client.responses.create(structuredParams, requestOptions);
+
+        const first = await client.responses.create(structuredParams, requestOptions);
+        if (looksLikeCompleteJson(first.output_text)) return first;
+
+        // A response can still be incomplete (for example because generation
+        // was interrupted). Retry once with an explicit completion instruction.
+        const retryParams = {
+          ...structuredParams,
+          input: addJsonRepairInstruction(structuredParams.input),
+          max_output_tokens: Math.max(Number(structuredParams.max_output_tokens) || 0, MAX_JSON_OUTPUT_TOKENS),
+        };
+        return client.responses.create(retryParams, requestOptions);
       },
     };
   },
