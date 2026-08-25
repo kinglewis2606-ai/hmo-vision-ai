@@ -2,13 +2,11 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
-import { openai, parseAIJson } from "@/lib/openai";
 import { renderFloorPlan } from "@/lib/floorplanRenderer";
 import { detectRooms } from "@/lib/floorDetection/detectRooms";
 import { labelDetectedRooms } from "@/lib/floorDetection/labelDetectedRooms";
-import { detectFloors } from "@/lib/floorDetection/detectFloors";
+import { detectFloors, getVisionStrategy } from "@/lib/floorDetection/detectFloors";
 import { buildOriginalFloorPlan } from "@/lib/floorDetection/buildOriginalFloorPlan";
-import { buildHMOAnalysisPrompt } from "@/lib/prompts/hmoAnalysisPrompt";
 import { buildMaximumHMOLayout } from "@/lib/hmoLayoutPipeline";
 import { finalRoomSummary } from "@/lib/hmoPlanner";
 import { normaliseHMOReport } from "@/lib/hmoReport";
@@ -17,25 +15,15 @@ import { RoomChange } from "@/lib/types/floorPlan";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-type Stage = "file" | "floor detection" | "room detection" | "room labels" | "AI strategy" | "geometry validation" | "rendering" | "report";
-
+type Stage = "file" | "floor detection" | "room detection" | "room labels" | "geometry validation" | "rendering" | "report";
 class AnalysisStageError extends Error {
   stage: Stage;
   constructor(stage: Stage, message: string) { super(`${stage[0].toUpperCase()}${stage.slice(1)} failed: ${message}`); this.stage = stage; }
 }
-
 async function timed<T>(stage: Stage, operation: () => Promise<T>): Promise<T> {
-  const started = Date.now();
-  console.log(`[HMO][${stage}] START`);
-  try {
-    const result = await operation();
-    console.log(`[HMO][${stage}] END ${Date.now() - started}ms`);
-    return result;
-  } catch (error: any) {
-    console.error(`[HMO][${stage}] ERROR ${Date.now() - started}ms`, error);
-    const message = error?.name === "AbortError" || /timed out|timeout/i.test(String(error?.message)) ? "the operation timed out before the server deadline" : String(error?.message || "unexpected error");
-    throw new AnalysisStageError(stage, message);
-  }
+  const started = Date.now(); console.log(`[HMO][${stage}] START`);
+  try { const result = await operation(); console.log(`[HMO][${stage}] END ${Date.now() - started}ms`); return result; }
+  catch (error: any) { console.error(`[HMO][${stage}] ERROR ${Date.now() - started}ms`, error); throw new AnalysisStageError(stage, error?.name === "AbortError" || /timed out|timeout|aborted/i.test(String(error?.message)) ? "the vision request exceeded its server time budget" : String(error?.message || "unexpected error")); }
 }
 
 function normaliseRoomTypes(plan: any): void {
@@ -49,45 +37,39 @@ function normaliseRoomTypes(plan: any): void {
     else if (value.includes("landing") || value.includes("hall") || value.includes("entrance") || value.includes("stair")) room.type = "circulation";
   }
 }
-
 function compactRooms(plan: any) {
-  return plan.floors.flatMap((floor: any) => floor.rooms.map((room: any) => ({
-    roomId: room.id, floor: floor.name, name: room.name, type: room.type,
-    areaSqm: Number(room.approxAreaSqm || 0), widthM: Number(room.approxWidthM || 0), depthM: Number(room.approxDepthM || 0),
-    hasWindow: Array.isArray(room.windows) && room.windows.length > 0,
-    hasDoor: Array.isArray(room.doors) && room.doors.length > 0,
-  })));
+  return plan.floors.flatMap((floor: any) => floor.rooms.map((room: any) => ({ roomId: room.id, floor: floor.name, name: room.name, type: room.type, areaSqm: Number(room.approxAreaSqm || 0), widthM: Number(room.approxWidthM || 0), depthM: Number(room.approxDepthM || 0), hasWindow: Array.isArray(room.windows) && room.windows.length > 0, hasDoor: Array.isArray(room.doors) && room.doors.length > 0 })));
 }
-
-function safeChanges(result: any): RoomChange[] {
-  if (!Array.isArray(result?.changes)) return [];
-  return result.changes.filter((change: any) => change && typeof change.roomId === "string" && typeof change.action === "string").map((change: any) => ({
-    roomId: change.roomId,
-    action: change.action,
-    newName: typeof change.newName === "string" ? change.newName : undefined,
-    newType: typeof change.newType === "string" ? change.newType : undefined,
-    reason: typeof change.reason === "string" ? change.reason : undefined,
-    split: change.split && typeof change.split === "object" ? {
-      firstName: typeof change.split.firstName === "string" ? change.split.firstName : undefined,
-      firstType: typeof change.split.firstType === "string" ? change.split.firstType : undefined,
-      secondName: typeof change.split.secondName === "string" ? change.split.secondName : undefined,
-      secondType: typeof change.split.secondType === "string" ? change.split.secondType : undefined,
-      direction: change.split.direction === "vertical" ? "vertical" : "horizontal",
-      firstRatio: Number.isFinite(Number(change.split.firstRatio)) ? Number(change.split.firstRatio) : undefined,
-    } : undefined,
-  }));
+function mapVisionChanges(rawChanges: any[], rooms: any[]): RoomChange[] {
+  if (!Array.isArray(rawChanges)) return [];
+  return rawChanges.map(change => {
+    const index = Number(change?.roomIndex);
+    const room = Number.isInteger(index) ? rooms[index] : undefined;
+    if (!room || typeof change?.action !== "string") return null;
+    return {
+      roomId: room.id,
+      action: change.action,
+      newName: typeof change.newName === "string" ? change.newName : undefined,
+      newType: typeof change.newType === "string" ? change.newType : undefined,
+      reason: typeof change.reason === "string" ? change.reason : undefined,
+      split: change.split && typeof change.split === "object" ? {
+        firstName: typeof change.split.firstName === "string" ? change.split.firstName : undefined,
+        firstType: typeof change.split.firstType === "string" ? change.split.firstType : undefined,
+        secondName: typeof change.split.secondName === "string" ? change.split.secondName : undefined,
+        secondType: typeof change.split.secondType === "string" ? change.split.secondType : undefined,
+        direction: change.split.direction === "vertical" ? "vertical" : "horizontal",
+        firstRatio: Number.isFinite(Number(change.split.firstRatio)) ? Number(change.split.firstRatio) : undefined,
+      } : undefined,
+    } as RoomChange;
+  }).filter((change): change is RoomChange => !!change);
 }
-
 function appliedLayout(original: any, proposed: any, changes: RoomChange[]): string[] {
-  const before = new Map<string, any>();
-  const after = new Map<string, any>();
-  const floors = new Map<string, string>();
+  const before = new Map<string, any>(), after = new Map<string, any>(), floors = new Map<string, string>();
   for (const floor of original.floors) for (const room of floor.rooms) { before.set(room.id, room); floors.set(room.id, floor.name); }
   for (const floor of proposed.floors) for (const room of floor.rooms) { after.set(room.id, room); floors.set(room.id, floor.name); }
   const lines: string[] = [];
   for (const change of changes) {
-    const source = before.get(change.roomId), result = after.get(change.roomId);
-    if (!source || !result) continue;
+    const source = before.get(change.roomId), result = after.get(change.roomId); if (!source || !result) continue;
     const child = after.get(`${change.roomId}-split-2`);
     if (child && /split/i.test(change.action || "")) lines.push(`${floors.get(change.roomId) || "Floor"}: ${result.name || "Bedroom"} retained and ${child.name || "En-suite"} created from validated carved geometry.`);
     else lines.push(`${floors.get(change.roomId) || "Floor"}: ${result.name || result.type || "Room"} converted from ${source.name || source.type || "existing room"}.`);
@@ -104,7 +86,7 @@ export async function POST(req: Request) {
     const filePath = path.join(process.cwd(), "public", "uploads", filename);
     await timed("file", async () => { if (!fs.existsSync(filePath)) throw new Error("uploaded floor plan not found"); });
 
-    const floors = await timed("floor detection", () => detectFloors(filePath));
+    const floors = await timed("floor detection", () => detectFloors(filePath, { address, propertyType }));
     const detectedRooms = await timed("room detection", () => detectRooms(filePath, floors));
     const labelledDetectedRooms = await timed("room labels", () => labelDetectedRooms(filePath, detectedRooms));
     if (!labelledDetectedRooms.length) return NextResponse.json({ success: false, error: "Room detection failed: no enclosed rooms were detected in the uploaded floor plan." }, { status: 422 });
@@ -113,16 +95,16 @@ export async function POST(req: Request) {
     const metadata = await sharp(filePath).metadata();
     original.metadata = { imageWidth: metadata.width, imageHeight: metadata.height, imageDpi: metadata.density };
     normaliseRoomTypes(original);
+
+    // The vision pass already returned room classification and strategy. There is deliberately no
+    // second OpenAI request here: deterministic code now owns all geometry decisions.
+    const vision = getVisionStrategy();
+    const aiChanges = mapVisionChanges(vision.changes, labelledDetectedRooms);
+    const aiResult = { ...(vision.strategy || {}), changes: aiChanges };
+    console.log(`[HMO][strategy] mapped ${aiChanges.length}/${vision.changes.length} AI strategy change(s) onto stable room IDs`);
+
     const existingRooms = compactRooms(original);
     const existingBedrooms = existingRooms.filter((room: any) => String(`${room.type} ${room.name}`).toLowerCase().includes("bedroom")).length;
-
-    const prompt = `${buildHMOAnalysisPrompt(address, propertyType)}\n\nAUTHORITATIVE DETECTED ROOMS:\n${JSON.stringify(existingRooms)}\n\nReturn only the strategy JSON.`;
-    const aiResult = await timed("AI strategy", async () => {
-      const response = await openai.responses.create({ model: "gpt-5-mini", input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }], max_output_tokens: 3000 });
-      return parseAIJson<any>(response.output_text || "");
-    });
-
-    const aiChanges = safeChanges(aiResult);
     const layout = await timed("geometry validation", async () => buildMaximumHMOLayout(original, aiChanges));
     const proposed = layout.plan;
     const final = { bedrooms: layout.bedrooms, ensuites: layout.ensuites, bedroomIds: layout.bedroomIds, ensuiteIds: layout.ensuiteIds };
@@ -141,13 +123,11 @@ export async function POST(req: Request) {
     report.conversionSteps = report.recommendedLayout;
     report.verdict = final.bedrooms > existingBedrooms ? `Maximum geometry-feasible ${final.bedrooms}-bedroom HMO layout selected.` : `Deterministic geometry supports ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"}.`;
     report.investorSummary = `Final applied geometry contains ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Only geometry that passed validation is reported.`;
-
     report.generatedLayoutImage = await timed("rendering", async () => renderFloorPlan(original, proposed, originalImage, layout.appliedChanges));
     console.log(`[HMO][complete] total=${Date.now() - started}ms detected=${detectedRooms.length} currentBedrooms=${current.bedrooms} finalBedrooms=${final.bedrooms} ensuites=${final.ensuites}`);
     return NextResponse.json({ success: true, result: report });
   } catch (error: any) {
     console.error("ANALYSE ERROR:", error);
-    const status = error instanceof AnalysisStageError && /no enclosed rooms/i.test(error.message) ? 422 : 500;
-    return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status });
+    return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 });
   }
 }
