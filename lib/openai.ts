@@ -41,6 +41,13 @@ function addJsonRepairInstruction(input: any): any {
   return input;
 }
 
+function requestOptions(options?: any) {
+  return {
+    ...(options || {}),
+    signal: options?.signal || AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
+  };
+}
+
 export const openai = {
   get responses() {
     const client = getClient();
@@ -60,9 +67,8 @@ export const openai = {
 
         // All current floor-plan Responses calls consume response.output_text
         // as JSON. Enforce JSON at the API boundary instead of relying on the
-        // prompt's "Return JSON only" instruction. OpenAI's JSON mode is designed
-        // to produce valid JSON; the larger output budget prevents a large room
-        // list/report from being cut off mid-array.
+        // prompt's "Return JSON only" instruction. The larger output budget
+        // prevents a large room list/report from being cut off mid-array.
         const structuredParams = {
           ...nextParams,
           text: {
@@ -73,22 +79,18 @@ export const openai = {
           },
         };
 
-        const requestOptions = {
-          ...(options || {}),
-          signal: options?.signal || AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS),
-        };
-
-        const first = await client.responses.create(structuredParams, requestOptions);
+        const first = await client.responses.create(structuredParams, requestOptions(options));
         if (looksLikeCompleteJson(first.output_text)) return first;
 
         // A response can still be incomplete (for example because generation
-        // was interrupted). Retry once with an explicit completion instruction.
+        // was interrupted). Retry once with an explicit completion instruction
+        // and a fresh timeout signal.
         const retryParams = {
           ...structuredParams,
           input: addJsonRepairInstruction(structuredParams.input),
           max_output_tokens: Math.max(Number(structuredParams.max_output_tokens) || 0, MAX_JSON_OUTPUT_TOKENS),
         };
-        return client.responses.create(retryParams, requestOptions);
+        return client.responses.create(retryParams, requestOptions(options));
       },
     };
   },
