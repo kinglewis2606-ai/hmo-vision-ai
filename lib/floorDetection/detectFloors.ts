@@ -1,24 +1,120 @@
 import fs from "fs";
 import sharp from "sharp";
-import { openai } from "@/lib/openai";
+import { openai, parseAIJson } from "@/lib/openai";
 import { DetectedFloor, DetectedRoom, Point } from "@/lib/types/floorPlan";
 
-type VisionRoom = { floorIndex?: number; x?: number; y?: number; width?: number; height?: number; polygon?: Point[] };
+type VisionRoom = {
+  floorIndex?: number; x?: number; y?: number; width?: number; height?: number;
+  polygon?: Point[]; name?: string; type?: string; confidence?: string;
+  areaSqm?: number; widthM?: number; depthM?: number;
+};
 type VisionFloor = { name?: string; x?: number; y?: number; width?: number; height?: number };
 type VisionPlan = { floors?: VisionFloor[]; rooms?: VisionRoom[] };
+
 let cacheKey = "";
 let cache: VisionPlan | null = null;
-const cleanJson = (v:string)=>v.replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/\s*```$/i,"").trim();
-function parseJson(text:string):any{const s=cleanJson(text||"");if(!s)return{};try{return JSON.parse(s);}catch{}const a=s.indexOf("{"),b=s.lastIndexOf("}");if(a>=0&&b>a){try{return JSON.parse(s.slice(a,b+1));}catch{}}return{};}
-function validRoom(r:VisionRoom,w:number,h:number){const x=Number(r.x),y=Number(r.y),rw=Number(r.width),rh=Number(r.height);return[x,y,rw,rh].every(Number.isFinite)&&rw>=20&&rh>=20&&x>=0&&y>=0&&x+rw<=w+2&&y+rh<=h+2;}
-function boxPolygon(r:VisionRoom):Point[]|undefined{const x=Number(r.x),y=Number(r.y),w=Number(r.width),h=Number(r.height);if(![x,y,w,h].every(Number.isFinite)||w<20||h<20)return;return[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}];}
-function validPolygon(r:VisionRoom):Point[]|undefined{if(!Array.isArray(r.polygon)||r.polygon.length<3)return boxPolygon(r);const x=Number(r.x),y=Number(r.y),right=x+Number(r.width),bottom=y+Number(r.height),p=r.polygon.map(q=>({x:Number(q.x),y:Number(q.y)}));return p.every(q=>Number.isFinite(q.x)&&Number.isFinite(q.y)&&q.x>=x-3&&q.y>=y-3&&q.x<=right+3&&q.y<=bottom+3)?p:boxPolygon(r);}
-function usableFloor(f:VisionFloor,w:number,h:number):VisionFloor|undefined{const x=Math.max(0,Math.round(Number(f.x??0))),y=Math.max(0,Math.round(Number(f.y??0))),right=Math.min(w,Math.round(x+Number(f.width??0))),bottom=Math.min(h,Math.round(y+Number(f.height??0)));if(right-x<40||bottom-y<40)return;return{name:f.name,x,y,width:right-x,height:bottom-y};}
-async function detectFloorPanels(filePath:string,width:number,height:number):Promise<VisionFloor[]>{const source=fs.readFileSync(filePath),scale=Math.min(1,1800/Math.max(width,height)),iw=Math.max(1,Math.round(width*scale)),ih=Math.max(1,Math.round(height*scale)),image=await sharp(source).resize({width:iw,height:ih,fit:"inside",withoutEnlargement:true}).jpeg({quality:92,mozjpeg:true}).toBuffer();try{const r=await openai.responses.create({model:"gpt-5-mini",text:{format:{type:"json_object"}},input:[{role:"user",content:[{type:"input_text",text:`Detect ONLY distinct architectural floor-plan panels. A panel is the complete visible drawing for one floor, not an individual room. Ignore labels, furniture, compass, watermarks and blank margins. If the upload contains a single floor-plan drawing, return exactly one panel covering the whole drawing. Preserve vertical order for multiple floors. Coordinates are pixels in the supplied ${iw}x${ih} image. JSON only: {"floors":[{"name":"Ground Floor","x":0,"y":0,"width":0,"height":0}]}.`},{type:"input_image",image_url:`data:image/jpeg;base64,${image.toString("base64")}`,detail:"high"}]}]});const p=parseJson(r.output_text);return Array.isArray(p.floors)?p.floors:[];}catch(e){console.warn("Floor panel detection failed",e);return[];}}
-async function detectRoomsPerFloor(filePath:string,width:number,height:number,floor:VisionFloor,floorIndex:number):Promise<VisionRoom[]>{const left=Math.max(0,Math.round(Number(floor.x||0))),top=Math.max(0,Math.round(Number(floor.y||0))),fw=Math.min(width-left,Math.round(Number(floor.width||0))),fh=Math.min(height-top,Math.round(Number(floor.height||0)));if(fw<40||fh<40)return[];const source=fs.readFileSync(filePath),scale=Math.min(1,1800/Math.max(fw,fh)),iw=Math.max(1,Math.round(fw*scale)),ih=Math.max(1,Math.round(fh*scale)),crop=await sharp(source).extract({left,top,width:fw,height:fh}).resize({width:iw,height:ih,fit:"inside",withoutEnlargement:true}).jpeg({quality:96,mozjpeg:true}).toBuffer(),sx=fw/iw,sy=fh/ih;try{const r=await openai.responses.create({model:"gpt-5-mini",text:{format:{type:"json_object"}},input:[{role:"user",content:[{type:"input_text",text:`You are the PRIMARY architectural room-boundary detector for ONE floor only. Detect EVERY genuinely enclosed room bounded by visible wall lines. Trace the interior face of walls. NEVER merge rooms separated by a visible internal wall. NEVER include a landing, staircase or corridor as a room. Include every real enclosed WC, bathroom and shower room. Do not use text, furniture, compass, watermark or blank space as geometry. Do not invent or split rooms. Door openings do not merge rooms. Return a bounding box and polygon when visible; if polygon tracing is uncertain, return the correct bounding box. JSON only: {"rooms":[{"x":0,"y":0,"width":0,"height":0,"polygon":[{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0}]}]}. Coordinates are pixels in this ${iw}x${ih} crop.`},{type:"input_image",image_url:`data:image/jpeg;base64,${crop.toString("base64")}`,detail:"high"}]}]});const p=parseJson(r.output_text);if(!Array.isArray(p.rooms))return[];return p.rooms.map((q:any)=>{const room:VisionRoom={floorIndex,x:Number(q.x)*sx+left,y:Number(q.y)*sy+top,width:Number(q.width)*sx,height:Number(q.height)*sy,polygon:Array.isArray(q.polygon)?q.polygon.map((v:any)=>({x:Number(v.x)*sx+left,y:Number(v.y)*sy+top})):undefined};room.polygon=validPolygon(room);return room;}).filter((q:VisionRoom)=>validRoom(q,width,height)&&!!q.polygon);}catch(e){console.warn(`Room detection failed on floor ${floorIndex+1}`,e);return[];}}
-async function fallbackWholeImageRoomDetection(filePath:string,width:number,height:number):Promise<VisionRoom[]>{const source=fs.readFileSync(filePath),image=await sharp(source).resize({width:1800,height:1800,fit:"inside",withoutEnlargement:true}).jpeg({quality:96,mozjpeg:true}).toBuffer(),meta=await sharp(image).metadata(),iw=meta.width||width,ih=meta.height||height,sx=width/iw,sy=height/ih;try{const r=await openai.responses.create({model:"gpt-5-mini",text:{format:{type:"json_object"}},input:[{role:"user",content:[{type:"input_text",text:`Emergency room-detection pass. Inspect the COMPLETE uploaded floor plan and identify every distinct enclosed room bounded by visible walls. Do not rely on labels alone. Do not merge rooms across visible internal walls. Include bedrooms, living rooms, dining rooms, kitchens, bathrooms, shower rooms and WCs. Ignore blank margins, furniture, dimensions, compass and title blocks. Return conservative bounding boxes for real rooms only. JSON only: {"rooms":[{"floorIndex":0,"x":0,"y":0,"width":0,"height":0}]}. Coordinates are pixels in the supplied ${iw}x${ih} image.`},{type:"input_image",image_url:`data:image/jpeg;base64,${image.toString("base64")}`,detail:"high"}]}]});const p=parseJson(r.output_text);if(!Array.isArray(p.rooms))return[];return p.rooms.map((q:any)=>{const room:VisionRoom={floorIndex:Number.isFinite(Number(q.floorIndex))?Number(q.floorIndex):0,x:Number(q.x)*sx,y:Number(q.y)*sy,width:Number(q.width)*sx,height:Number(q.height)*sy};room.polygon=boxPolygon(room);return room;}).filter((q:VisionRoom)=>validRoom(q,width,height)&&!!q.polygon);}catch(e){console.warn("Emergency whole-image room detection failed",e);return[];}}
-function dedupeRooms(rooms:VisionRoom[]):VisionRoom[]{const out:VisionRoom[]=[];for(const r of rooms){if(!out.some(x=>x.floorIndex===r.floorIndex&&Math.abs(Number(x.x)-Number(r.x))<8&&Math.abs(Number(x.y)-Number(r.y))<8&&Math.abs(Number(x.width)-Number(r.width))<8&&Math.abs(Number(x.height)-Number(r.height))<8))out.push(r);}return out;}
-async function verifyRooms(filePath:string,plan:VisionPlan,width:number,height:number):Promise<VisionPlan>{const rooms=dedupeRooms((plan.rooms||[]).filter(r=>validRoom(r,width,height)).map(r=>({...r,polygon:validPolygon(r)})).filter(r=>r.polygon));if(!rooms.length)return{...plan,rooms:[]};const source=fs.readFileSync(filePath),image=await sharp(source).resize({width:1800,height:1800,fit:"inside",withoutEnlargement:true}).jpeg({quality:90,mozjpeg:true}).toBuffer(),candidates=rooms.map((r,i)=>({candidateId:i+1,floorIndex:r.floorIndex,x:Math.round(Number(r.x)),y:Math.round(Number(r.y)),width:Math.round(Number(r.width)),height:Math.round(Number(r.height))}));try{const r=await openai.responses.create({model:"gpt-5-mini",text:{format:{type:"json_object"}},input:[{role:"user",content:[{type:"input_text",text:`Quality-control audit. For EACH candidate decide whether it overlays ONE real enclosed architectural room. Reject only obvious false positives: blank space, furniture-only areas, compass/watermark, merged rooms crossing a visible internal wall, or geometry that clearly contains another separate room. Do NOT move, resize or redraw candidates. Return one decision for every candidate. JSON only: {"rooms":[{"candidateId":1,"valid":true}]}. Candidates: ${JSON.stringify(candidates)}`},{type:"input_image",image_url:`data:image/jpeg;base64,${image.toString("base64")}`,detail:"high"}]}]});const p=parseJson(r.output_text);if(!Array.isArray(p.rooms))return{...plan,rooms};const accepted=new Set<number>(p.rooms.filter((q:any)=>q?.valid===true&&Number.isInteger(Number(q.candidateId))).map((q:any)=>Number(q.candidateId)).filter((id:number)=>id>=1&&id<=rooms.length));if(accepted.size<Math.max(1,Math.ceil(rooms.length*.5))){console.warn(`Room verification rejected too many candidates (${accepted.size}/${rooms.length}); retaining primary geometry`);return{...plan,rooms};}return{...plan,rooms:rooms.filter((_,i)=>accepted.has(i+1))};}catch(e){console.warn("Room geometry verification failed; retaining primary geometry",e);return{...plan,rooms};}}
-function floorResult(plan:VisionPlan,width:number,height:number):DetectedFloor[]{return(plan.floors||[]).map((f,i)=>({name:f.name||`Floor ${i+1}`,level:i,top:Math.max(0,Math.round(Number(f.y||0))),left:Math.max(0,Math.round(Number(f.x||0))),bottom:Math.min(height,Math.round(Number(f.y||0)+Number(f.height||0))),right:Math.min(width,Math.round(Number(f.x||0)+Number(f.width||0)))}));}
-export async function detectFloors(filePath:string):Promise<DetectedFloor[]>{const m=await sharp(filePath).metadata(),width=m.width??0,height=m.height??0;if(!width||!height)return[];const stat=fs.statSync(filePath),key=`${filePath}:${stat.size}:${stat.mtimeMs}`;if(cacheKey===key&&cache?.floors?.length)return floorResult(cache,width,height);try{const raw=await detectFloorPanels(filePath,width,height),scale=Math.min(1,1800/Math.max(width,height));let floors=raw.map(f=>({...f,x:Number(f.x||0)/scale,y:Number(f.y||0)/scale,width:Number(f.width||0)/scale,height:Number(f.height||0)/scale})).map(f=>usableFloor(f,width,height)).filter((f):f is VisionFloor=>!!f);if(!floors.length)floors=[{name:"Ground Floor",x:0,y:0,width,height}];let rooms:VisionRoom[]=[];for(let i=0;i<floors.length;i++)rooms.push(...await detectRoomsPerFloor(filePath,width,height,floors[i],i));if(!rooms.length){console.warn("Primary room detector returned zero rooms; running emergency whole-image room detection");rooms=await fallbackWholeImageRoomDetection(filePath,width,height);if(rooms.length&&floors.length===1)rooms=rooms.map(r=>({...r,floorIndex:0}));}const plan=rooms.length?await verifyRooms(filePath,{floors,rooms},width,height):{floors,rooms};cacheKey=key;cache=plan;console.log(`Vision floor recognition: ${floors.length} floor(s), ${plan.rooms?.length||0} room(s)`);return floorResult(plan,width,height);}catch(e){console.warn("Vision floor/room detection failed",e);cacheKey=key;cache={floors:[],rooms:[]};return[];}}
-export function getVisionDetectedRooms(filePath:string):DetectedRoom[]|null{if(!cache||cacheKey!==`${filePath}:${fs.statSync(filePath).size}:${fs.statSync(filePath).mtimeMs}`)return null;return(cache.rooms||[]).map((r,i)=>({id:`room-${i+1}`,x:Number(r.x),y:Number(r.y),width:Number(r.width),height:Number(r.height),polygon:validPolygon(r)})).filter((r:any)=>r.polygon&&r.width>=20&&r.height>=20) as DetectedRoom[];}
+
+function boxPolygon(r: VisionRoom): Point[] | undefined {
+  const x = Number(r.x), y = Number(r.y), w = Number(r.width), h = Number(r.height);
+  if (![x, y, w, h].every(Number.isFinite) || w < 20 || h < 20) return undefined;
+  return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+}
+function validPolygon(r: VisionRoom): Point[] | undefined {
+  if (Array.isArray(r.polygon) && r.polygon.length >= 3) {
+    const p = r.polygon.map(q => ({ x: Number(q.x), y: Number(q.y) }));
+    if (p.every(q => Number.isFinite(q.x) && Number.isFinite(q.y))) return p;
+  }
+  return boxPolygon(r);
+}
+function validRoom(r: VisionRoom, w: number, h: number): boolean {
+  const x = Number(r.x), y = Number(r.y), rw = Number(r.width), rh = Number(r.height);
+  return [x, y, rw, rh].every(Number.isFinite) && rw >= 20 && rh >= 20 && x >= 0 && y >= 0 && x + rw <= w + 3 && y + rh <= h + 3;
+}
+function usableFloor(f: VisionFloor, w: number, h: number): VisionFloor | undefined {
+  const x = Math.max(0, Math.round(Number(f.x ?? 0))), y = Math.max(0, Math.round(Number(f.y ?? 0)));
+  const right = Math.min(w, Math.round(x + Number(f.width ?? 0))), bottom = Math.min(h, Math.round(y + Number(f.height ?? 0)));
+  if (right - x < 40 || bottom - y < 40) return undefined;
+  return { name: String(f.name || "Floor"), x, y, width: right - x, height: bottom - y };
+}
+function dedupeRooms(rooms: VisionRoom[]): VisionRoom[] {
+  const result: VisionRoom[] = [];
+  for (const room of rooms) {
+    const duplicate = result.some(existing => existing.floorIndex === room.floorIndex && Math.abs(Number(existing.x) - Number(room.x)) < 8 && Math.abs(Number(existing.y) - Number(room.y)) < 8 && Math.abs(Number(existing.width) - Number(room.width)) < 8 && Math.abs(Number(existing.height) - Number(room.height)) < 8);
+    if (!duplicate) result.push(room);
+  }
+  return result;
+}
+
+async function detectPlan(filePath: string, width: number, height: number): Promise<VisionPlan> {
+  const source = fs.readFileSync(filePath);
+  const scale = Math.min(1, 2200 / Math.max(width, height));
+  const iw = Math.max(1, Math.round(width * scale));
+  const ih = Math.max(1, Math.round(height * scale));
+  const image = await sharp(source).resize({ width: iw, height: ih, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+
+  const prompt = `Analyse this real architectural floor plan. Detect every distinct enclosed room bounded by visible wall lines and classify each detected room from its printed label/layout. Do not invent rooms, merge rooms separated by walls, or use furniture/text alone as geometry. Include bedrooms, living/lounge, dining, kitchen, bathroom, shower room, WC and other genuinely enclosed rooms. Do not include corridors, landings or stair voids as rooms unless they are visibly enclosed rooms. Detect every floor-plan panel and preserve vertical/horizontal panel order.
+
+For each room return a conservative interior bounding box and a polygon when visible. The polygon must stay inside the bounding box. Also return the visible room name/type and confidence. Do not calculate geometry outside the image.
+
+Return JSON only in this exact shape:
+{"floors":[{"name":"Ground Floor","x":0,"y":0,"width":0,"height":0}],"rooms":[{"floorIndex":0,"x":0,"y":0,"width":0,"height":0,"polygon":[{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0}],"name":"Bedroom 1","type":"bedroom","confidence":"high","areaSqm":0,"widthM":0,"depthM":0}]}
+Coordinates are pixels in the supplied ${iw}x${ih} image. If a room's physical area or dimensions cannot be read reliably, use 0 rather than inventing them.`;
+
+  const response = await openai.responses.create({
+    model: "gpt-5-mini",
+    input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: `data:image/jpeg;base64,${image.toString("base64")}`, detail: "high" }] }],
+  });
+  return parseAIJson<VisionPlan>(response.output_text || "");
+}
+
+function floorResult(plan: VisionPlan, width: number, height: number): DetectedFloor[] {
+  return (plan.floors || []).map((f, i) => ({
+    name: String(f.name || `Floor ${i + 1}`), level: i,
+    top: Math.max(0, Math.round(Number(f.y || 0))), left: Math.max(0, Math.round(Number(f.x || 0))),
+    bottom: Math.min(height, Math.round(Number(f.y || 0) + Number(f.height || 0))), right: Math.min(width, Math.round(Number(f.x || 0) + Number(f.width || 0))),
+  })).filter(f => f.bottom - f.top >= 40 && (f.right ?? 0) - (f.left ?? 0) >= 40);
+}
+
+export async function detectFloors(filePath: string): Promise<DetectedFloor[]> {
+  const metadata = await sharp(filePath).metadata();
+  const width = metadata.width ?? 0, height = metadata.height ?? 0;
+  if (!width || !height) return [];
+  const stat = fs.statSync(filePath);
+  const key = `${filePath}:${stat.size}:${stat.mtimeMs}`;
+  if (cacheKey === key && cache) return floorResult(cache, width, height);
+
+  const raw = await detectPlan(filePath, width, height);
+  const scale = Math.min(1, 2200 / Math.max(width, height));
+  let floors = (raw.floors || []).map(f => ({ ...f, x: Number(f.x || 0) / scale, y: Number(f.y || 0) / scale, width: Number(f.width || 0) / scale, height: Number(f.height || 0) / scale })).map(f => usableFloor(f, width, height)).filter((f): f is VisionFloor => !!f);
+  if (!floors.length) floors = [{ name: "Ground Floor", x: 0, y: 0, width, height }];
+
+  const rooms = dedupeRooms((raw.rooms || []).map(r => ({
+    ...r,
+    floorIndex: Number.isFinite(Number(r.floorIndex)) ? Number(r.floorIndex) : 0,
+    x: Number(r.x) / scale, y: Number(r.y) / scale, width: Number(r.width) / scale, height: Number(r.height) / scale,
+    polygon: validPolygon({ ...r, x: Number(r.x) / scale, y: Number(r.y) / scale, width: Number(r.width) / scale, height: Number(r.height) / scale }),
+  })).filter(r => validRoom(r, width, height) && !!r.polygon));
+
+  cacheKey = key;
+  cache = { floors, rooms };
+  console.log(`Vision detection complete: ${floors.length} floor(s), ${rooms.length} room(s) in one vision pass`);
+  return floorResult(cache, width, height);
+}
+
+export function getVisionDetectedRooms(filePath: string): DetectedRoom[] | null {
+  if (!cache || cacheKey !== `${filePath}:${fs.statSync(filePath).size}:${fs.statSync(filePath).mtimeMs}`) return null;
+  const rooms = dedupeRooms(cache.rooms || []);
+  const perFloorCount = new Map<number, number>();
+  return rooms.map((room, index) => {
+    const floorIndex = Number(room.floorIndex || 0);
+    const ordinal = (perFloorCount.get(floorIndex) || 0) + 1;
+    perFloorCount.set(floorIndex, ordinal);
+    const prefix = String(cache?.floors?.[floorIndex]?.name || `Floor ${floorIndex + 1}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `floor-${floorIndex + 1}`;
+    return {
+      id: `${prefix}-room-${ordinal}`,
+      x: Number(room.x), y: Number(room.y), width: Number(room.width), height: Number(room.height), polygon: validPolygon(room),
+      ...(room.name ? { name: String(room.name) } : {}), ...(room.type ? { type: String(room.type) } : {}), ...(room.confidence ? { confidence: String(room.confidence) } : {}),
+      ...(Number(room.areaSqm) > 0 ? { approxAreaSqm: Number(room.areaSqm) } : {}), ...(Number(room.widthM) > 0 ? { approxWidthM: Number(room.widthM) } : {}), ...(Number(room.depthM) > 0 ? { approxDepthM: Number(room.depthM) } : {}),
+    } as DetectedRoom & Record<string, unknown>;
+  });
+}

@@ -13,10 +13,7 @@ function roomBelongsToFloor(room: DetectedRoom, floor: DetectedFloor): boolean {
   const cx = room.x + room.width / 2, cy = room.y + room.height / 2;
   return cx >= (floor.left ?? 0) && cx < (floor.right ?? Infinity) && cy >= (floor.top ?? 0) && cy < (floor.bottom ?? Infinity);
 }
-function authoritativePolygon(room: DetectedRoom): Point[] {
-  if (room.polygon && room.polygon.length >= 3) return room.polygon;
-  return [{ x: room.x, y: room.y }, { x: room.x + room.width, y: room.y }, { x: room.x + room.width, y: room.y + room.height }, { x: room.x, y: room.y + room.height }];
-}
+function authoritativePolygon(room: DetectedRoom): Point[] { return room.polygon && room.polygon.length >= 3 ? room.polygon : [{ x: room.x, y: room.y }, { x: room.x + room.width, y: room.y }, { x: room.x + room.width, y: room.y + room.height }, { x: room.x, y: room.y + room.height }]; }
 function exteriorFacingWalls(room: DetectedRoom, floorRooms: DetectedRoom[]): WallSide[] {
   if (!floorRooms.length) return [];
   const minX = Math.min(...floorRooms.map(r => r.x)), minY = Math.min(...floorRooms.map(r => r.y));
@@ -48,8 +45,7 @@ export function buildOriginalFloorPlan(floors: DetectedFloor[], rooms: DetectedR
     floors: floors.map((floor, floorIndex) => {
       const floorRooms = rooms.filter(room => roomBelongsToFloor(room, floor));
       return {
-        name: floor.name,
-        level: floorIndex,
+        name: floor.name, level: floorIndex,
         rooms: floorRooms.map(room => {
           const polygon = authoritativePolygon(room);
           const windowWalls = Array.from(new Set<WallSide>([...(room.openingWalls || []), ...exteriorFacingWalls(room, floorRooms)]));
@@ -61,17 +57,14 @@ export function buildOriginalFloorPlan(floors: DetectedFloor[], rooms: DetectedR
             type: labelledRoom.type || "unknown",
             x: room.x, y: room.y, width: room.width, height: room.height,
             polygon,
-            approxAreaSqm: labelledRoom.approxAreaSqm ?? Number(((room.width * room.height) / 10000).toFixed(1)),
-            approxWidthM: labelledRoom.approxWidthM ?? Number((room.width / 100).toFixed(1)),
-            approxDepthM: labelledRoom.approxDepthM ?? Number((room.height / 100).toFixed(1)),
+            approxAreaSqm: labelledRoom.approxAreaSqm && labelledRoom.approxAreaSqm > 0 ? labelledRoom.approxAreaSqm : undefined,
+            approxWidthM: labelledRoom.approxWidthM && labelledRoom.approxWidthM > 0 ? labelledRoom.approxWidthM : undefined,
+            approxDepthM: labelledRoom.approxDepthM && labelledRoom.approxDepthM > 0 ? labelledRoom.approxDepthM : undefined,
             shape: polygon.length > 4 ? "polygon" : "rectangle",
             adjacentRooms: getAdjacentRooms(room, floorRooms),
             doors: doorWalls.map(wall => ({ wall })),
             windows: windowWalls.map(wall => ({ wall })),
-            notes: [
-              windowWalls.length ? "Exterior-facing wall preserved as a potential window/opening wall" : "",
-              doorWalls.length ? `Likely access wall inferred from shared geometry: ${doorWalls[0]}` : "",
-            ].filter(Boolean).join("; "),
+            notes: [windowWalls.length ? "Exterior-facing wall preserved as a potential window/opening wall" : "", doorWalls.length ? `Likely access wall inferred from shared geometry: ${doorWalls[0]}` : ""].filter(Boolean).join(";"),
             confidence: labelledRoom.confidence || "Geometry Detection",
           };
         }),
