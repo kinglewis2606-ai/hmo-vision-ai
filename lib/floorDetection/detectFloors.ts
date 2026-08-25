@@ -8,8 +8,12 @@ type VisionRoom = {
   polygon?: Point[]; name?: string; type?: string; confidence?: string;
   areaSqm?: number; widthM?: number; depthM?: number;
 };
-type VisionFloor = { name?: string; x?: number; y?: number; width?: number; height?: number };
-type VisionPlan = { floors?: VisionFloor[]; rooms?: VisionRoom[] };
+type VisionChange = {
+  roomIndex?: number; action?: string; newName?: string; newType?: string; reason?: string;
+  split?: { firstName?: string; firstType?: string; secondName?: string; secondType?: string; direction?: string; firstRatio?: number };
+};
+type VisionPlan = { floors?: Array<{ name?: string; x?: number; y?: number; width?: number; height?: number }>; rooms?: VisionRoom[]; changes?: VisionChange[]; strategy?: Record<string, unknown> };
+type DetectionContext = { address?: string; propertyType?: string };
 
 let cacheKey = "";
 let cache: VisionPlan | null = null;
@@ -30,7 +34,7 @@ function validRoom(r: VisionRoom, w: number, h: number): boolean {
   const x = Number(r.x), y = Number(r.y), rw = Number(r.width), rh = Number(r.height);
   return [x, y, rw, rh].every(Number.isFinite) && rw >= 20 && rh >= 20 && x >= 0 && y >= 0 && x + rw <= w + 3 && y + rh <= h + 3;
 }
-function usableFloor(f: VisionFloor, w: number, h: number): VisionFloor | undefined {
+function usableFloor(f: { name?: string; x?: number; y?: number; width?: number; height?: number }, w: number, h: number) {
   const x = Math.max(0, Math.round(Number(f.x ?? 0))), y = Math.max(0, Math.round(Number(f.y ?? 0)));
   const right = Math.min(w, Math.round(x + Number(f.width ?? 0))), bottom = Math.min(h, Math.round(y + Number(f.height ?? 0)));
   if (right - x < 40 || bottom - y < 40) return undefined;
@@ -45,24 +49,33 @@ function dedupeRooms(rooms: VisionRoom[]): VisionRoom[] {
   return result;
 }
 
-async function detectPlan(filePath: string, width: number, height: number): Promise<VisionPlan> {
+async function detectPlan(filePath: string, width: number, height: number, context: DetectionContext): Promise<VisionPlan> {
   const source = fs.readFileSync(filePath);
-  const scale = Math.min(1, 2200 / Math.max(width, height));
+  // 1800px is enough to read normal plan labels while materially reducing vision latency/payload size.
+  const scale = Math.min(1, 1800 / Math.max(width, height));
   const iw = Math.max(1, Math.round(width * scale));
   const ih = Math.max(1, Math.round(height * scale));
-  const image = await sharp(source).resize({ width: iw, height: ih, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+  const image = await sharp(source).resize({ width: iw, height: ih, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 88, mozjpeg: true }).toBuffer();
 
-  const prompt = `Analyse this real architectural floor plan. Detect every distinct enclosed room bounded by visible wall lines and classify each detected room from its printed label/layout. Do not invent rooms, merge rooms separated by walls, or use furniture/text alone as geometry. Include bedrooms, living/lounge, dining, kitchen, bathroom, shower room, WC and other genuinely enclosed rooms. Do not include corridors, landings or stair voids as rooms unless they are visibly enclosed rooms. Detect every floor-plan panel and preserve vertical/horizontal panel order.
+  const prompt = `Analyse this real architectural floor plan for an HMO conversion. This is the ONLY AI vision pass. Detect every distinct enclosed room bounded by visible wall lines and classify it from its printed label/layout. Do not invent rooms, merge rooms separated by walls, or use furniture/text alone as geometry. Detect every floor-plan panel and preserve their order.
 
-For each room return a conservative interior bounding box and a polygon when visible. The polygon must stay inside the bounding box. Also return the visible room name/type and confidence. Do not calculate geometry outside the image.
+For each detected room return a conservative interior bounding box and polygon. The polygon must stay inside the bounding box and image. Include the visible room name/type and confidence. Use 0 for physical dimensions you cannot reliably read; never invent an area.
 
-Return JSON only in this exact shape:
-{"floors":[{"name":"Ground Floor","x":0,"y":0,"width":0,"height":0}],"rooms":[{"floorIndex":0,"x":0,"y":0,"width":0,"height":0,"polygon":[{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0}],"name":"Bedroom 1","type":"bedroom","confidence":"high","areaSqm":0,"widthM":0,"depthM":0}]}
-Coordinates are pixels in the supplied ${iw}x${ih} image. If a room's physical area or dimensions cannot be read reliably, use 0 rather than inventing them.`;
+After detecting rooms, provide a SMALL HMO strategy using ONLY the detected room array. Do not create geometry or coordinates. Every strategy change MUST refer to the zero-based roomIndex in the rooms array. The deterministic application will decide whether a change is physically possible. Prefer existing bedrooms and only suggest conversions/splits that make architectural sense. Never suggest an ensuite as geometry; it is only a strategy hint for the deterministic geometry engine.
+
+Property address: ${context.address || "Unknown"}
+Property type: ${context.propertyType || "Unknown"}
+
+Return JSON only in exactly this shape:
+{"floors":[{"name":"Ground Floor","x":0,"y":0,"width":0,"height":0}],"rooms":[{"floorIndex":0,"x":0,"y":0,"width":0,"height":0,"polygon":[{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":0}],"name":"Bedroom 1","type":"bedroom","confidence":"high","areaSqm":0,"widthM":0,"depthM":0}],"changes":[{"roomIndex":0,"action":"ConvertToBedroom","newName":"Bedroom 1","newType":"bedroom","reason":"Existing labelled bedroom"}],"strategy":{"verdict":"","recommendations":[],"planningRisk":""}}
+
+Allowed actions: ConvertToBedroom, ConvertToKitchen, ConvertToBathroom, ConvertToEnsuite, ExtendBathroom, SplitRoom, MergeRoom. For SplitRoom include split:{firstName,firstType,secondName,secondType,direction,firstRatio}. Keep changes concise. Do not return room IDs because the application assigns stable floor-specific IDs after detection.
+Coordinates are pixels in the supplied ${iw}x${ih} image.`;
 
   const response = await openai.responses.create({
     model: "gpt-5-mini",
     input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: `data:image/jpeg;base64,${image.toString("base64")}`, detail: "high" }] }],
+    max_output_tokens: 5000,
   });
   return parseAIJson<VisionPlan>(response.output_text || "");
 }
@@ -75,17 +88,17 @@ function floorResult(plan: VisionPlan, width: number, height: number): DetectedF
   })).filter(f => f.bottom - f.top >= 40 && (f.right ?? 0) - (f.left ?? 0) >= 40);
 }
 
-export async function detectFloors(filePath: string): Promise<DetectedFloor[]> {
+export async function detectFloors(filePath: string, context: DetectionContext = {}): Promise<DetectedFloor[]> {
   const metadata = await sharp(filePath).metadata();
   const width = metadata.width ?? 0, height = metadata.height ?? 0;
   if (!width || !height) return [];
   const stat = fs.statSync(filePath);
-  const key = `${filePath}:${stat.size}:${stat.mtimeMs}`;
+  const key = `${filePath}:${stat.size}:${stat.mtimeMs}:${context.address || ""}:${context.propertyType || ""}`;
   if (cacheKey === key && cache) return floorResult(cache, width, height);
 
-  const raw = await detectPlan(filePath, width, height);
-  const scale = Math.min(1, 2200 / Math.max(width, height));
-  let floors = (raw.floors || []).map(f => ({ ...f, x: Number(f.x || 0) / scale, y: Number(f.y || 0) / scale, width: Number(f.width || 0) / scale, height: Number(f.height || 0) / scale })).map(f => usableFloor(f, width, height)).filter((f): f is VisionFloor => !!f);
+  const raw = await detectPlan(filePath, width, height, context);
+  const scale = Math.min(1, 1800 / Math.max(width, height));
+  let floors = (raw.floors || []).map(f => ({ ...f, x: Number(f.x || 0) / scale, y: Number(f.y || 0) / scale, width: Number(f.width || 0) / scale, height: Number(f.height || 0) / scale })).map(f => usableFloor(f, width, height)).filter((f): f is NonNullable<typeof f> => !!f);
   if (!floors.length) floors = [{ name: "Ground Floor", x: 0, y: 0, width, height }];
 
   const rooms = dedupeRooms((raw.rooms || []).map(r => ({
@@ -96,16 +109,16 @@ export async function detectFloors(filePath: string): Promise<DetectedFloor[]> {
   })).filter(r => validRoom(r, width, height) && !!r.polygon));
 
   cacheKey = key;
-  cache = { floors, rooms };
-  console.log(`Vision detection complete: ${floors.length} floor(s), ${rooms.length} room(s) in one vision pass`);
+  cache = { ...raw, floors, rooms };
+  console.log(`Vision detection complete: ${floors.length} floor(s), ${rooms.length} room(s), ${raw.changes?.length || 0} strategy change(s) in one AI pass`);
   return floorResult(cache, width, height);
 }
 
 export function getVisionDetectedRooms(filePath: string): DetectedRoom[] | null {
-  if (!cache || cacheKey !== `${filePath}:${fs.statSync(filePath).size}:${fs.statSync(filePath).mtimeMs}`) return null;
+  if (!cache || cacheKey !== `${filePath}:${fs.statSync(filePath).size}:${fs.statSync(filePath).mtimeMs}:${""}:${""}` && !cacheKey.startsWith(`${filePath}:`)) return null;
   const rooms = dedupeRooms(cache.rooms || []);
   const perFloorCount = new Map<number, number>();
-  return rooms.map((room, index) => {
+  return rooms.map(room => {
     const floorIndex = Number(room.floorIndex || 0);
     const ordinal = (perFloorCount.get(floorIndex) || 0) + 1;
     perFloorCount.set(floorIndex, ordinal);
@@ -117,4 +130,8 @@ export function getVisionDetectedRooms(filePath: string): DetectedRoom[] | null 
       ...(Number(room.areaSqm) > 0 ? { approxAreaSqm: Number(room.areaSqm) } : {}), ...(Number(room.widthM) > 0 ? { approxWidthM: Number(room.widthM) } : {}), ...(Number(room.depthM) > 0 ? { approxDepthM: Number(room.depthM) } : {}),
     } as DetectedRoom & Record<string, unknown>;
   });
+}
+
+export function getVisionStrategy(): { changes: VisionChange[]; strategy: Record<string, unknown> } {
+  return { changes: Array.isArray(cache?.changes) ? cache!.changes : [], strategy: cache?.strategy || {} };
 }
