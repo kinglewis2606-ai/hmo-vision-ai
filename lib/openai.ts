@@ -6,7 +6,8 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-export const OPENAI_REQUEST_TIMEOUT_MS = 35_000;
+/** Two bounded AI stages must fit inside the route's 60-second server budget. */
+export const OPENAI_REQUEST_TIMEOUT_MS = 28_000;
 const MAX_JSON_OUTPUT_TOKENS = 4_000;
 
 function stripFences(value: string): string {
@@ -31,10 +32,7 @@ export const openai = {
           ...params,
           model: params?.model || "gpt-5-mini",
           max_output_tokens: params?.max_output_tokens ?? MAX_JSON_OUTPUT_TOKENS,
-          text: {
-            ...(params?.text || {}),
-            format: { type: "json_object" },
-          },
+          text: { ...(params?.text || {}), format: { type: "json_object" } },
         };
         const signal = options?.signal || AbortSignal.timeout(OPENAI_REQUEST_TIMEOUT_MS);
         return client.responses.create(nextParams, { ...(options || {}), signal });
