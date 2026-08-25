@@ -6,9 +6,8 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-// The analysis route has a 60-second budget. There is intentionally one AI call in the
-// hot path, so it can use most of that budget rather than having two sequential timeouts.
-export const OPENAI_REQUEST_TIMEOUT_MS = 50_000;
+/** Two bounded AI stages must fit inside the route's 60-second server budget. */
+export const OPENAI_REQUEST_TIMEOUT_MS = 28_000;
 const MAX_JSON_OUTPUT_TOKENS = 4_000;
 
 function stripFences(value: string): string {
