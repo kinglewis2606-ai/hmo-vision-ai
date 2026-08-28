@@ -1,3 +1,4 @@
+# Real reference-floor-plan E2E acceptance test enabled.
 name: Build and Runtime Smoke Test
 
 on:
@@ -101,14 +102,7 @@ jobs:
           const audit = g.grossAreaAudit || {};
           if (audit.roomGeometryAreaConserved !== true) throw new Error('Gross-area conservation audit failed');
           if (!Array.isArray(r.changes) || !Array.isArray(r.rejectedChanges)) throw new Error('Missing applied/rejected change audit');
-          console.log(JSON.stringify({
-            bedrooms: g.proposedBedrooms,
-            ensuites: g.proposedEnsuites,
-            appliedChanges: r.changes.length,
-            rejectedChanges: r.rejectedChanges.length,
-            geometryPossible: g.possible,
-            areaConserved: audit.roomGeometryAreaConserved
-          }, null, 2));
+          console.log(JSON.stringify({bedrooms:g.proposedBedrooms,ensuites:g.proposedEnsuites,appliedChanges:r.changes.length,rejectedChanges:r.rejectedChanges.length,geometryPossible:g.possible,areaConserved:audit.roomGeometryAreaConserved}, null, 2));
           NODE
       - name: Verify server remains alive
         run: kill -0 $(cat /tmp/hmo-next.pid)
