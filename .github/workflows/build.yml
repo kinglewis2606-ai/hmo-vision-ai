@@ -40,6 +40,8 @@ jobs:
           node --test .hmo-source-test/tests/hmoPipelineSmoke.test.js
       - run: npm run build
       - name: Start production server
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           nohup npm run start -- -H 127.0.0.1 -p 3000 > /tmp/hmo-next.log 2>&1 &
           echo $! > /tmp/hmo-next.pid
@@ -72,6 +74,42 @@ jobs:
           status=$(curl --silent --output /tmp/analyse.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse)
           test "$status" = "400"
           grep -Eq 'No uploaded file|Invalid uploaded filename|Missing' /tmp/analyse.json
+      - name: End-to-end test with reference floor plan
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          test -n "$OPENAI_API_KEY"
+          mkdir -p public/uploads
+          cp tests/fixtures/reference-floorplan.jpg public/uploads/e2e-reference-floorplan.jpg
+          started=$(date +%s)
+          status=$(curl --silent --show-error --output /tmp/e2e-analysis.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' --data '{"filename":"e2e-reference-floorplan.jpg","address":"E2E reference property","propertyType":"Semi Detached"}' http://127.0.0.1:3000/api/analyse)
+          finished=$(date +%s)
+          elapsed=$((finished-started))
+          test "$status" = "200"
+          test "$elapsed" -lt 60
+          node - <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/e2e-analysis.json','utf8'));
+          if (!body.success) throw new Error(body.error || 'E2E analysis returned success=false');
+          const r = body.result || {};
+          if (!r.originalFloorPlan || !r.proposedFloorPlan) throw new Error('Missing original/proposed floor plans');
+          if (!r.generatedLayoutImage) throw new Error('Missing generated proposed-plan rendering');
+          const g = r.geometryFeasibility || {};
+          if (g.possible !== true) throw new Error('Geometry feasibility was not true');
+          if (!Number.isInteger(g.proposedBedrooms) || g.proposedBedrooms < 1) throw new Error('No validated proposed bedrooms');
+          if (!Number.isInteger(g.proposedEnsuites) || g.proposedEnsuites < 0) throw new Error('Invalid ensuite count');
+          const audit = g.grossAreaAudit || {};
+          if (audit.roomGeometryAreaConserved !== true) throw new Error('Gross-area conservation audit failed');
+          if (!Array.isArray(r.changes) || !Array.isArray(r.rejectedChanges)) throw new Error('Missing applied/rejected change audit');
+          console.log(JSON.stringify({
+            bedrooms: g.proposedBedrooms,
+            ensuites: g.proposedEnsuites,
+            appliedChanges: r.changes.length,
+            rejectedChanges: r.rejectedChanges.length,
+            geometryPossible: g.possible,
+            areaConserved: audit.roomGeometryAreaConserved
+          }, null, 2));
+          NODE
       - name: Verify server remains alive
         run: kill -0 $(cat /tmp/hmo-next.pid)
       - name: Show server log on failure
