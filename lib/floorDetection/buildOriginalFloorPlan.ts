@@ -1,74 +1,153 @@
-import { DetectedFloor, DetectedRoom, FloorPlan, WallSide, Point } from "@/lib/types/floorPlan";
+import { DetectedFloor, DetectedRoom, RoomLabel, FloorPlan, Room, Floor, Door, Window } from "@/lib/types/floorPlan";
 
-function touching(a: DetectedRoom, b: DetectedRoom): boolean {
-  const tolerance = 15;
-  const horizontal = Math.abs(a.x + a.width - b.x) <= tolerance || Math.abs(b.x + b.width - a.x) <= tolerance;
-  const verticalOverlap = a.y < b.y + b.height && a.y + a.height > b.y;
-  const vertical = Math.abs(a.y + a.height - b.y) <= tolerance || Math.abs(b.y + b.height - a.y) <= tolerance;
-  const horizontalOverlap = a.x < b.x + b.width && a.x + a.width > b.x;
-  return (horizontal && verticalOverlap) || (vertical && horizontalOverlap);
-}
-function getAdjacentRooms(room: DetectedRoom, rooms: DetectedRoom[]): string[] { return rooms.filter(r => r.id !== room.id && touching(room, r)).map(r => r.id); }
-function roomBelongsToFloor(room: DetectedRoom, floor: DetectedFloor): boolean {
-  const cx = room.x + room.width / 2, cy = room.y + room.height / 2;
-  return cx >= (floor.left ?? 0) && cx < (floor.right ?? Infinity) && cy >= (floor.top ?? 0) && cy < (floor.bottom ?? Infinity);
-}
-function authoritativePolygon(room: DetectedRoom): Point[] { return room.polygon && room.polygon.length >= 3 ? room.polygon : [{ x: room.x, y: room.y }, { x: room.x + room.width, y: room.y }, { x: room.x + room.width, y: room.y + room.height }, { x: room.x, y: room.y + room.height }]; }
-function exteriorFacingWalls(room: DetectedRoom, floorRooms: DetectedRoom[]): WallSide[] {
-  if (!floorRooms.length) return [];
-  const minX = Math.min(...floorRooms.map(r => r.x)), minY = Math.min(...floorRooms.map(r => r.y));
-  const maxX = Math.max(...floorRooms.map(r => r.x + r.width)), maxY = Math.max(...floorRooms.map(r => r.y + r.height));
-  const tolerance = 18, walls: WallSide[] = [];
-  if (Math.abs(room.x - minX) <= tolerance) walls.push("left");
-  if (Math.abs(room.y - minY) <= tolerance) walls.push("top");
-  if (Math.abs(room.x + room.width - maxX) <= tolerance) walls.push("right");
-  if (Math.abs(room.y + room.height - maxY) <= tolerance) walls.push("bottom");
-  return walls;
-}
-function inferredDoorWall(room: DetectedRoom, floorRooms: DetectedRoom[]): WallSide[] {
-  const t = 15, scores: Record<WallSide, number> = { top: 0, bottom: 0, left: 0, right: 0 };
-  for (const other of floorRooms) {
-    if (other.id === room.id) continue;
-    const verticalOverlap = Math.max(0, Math.min(room.y + room.height, other.y + other.height) - Math.max(room.y, other.y));
-    const horizontalOverlap = Math.max(0, Math.min(room.x + room.width, other.x + other.width) - Math.max(room.x, other.x));
-    if (Math.abs(room.x + room.width - other.x) <= t) scores.right = Math.max(scores.right, verticalOverlap);
-    if (Math.abs(other.x + other.width - room.x) <= t) scores.left = Math.max(scores.left, verticalOverlap);
-    if (Math.abs(room.y + room.height - other.y) <= t) scores.bottom = Math.max(scores.bottom, horizontalOverlap);
-    if (Math.abs(other.y + other.height - room.y) <= t) scores.top = Math.max(scores.top, horizontalOverlap);
+/**
+ * Assemble detected rooms and labels into a canonical FloorPlan structure.
+ * This is the foundational data model used throughout the analysis pipeline.
+ */
+export function buildOriginalFloorPlan(
+  floors: DetectedFloor[],
+  detectedRooms: DetectedRoom[],
+  labels: RoomLabel[] = []
+): FloorPlan {
+  const labelMap = new Map<string, RoomLabel>();
+  for (const label of labels) {
+    labelMap.set(label.roomId, label);
   }
-  const best = (Object.entries(scores) as Array<[WallSide, number]>).sort((a, b) => b[1] - a[1])[0];
-  return best && best[1] > 0 ? [best[0]] : [];
-}
 
-export function buildOriginalFloorPlan(floors: DetectedFloor[], rooms: DetectedRoom[]): FloorPlan {
-  return {
-    floors: floors.map((floor, floorIndex) => {
-      const floorRooms = rooms.filter(room => roomBelongsToFloor(room, floor));
+  const roomMap = new Map<string, DetectedRoom>();
+  for (const room of detectedRooms) {
+    roomMap.set(room.id, room);
+  }
+
+  // Group detected rooms by floor
+  const floorRoomsMap = new Map<string, DetectedRoom[]>();
+  for (const floor of floors) {
+    floorRoomsMap.set(floor.name, []);
+  }
+
+  // Simple heuristic: assign rooms to floors based on Y coordinate
+  // TODO: Could be more sophisticated based on DetectedFloor boundaries
+  for (const room of detectedRooms) {
+    let bestFloor = floors[0];
+    let bestDistance = Math.abs(room.y - bestFloor.top);
+
+    for (const floor of floors) {
+      const distance = Math.abs(room.y - floor.top);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestFloor = floor;
+      }
+    }
+
+    if (floorRoomsMap.has(bestFloor.name)) {
+      floorRoomsMap.get(bestFloor.name)!.push(room);
+    }
+  }
+
+  // Convert each floor's rooms to canonical Room objects
+  const floorObjects: Floor[] = floors.map((floor) => {
+    const floorRooms = floorRoomsMap.get(floor.name) || [];
+
+    const rooms: Room[] = floorRooms.map((detRoom) => {
+      const label = labelMap.get(detRoom.id);
+      const roomName = label?.name || `Room ${detRoom.id}`;
+      const roomType = label?.type || "unknown";
+      const areaSqm =
+        label?.areaSqm ||
+        Math.round(((detRoom.width * detRoom.height) / 1000000) * 100) / 100;
+      const widthM = label?.widthM || detRoom.width / 1000;
+      const depthM = label?.depthM || detRoom.height / 1000;
+
+      // Build doors and windows from opening walls
+      const doors: Door[] = [];
+      const windows: Window[] = [];
+
+      if (detRoom.openingWalls && Array.isArray(detRoom.openingWalls)) {
+        for (const wall of detRoom.openingWalls) {
+          // Heuristic: doors usually at specific intervals, windows distributed
+          // For simplicity, treat first opening as door, rest as windows
+          if (doors.length === 0) {
+            doors.push({
+              wall: wall as any,
+              start: detRoom.width * 0.3,
+              end: detRoom.width * 0.7,
+            });
+          } else {
+            windows.push({
+              wall: wall as any,
+              start: detRoom.width * 0.2,
+              end: detRoom.width * 0.8,
+            });
+          }
+        }
+      }
+
+      // Identify adjacent rooms (rooms sharing walls)
+      const adjacentRooms: string[] = [];
+      for (const other of floorRooms) {
+        if (other.id === detRoom.id) continue;
+
+        // Check if rooms touch or overlap
+        const horizontalOverlap =
+          !(detRoom.x + detRoom.width < other.x) &&
+          !(other.x + other.width < detRoom.x);
+        const verticalOverlap =
+          !(detRoom.y + detRoom.height < other.y) &&
+          !(other.y + other.height < detRoom.y);
+
+        // Adjacent if they share an edge or corner
+        if (horizontalOverlap || verticalOverlap) {
+          adjacentRooms.push(other.id);
+        }
+      }
+
       return {
-        name: floor.name, level: floorIndex,
-        rooms: floorRooms.map(room => {
-          const polygon = authoritativePolygon(room);
-          const windowWalls = Array.from(new Set<WallSide>([...(room.openingWalls || []), ...exteriorFacingWalls(room, floorRooms)]));
-          const doorWalls = inferredDoorWall(room, floorRooms);
-          const labelledRoom = room as DetectedRoom & { name?: string; type?: string; confidence?: string; approxAreaSqm?: number; approxWidthM?: number; approxDepthM?: number };
-          return {
-            id: room.id,
-            name: labelledRoom.name || "Unknown Room",
-            type: labelledRoom.type || "unknown",
-            x: room.x, y: room.y, width: room.width, height: room.height,
-            polygon,
-            approxAreaSqm: labelledRoom.approxAreaSqm && labelledRoom.approxAreaSqm > 0 ? labelledRoom.approxAreaSqm : undefined,
-            approxWidthM: labelledRoom.approxWidthM && labelledRoom.approxWidthM > 0 ? labelledRoom.approxWidthM : undefined,
-            approxDepthM: labelledRoom.approxDepthM && labelledRoom.approxDepthM > 0 ? labelledRoom.approxDepthM : undefined,
-            shape: polygon.length > 4 ? "polygon" : "rectangle",
-            adjacentRooms: getAdjacentRooms(room, floorRooms),
-            doors: doorWalls.map(wall => ({ wall })),
-            windows: windowWalls.map(wall => ({ wall })),
-            notes: [windowWalls.length ? "Exterior-facing wall preserved as a potential window/opening wall" : "", doorWalls.length ? `Likely access wall inferred from shared geometry: ${doorWalls[0]}` : ""].filter(Boolean).join(";"),
-            confidence: labelledRoom.confidence || "Geometry Detection",
-          };
-        }),
+        id: detRoom.id,
+        name: roomName,
+        type: roomType,
+        x: detRoom.x,
+        y: detRoom.y,
+        width: detRoom.width,
+        height: detRoom.height,
+        adjacentRooms,
+        shape: "polygon",
+        doors: doors.length > 0 ? doors : undefined,
+        windows: windows.length > 0 ? windows : undefined,
+        polygon: detRoom.polygon,
+        approxAreaSqm: areaSqm,
+        approxWidthM: widthM,
+        approxDepthM: depthM,
+        notes: label?.confidence ? `Confidence: ${label.confidence}` : undefined,
+        confidence: label?.confidence,
       };
-    }),
+    });
+
+    return {
+      name: floor.name,
+      level: floor.level,
+      rooms,
+    };
+  });
+
+  const plan: FloorPlan = {
+    floors: floorObjects,
+    metadata: {
+      pixelsPerMeter: 1000, // Default: 1000 pixels = 1 meter (will be refined)
+      grossFloorAreaSqm: floorObjects.reduce(
+        (sum, floor) =>
+          sum +
+          floor.rooms.reduce((roomSum, room) => roomSum + (room.approxAreaSqm || 0), 0),
+        0
+      ),
+      grossAreaReserved: true,
+    },
   };
+
+  console.log(
+    `[buildOriginalFloorPlan] Created plan with ${plan.floors.length} floor(s) and ${
+      plan.floors.reduce((sum, f) => sum + f.rooms.length, 0)
+    } room(s), total area ~${plan.metadata?.grossFloorAreaSqm}m²`
+  );
+
+  return plan;
 }
