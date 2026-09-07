@@ -12,6 +12,11 @@
 
 # testing
 /coverage
+/.geometry-test/
+/.hmo-planner-test/
+/.hmo-layout-test/
+/.hmo-source-test/
+/.e2e-test/
 
 # next.js
 /.next/
@@ -41,3 +46,7 @@ yarn-error.log*
 next-env.d.ts
 
 /app/generated/prisma
+
+# runtime-uploaded floor plans (not fixtures)
+/uploads
+/public/uploads

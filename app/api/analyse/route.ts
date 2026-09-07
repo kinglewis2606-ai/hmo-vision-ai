@@ -13,7 +13,7 @@ import { buildMaximumHMOLayout } from "@/lib/hmoLayoutPipeline";
 import { finalRoomSummary } from "@/lib/hmoPlanner";
 import { normaliseHMOReport } from "@/lib/hmoReport";
 import { RoomChange, WallSide } from "@/lib/types/floorPlan";
-import { isStageError, stageError, timedStage } from "@/lib/timing";
+import { isStageError, parseAIJson, timedStage } from "@/lib/timing";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -30,28 +30,6 @@ function applyLabels(plan: any, labels: RoomLabel[]): number { let applied = 0; 
 function applyLabelsByOrderWhenSafe(plan: any, labels: RoomLabel[]): number { const rooms = plan.floors.flatMap((f: any) => f.rooms); if (!rooms.length || labels.length !== rooms.length) return 0; const resolved = labels.filter(label => resolveRoom(plan, label)).length; if (resolved === rooms.length) return 0; for (let i = 0; i < rooms.length; i += 1) applyOneLabel(rooms[i], labels[i]); return rooms.length; }
 function canonicaliseLabelTypes(plan: any): void { for (const room of plan.floors.flatMap((f: any) => f.rooms)) { const value = norm(room.name); if (value.includes("bedroom")) room.type = "bedroom"; else if (value.includes("living") || value.includes("lounge") || value.includes("reception")) room.type = "living"; else if (value.includes("dining") || value.includes("diner")) room.type = "dining"; else if (value.includes("kitchen")) room.type = "kitchen"; else if (value.includes("shower") || value.includes("bathroom") || value === "bath" || value === "wc" || value.includes("toilet")) room.type = "bathroom"; else if (value.includes("landing") || value.includes("hall") || value.includes("entrance") || value.includes("stair")) room.type = "circulation"; } }
 function fallbackLabelsFromResult(result: any): RoomLabel[] { if (Array.isArray(result.roomLabels)) return result.roomLabels; if (Array.isArray(result.rooms)) return result.rooms; return []; }
-/**
- * Parses a raw OpenAI `output_text` payload into JSON, distinguishing an
- * empty response, a truncated response and a malformed response so callers
- * can surface a controlled, stage-specific error instead of crashing or
- * hanging. `stage` is only used for the thrown error's `.stage` tag.
- */
-function parseAIJson(stage: string, raw: string | undefined | null): any {
-  const value = String(raw ?? "").trim();
-  if (!value) throw stageError(stage, "AI response was incomplete: the model returned no content.", 502);
-  const cleaned = value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const first = cleaned.indexOf("{");
-    const last = cleaned.lastIndexOf("}");
-    if (first >= 0 && last > first) {
-      try { return JSON.parse(cleaned.slice(first, last + 1)); } catch {}
-    }
-    const looksTruncated = !/[}\]]\s*$/.test(cleaned);
-    throw stageError(stage, looksTruncated ? "AI response was incomplete: the JSON output was truncated." : "AI response was malformed: the JSON output could not be parsed.", 502);
-  }
-}
 function cleanJson(value: string): any { return parseAIJson("ai-hmo-strategy", value); }
 
 async function classifyRoomsAgain(original: any, image: string): Promise<RoomLabel[]> {

@@ -35,6 +35,29 @@ export function isTimeoutError(error: unknown): boolean {
 }
 
 /**
+ * Parses a raw OpenAI `output_text` payload into JSON, distinguishing an
+ * empty response, a truncated response and a malformed response so callers
+ * can surface a controlled, stage-specific error instead of crashing or
+ * hanging. `stage` is only used for the thrown error's `.stage` tag.
+ */
+export function parseAIJson(stage: string, raw: string | undefined | null): any {
+  const value = String(raw ?? "").trim();
+  if (!value) throw stageError(stage, "AI response was incomplete: the model returned no content.", 502);
+  const cleaned = value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const first = cleaned.indexOf("{");
+    const last = cleaned.lastIndexOf("}");
+    if (first >= 0 && last > first) {
+      try { return JSON.parse(cleaned.slice(first, last + 1)); } catch {}
+    }
+    const looksTruncated = !/[}\]]\s*$/.test(cleaned);
+    throw stageError(stage, looksTruncated ? "AI response was incomplete: the JSON output was truncated." : "AI response was malformed: the JSON output could not be parsed.", 502);
+  }
+}
+
+/**
  * Runs `fn`, logging elapsed time on completion or failure. On failure, if
  * `fn` did not already throw a StageError, wraps it into one tagged with
  * `stage` so the caller always receives an attributable, stage-specific
