@@ -15,7 +15,7 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-const OPENAI_REQUEST_TIMEOUT_MS = 110_000;
+const OPENAI_REQUEST_TIMEOUT_MS = 45_000;
 
 export const openai = {
   get responses() {

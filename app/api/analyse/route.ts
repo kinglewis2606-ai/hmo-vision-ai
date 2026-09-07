@@ -13,9 +13,10 @@ import { buildMaximumHMOLayout } from "@/lib/hmoLayoutPipeline";
 import { finalRoomSummary } from "@/lib/hmoPlanner";
 import { normaliseHMOReport } from "@/lib/hmoReport";
 import { RoomChange, WallSide } from "@/lib/types/floorPlan";
+import { isStageError, stageError, timedStage } from "@/lib/timing";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 120;
 
 type RoomLabel = { roomId?: string; name?: string; type?: string; floor?: string; confidence?: string; areaSqm?: number; widthM?: number; depthM?: number; windows?: WallSide[]; doors?: WallSide[]; [key: string]: unknown };
 const WALLS: WallSide[] = ["top", "bottom", "left", "right"];
@@ -29,7 +30,29 @@ function applyLabels(plan: any, labels: RoomLabel[]): number { let applied = 0; 
 function applyLabelsByOrderWhenSafe(plan: any, labels: RoomLabel[]): number { const rooms = plan.floors.flatMap((f: any) => f.rooms); if (!rooms.length || labels.length !== rooms.length) return 0; const resolved = labels.filter(label => resolveRoom(plan, label)).length; if (resolved === rooms.length) return 0; for (let i = 0; i < rooms.length; i += 1) applyOneLabel(rooms[i], labels[i]); return rooms.length; }
 function canonicaliseLabelTypes(plan: any): void { for (const room of plan.floors.flatMap((f: any) => f.rooms)) { const value = norm(room.name); if (value.includes("bedroom")) room.type = "bedroom"; else if (value.includes("living") || value.includes("lounge") || value.includes("reception")) room.type = "living"; else if (value.includes("dining") || value.includes("diner")) room.type = "dining"; else if (value.includes("kitchen")) room.type = "kitchen"; else if (value.includes("shower") || value.includes("bathroom") || value === "bath" || value === "wc" || value.includes("toilet")) room.type = "bathroom"; else if (value.includes("landing") || value.includes("hall") || value.includes("entrance") || value.includes("stair")) room.type = "circulation"; } }
 function fallbackLabelsFromResult(result: any): RoomLabel[] { if (Array.isArray(result.roomLabels)) return result.roomLabels; if (Array.isArray(result.rooms)) return result.rooms; return []; }
-function cleanJson(value: string): any { const cleaned = value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim(); try { return JSON.parse(cleaned); } catch { const first = cleaned.indexOf("{"); const last = cleaned.lastIndexOf("}"); if (first >= 0 && last > first) { try { return JSON.parse(cleaned.slice(first, last + 1)); } catch {} } throw new Error("The AI analysis did not return valid JSON."); } }
+/**
+ * Parses a raw OpenAI `output_text` payload into JSON, distinguishing an
+ * empty response, a truncated response and a malformed response so callers
+ * can surface a controlled, stage-specific error instead of crashing or
+ * hanging. `stage` is only used for the thrown error's `.stage` tag.
+ */
+function parseAIJson(stage: string, raw: string | undefined | null): any {
+  const value = String(raw ?? "").trim();
+  if (!value) throw stageError(stage, "AI response was incomplete: the model returned no content.", 502);
+  const cleaned = value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const first = cleaned.indexOf("{");
+    const last = cleaned.lastIndexOf("}");
+    if (first >= 0 && last > first) {
+      try { return JSON.parse(cleaned.slice(first, last + 1)); } catch {}
+    }
+    const looksTruncated = !/[}\]]\s*$/.test(cleaned);
+    throw stageError(stage, looksTruncated ? "AI response was incomplete: the JSON output was truncated." : "AI response was malformed: the JSON output could not be parsed.", 502);
+  }
+}
+function cleanJson(value: string): any { return parseAIJson("ai-hmo-strategy", value); }
 
 async function classifyRoomsAgain(original: any, image: string): Promise<RoomLabel[]> {
   const roomIds = original.floors.flatMap((f: any) => f.rooms.map((r: any) => ({ id: r.id, floor: f.name })));
@@ -37,37 +60,56 @@ async function classifyRoomsAgain(original: any, image: string): Promise<RoomLab
     { type: "input_text", text: `Classify EVERY supplied detected room. Return exactly one item per supplied room, in the SAME ORDER as the supplied list. Copy the supplied roomId exactly. Read the printed room label from the ORIGINAL floor plan image. Count every visibly labelled bedroom separately; do not merge adjacent bedrooms, skip upper-floor bedrooms, or infer that two rooms are one. Bedroom N=bedroom; Living Room/Lounge/Reception=living; Dining Room=dining; Kitchen=kitchen; Shower Room/Bathroom=bathroom; WC/Toilet=WC; Landing/Hall/Entrance/stairs=circulation. Return JSON only: {"roomLabels":[{"roomId":"room-1","name":"Bedroom 1","type":"bedroom","floor":"Ground Floor","windows":[],"doors":[]}]}. Supplied rooms: ${JSON.stringify(roomIds)}. Never invent a room and never omit a supplied room.` },
     { type: "input_image", image_url: image, detail: "high" },
   ] } ] });
-  try { const parsed = cleanJson(response.output_text || "{}"); return Array.isArray(parsed.roomLabels) ? parsed.roomLabels : []; } catch { return []; }
+  try { const parsed = parseAIJson("ai-room-reclassification", response.output_text); return Array.isArray(parsed.roomLabels) ? parsed.roomLabels : []; } catch { return []; }
 }
 async function annotate(filePath: string, plan: any): Promise<string> { const source = fs.readFileSync(filePath); const metadata = await sharp(source).metadata(); const width = metadata.width || plan.metadata?.imageWidth || 1600; const height = metadata.height || plan.metadata?.imageHeight || 1200; const annotated = await sharp(source).jpeg({ quality: 86, mozjpeg: true }).toBuffer(); const labels = plan.floors.flatMap((f: any) => f.rooms.map((r: any) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="none" stroke="#ff0055" stroke-width="6"/><text x="${r.x + r.width / 2}" y="${r.y + r.height / 2}" text-anchor="middle" font-size="28" font-weight="800" fill="#ff0055" stroke="white" stroke-width="5" paint-order="stroke">${r.id}</text>`)).join("\n"); const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><image href="data:image/jpeg;base64,${annotated.toString("base64")}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/><g>${labels}</g></svg>`; const final = await sharp(Buffer.from(svg)).jpeg({ quality: 86, mozjpeg: true }).toBuffer(); return `data:image/jpeg;base64,${final.toString("base64")}`; }
 function appliedLayout(original: any, proposed: any, changes: RoomChange[]): string[] { const before = new Map<string, any>(), after = new Map<string, any>(), floors = new Map<string, string>(); for (const f of original.floors) for (const r of f.rooms) { before.set(r.id, r); floors.set(r.id, f.name); } for (const f of proposed.floors) for (const r of f.rooms) { after.set(r.id, r); floors.set(r.id, f.name); } const lines: string[] = []; for (const c of changes) { const b = before.get(c.roomId), a = after.get(c.roomId); if (!b || !a) continue; const child = after.get(`${c.roomId}-split-2`); lines.push(norm(c.action).includes("split") && child ? `${floors.get(c.roomId) || "Floor"}: ${a.name || "Bedroom"} retained; ${child.name || "En-suite"} created from the final carved geometry.` : `${floors.get(c.roomId) || "Floor"}: ${a.name || a.type || "Room"} converted from ${b.name || b.type || "existing room"}.`); } return lines.length ? lines : ["No valid proposed geometry was applied."]; }
 
 export async function POST(req: Request) {
+  const requestStart = Date.now();
   try {
     const { filename, address, propertyType } = await req.json();
     if (!filename || typeof filename !== "string" || /\.\.|[\\/]/.test(filename)) return NextResponse.json({ success: false, error: "Invalid uploaded filename." }, { status: 400 });
     const filePath = path.join(process.cwd(), "public", "uploads", filename);
     if (!fs.existsSync(filePath)) return NextResponse.json({ success: false, error: "Uploaded floor plan not found." }, { status: 404 });
-    const floors = await detectFloors(filePath); const detectedRooms = await detectRooms(filePath, floors); const labelledDetectedRooms = await labelDetectedRooms(filePath, detectedRooms); const original: any = buildOriginalFloorPlan(floors, labelledDetectedRooms);
+
+    const floors = await timedStage("floor-detection", () => detectFloors(filePath), "Floor detection failed.");
+    const detectedRooms = await timedStage("room-detection", () => detectRooms(filePath, floors), "Room detection failed.");
+    if (!detectedRooms.length) return NextResponse.json({ success: false, error: "No detectable rooms found.", stage: "room-detection" }, { status: 422 });
+    const labelledDetectedRooms = await timedStage("room-classification", () => labelDetectedRooms(filePath, detectedRooms), "Room classification failed.");
+    const original: any = await timedStage("geometry-assembly", async () => buildOriginalFloorPlan(floors, labelledDetectedRooms), "Floor plan assembly failed.");
     const meta = await sharp(filePath).metadata(); original.metadata = { imageWidth: meta.width, imageHeight: meta.height, imageDpi: meta.density };
-    if (!original.floors.some((f: any) => f.rooms.length)) return NextResponse.json({ success: false, error: "No rooms were detected in the uploaded floor plan." }, { status: 422 });
+    if (!original.floors.some((f: any) => f.rooms.length)) return NextResponse.json({ success: false, error: "No rooms were detected in the uploaded floor plan.", stage: "room-detection" }, { status: 422 });
+
     const prompt = buildHMOAnalysisPrompt(address, propertyType).replace("[FLOOR_PLAN_JSON_WILL_BE_INSERTED_HERE]", JSON.stringify(original, null, 2));
-    const image = await annotate(filePath, original);
-    const response = await openai.responses.create({ model: "gpt-5", text: { format: { type: "json_object" } }, input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
-    const result = cleanJson(response.output_text || "{}"); const labelled = structuredClone(original); let labels = fallbackLabelsFromResult(result); let appliedLabelCount = applyLabels(labelled, labels);
+    const image = await timedStage("image-annotation", () => annotate(filePath, original), "Preparing the floor plan image for analysis failed.");
+    const result = await timedStage("ai-hmo-strategy", async () => {
+      const response = await openai.responses.create({ model: "gpt-5", text: { format: { type: "json_object" } }, input: [{ role: "user", content: [{ type: "input_text", text: prompt }, { type: "input_image", image_url: image, detail: "high" }] }] });
+      return parseAIJson("ai-hmo-strategy", response.output_text);
+    });
+
+    const labelled = structuredClone(original); let labels = fallbackLabelsFromResult(result); let appliedLabelCount = applyLabels(labelled, labels);
     canonicaliseLabelTypes(labelled);
-    const retryLabels = await classifyRoomsAgain(original, image);
-    if (retryLabels.length === detectedRooms.length) { const retryApplied = applyLabels(labelled, retryLabels); if (retryApplied === detectedRooms.length) { labels = retryLabels; appliedLabelCount = retryApplied; } } else if (appliedLabelCount !== detectedRooms.length || labels.length !== detectedRooms.length) { const ordered = applyLabelsByOrderWhenSafe(labelled, retryLabels); if (ordered > 0) { labels = retryLabels; appliedLabelCount = ordered; } }
-    canonicaliseLabelTypes(labelled);
-    if (appliedLabelCount < detectedRooms.length && labels.length === detectedRooms.length) { const ordered = applyLabelsByOrderWhenSafe(labelled, labels); if (ordered > 0) appliedLabelCount = ordered; canonicaliseLabelTypes(labelled); }
-    const mappedBedrooms = labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBedroom(`${r.type} ${r.name}`)).length;
-    if (mappedBedrooms === 0 && detectedRooms.length > 0) return NextResponse.json({ success: false, error: "Room recognition completed, but the room labels could not be mapped back to the detected geometry after two classification passes." }, { status: 422 });
+    let mappedBedrooms = labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBedroom(`${r.type} ${r.name}`)).length;
+    // The primary AI response already labels every room. A second full-image
+    // reclassification pass is only worth the extra latency (and OpenAI call)
+    // when the first pass left rooms unmapped or found no bedrooms at all.
+    if (appliedLabelCount < detectedRooms.length || mappedBedrooms === 0) {
+      const retryLabels = await timedStage("ai-room-reclassification", () => classifyRoomsAgain(original, image), "Room classification failed.");
+      if (retryLabels.length === detectedRooms.length) { const retryApplied = applyLabels(labelled, retryLabels); if (retryApplied === detectedRooms.length) { labels = retryLabels; appliedLabelCount = retryApplied; } } else if (appliedLabelCount !== detectedRooms.length || labels.length !== detectedRooms.length) { const ordered = applyLabelsByOrderWhenSafe(labelled, retryLabels); if (ordered > 0) { labels = retryLabels; appliedLabelCount = ordered; } }
+      canonicaliseLabelTypes(labelled);
+      if (appliedLabelCount < detectedRooms.length && labels.length === detectedRooms.length) { const ordered = applyLabelsByOrderWhenSafe(labelled, labels); if (ordered > 0) appliedLabelCount = ordered; canonicaliseLabelTypes(labelled); }
+      mappedBedrooms = labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBedroom(`${r.type} ${r.name}`)).length;
+    }
+    if (mappedBedrooms === 0 && detectedRooms.length > 0) return NextResponse.json({ success: false, error: "Room recognition completed, but the room labels could not be mapped back to the detected geometry after two classification passes.", stage: "room-classification" }, { status: 422 });
     console.log(`HMO room mapping: detected=${detectedRooms.length}, labels=${labels.length}, mapped=${appliedLabelCount}, bedrooms=${mappedBedrooms}`);
     const aiChanges: RoomChange[] = Array.isArray(result.changes) ? result.changes : [];
     console.log(`HMO AI strategy: ${aiChanges.length} proposed room transformation(s)`);
-    const layout = buildMaximumHMOLayout(labelled, aiChanges); const proposed = layout.plan; const appliedChanges = layout.appliedChanges; const rejectedChanges = layout.rejectedChanges; const final = { bedrooms: layout.bedrooms, ensuites: layout.ensuites, bedroomIds: layout.bedroomIds, ensuiteIds: layout.ensuiteIds }; const current = finalRoomSummary(labelled); const currentBedrooms = current.bedrooms;
+
+    const layout = await timedStage("geometry-pipeline", async () => buildMaximumHMOLayout(labelled, aiChanges), "Geometry validation failed.");
+    const proposed = layout.plan; const appliedChanges = layout.appliedChanges; const rejectedChanges = layout.rejectedChanges; const final = { bedrooms: layout.bedrooms, ensuites: layout.ensuites, bedroomIds: layout.bedroomIds, ensuiteIds: layout.ensuiteIds }; const current = finalRoomSummary(labelled); const currentBedrooms = current.bedrooms;
     const originalImage = `data:${path.extname(filename).toLowerCase() === ".png" ? "image/png" : "image/jpeg"};base64,${fs.readFileSync(filePath).toString("base64")}`;
-    const report: any = normaliseHMOReport(result, labelled, proposed, currentBedrooms, appliedChanges, rejectedChanges, address, propertyType);
+    const report: any = await timedStage("report-generation", async () => normaliseHMOReport(result, labelled, proposed, currentBedrooms, appliedChanges, rejectedChanges, address, propertyType), "Report generation failed.");
     report.originalFloorPlan = labelled; report.proposedFloorPlan = proposed; report.changes = appliedChanges;
     report.rejectedChanges = rejectedChanges.map(c => ({ roomId: c.roomId, action: c.action, reason: "Rejected by deterministic geometry validation." }));
     report.summary = { ...(report.summary || {}), bedrooms: currentBedrooms, bathrooms: labelled.floors.flatMap((f: any) => f.rooms).filter((r: any) => isBathroom(r.type)).length, possibleHMOBedrooms: final.bedrooms };
@@ -77,7 +119,13 @@ export async function POST(req: Request) {
     report.conversionSteps = report.recommendedLayout;
     report.verdict = final.bedrooms > currentBedrooms ? `Maximum geometry-feasible ${final.bedrooms}-bedroom HMO layout selected, with ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Planning/licensing/building-control approval still requires professional/local-authority confirmation.` : `Final deterministic geometry supports ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}; no higher-bedroom transformation survived geometry validation.`;
     report.investorSummary = `Final applied geometry contains ${final.bedrooms} bedroom${final.bedrooms === 1 ? "" : "s"} and ${final.ensuites} private en-suite${final.ensuites === 1 ? "" : "s"}. Only successfully applied geometry is reported.`;
-    report.generatedLayoutImage = renderFloorPlan(labelled, proposed, originalImage, appliedChanges);
+    report.generatedLayoutImage = await timedStage("rendering", async () => renderFloorPlan(labelled, proposed, originalImage, appliedChanges), "Rendering failed.");
+    console.log(`[timing] analyse-total: ${Date.now() - requestStart}ms`);
     return NextResponse.json({ success: true, result: report });
-  } catch (error: any) { console.error("ANALYSE ERROR:", error); return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 }); }
+  } catch (error: any) {
+    const elapsed = Date.now() - requestStart;
+    console.error(`ANALYSE ERROR after ${elapsed}ms${isStageError(error) ? ` [stage=${error.stage}]` : ""}:`, error);
+    if (isStageError(error)) return NextResponse.json({ success: false, error: error.message, stage: error.stage }, { status: error.statusCode || 500 });
+    return NextResponse.json({ success: false, error: error?.message || "Analysis failed on the server." }, { status: 500 });
+  }
 }

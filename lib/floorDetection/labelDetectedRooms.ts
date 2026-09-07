@@ -56,6 +56,7 @@ export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[
     height: Math.round(room.height),
   }));
 
+  const t0 = Date.now();
   try {
     const response = await openai.responses.create({
       model: "gpt-5-mini",
@@ -70,8 +71,12 @@ export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[
         ],
       }],
     });
+    console.log(`[timing] ai-room-labelling: ${Date.now() - t0}ms`);
 
-    const parsed = JSON.parse(cleanJson(response.output_text || "{}"));
+    const raw = cleanJson(response.output_text || "");
+    if (!raw) { console.warn("Room label pass returned an empty response; retaining geometry candidates"); return rooms; }
+    let parsed: any;
+    try { parsed = JSON.parse(raw); } catch { console.warn("Room label pass returned malformed/truncated JSON; retaining geometry candidates"); return rooms; }
     if (!Array.isArray(parsed.rooms) || parsed.rooms.length !== rooms.length) {
       console.warn(`Room label pass returned ${Array.isArray(parsed.rooms) ? parsed.rooms.length : 0}/${rooms.length} candidates`);
       return rooms;
@@ -99,7 +104,7 @@ export async function labelDetectedRooms(imagePath: string, rooms: DetectedRoom[
       } as DetectedRoom;
     });
   } catch (error) {
-    console.warn("Dedicated room label pass failed; retaining geometry candidates", error);
+    console.warn(`Dedicated room label pass failed after ${Date.now() - t0}ms; retaining geometry candidates`, error);
     return rooms;
   }
 }
