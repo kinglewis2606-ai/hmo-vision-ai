@@ -1,6 +1,6 @@
 import fs from "fs";
 import { DetectedRoom, RoomLabel } from "@/lib/types/floorPlan";
-import { openai, parseAIJson, OPENAI_REQUEST_TIMEOUT_MS } from "@/lib/openai";
+import { openai, parseAIJson } from "@/lib/openai";
 
 interface VisionRoomLabelingResponse {
   labels: Array<{
@@ -93,79 +93,61 @@ Return ONLY valid JSON with no markdown, explanation, or additional text.
   "notes": "Optional observations about the floor plan"
 }`;
 
+  let textContent: string;
   try {
-    const response = await openai.responses.create(
-      {
-        model: "gpt-4o-mini",
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: prompt,
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64}`,
-                  detail: "high",
-                },
-              },
-            ],
-          },
-        ],
-        max_tokens: 2000,
-      },
-      {
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-      }
-    );
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      max_output_tokens: 2000,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: prompt,
+            },
+            {
+              type: "input_image",
+              image_url: `data:${mimeType};base64,${base64}`,
+              detail: "high",
+            },
+          ],
+        },
+      ],
+    });
 
-    const textContent = response.choices[0]?.message?.content;
-    if (typeof textContent !== "string") {
-      throw new Error("Vision returned non-text response for room labeling");
-    }
-
-    const parsed = parseAIJson<VisionRoomLabelingResponse>(textContent);
-
-    if (!Array.isArray(parsed.labels) || parsed.labels.length === 0) {
-      console.warn(
-        "[labelDetectedRooms] No labels returned by vision, creating defaults"
-      );
-      return detectedRooms.map((room, idx) => ({
-        roomId: room.id,
-        name: `Room ${idx + 1}`,
-        type: "other",
-        confidence: "Low",
-      }));
-    }
-
-    const result: RoomLabel[] = parsed.labels
-      .map((label) => ({
-        roomId: label.roomId,
-        name: label.name || `Room ${label.roomId}`,
-        type: label.type || "other",
-        areaSqm: label.areaSqm,
-        widthM: label.widthM,
-        depthM: label.depthM,
-        confidence: label.confidence,
-      }))
-      .filter((label) => detectedRooms.some((r) => r.id === label.roomId));
-
-    console.log(`[labelDetectedRooms] Labeled ${result.length} room(s)`);
-    return result;
+    textContent = response.output_text;
   } catch (error: any) {
-    console.error(
-      `[labelDetectedRooms] Vision request failed: ${error?.message || error}`
-    );
-    console.warn("[labelDetectedRooms] Creating default labels");
-    return detectedRooms.map((room, idx) => ({
-      roomId: room.id,
-      name: `Room ${idx + 1}`,
-      type: "other",
-      confidence: "Low",
-    }));
+    const reason = error?.name === "AbortError" || /timed out|timeout|aborted/i.test(String(error?.message))
+      ? "the room-labelling vision request exceeded its time budget"
+      : String(error?.message || error);
+    throw new Error(`Room labelling vision request failed: ${reason}`);
   }
+
+  if (typeof textContent !== "string" || !textContent.trim()) {
+    throw new Error("Room labelling vision request returned an empty response.");
+  }
+
+  const parsed = parseAIJson<VisionRoomLabelingResponse>(textContent);
+
+  if (!Array.isArray(parsed.labels) || parsed.labels.length === 0) {
+    throw new Error(
+      "Room labelling vision request did not classify any of the detected rooms."
+    );
+  }
+
+  const result: RoomLabel[] = parsed.labels
+    .map((label) => ({
+      roomId: label.roomId,
+      name: label.name || `Room ${label.roomId}`,
+      type: label.type || "other",
+      areaSqm: label.areaSqm,
+      widthM: label.widthM,
+      depthM: label.depthM,
+      confidence: label.confidence,
+    }))
+    .filter((label) => detectedRooms.some((r) => r.id === label.roomId));
+
+  console.log(`[labelDetectedRooms] Labeled ${result.length} room(s)`);
+  return result;
 }

@@ -1,7 +1,7 @@
 import fs from "fs";
 import sharp from "sharp";
 import { DetectedFloor, DetectedRoom, Point } from "@/lib/types/floorPlan";
-import { openai, parseAIJson, OPENAI_REQUEST_TIMEOUT_MS } from "@/lib/openai";
+import { openai, parseAIJson } from "@/lib/openai";
 
 interface VisionRoomDetectionResponse {
   rooms: Array<{
@@ -92,85 +92,61 @@ Return ONLY valid JSON with no markdown, explanation, or additional text.
   "notes": "Optional observations"
 }`;
 
+  let textContent: string;
   try {
-    const response = await openai.responses.create(
-      {
-        model: "gpt-4o-mini",
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: prompt,
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64}`,
-                  detail: "high",
-                },
-              },
-            ],
-          },
-        ],
-        max_tokens: 3000,
-      },
-      {
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-      }
-    );
-
-    const textContent = response.choices[0]?.message?.content;
-    if (typeof textContent !== "string") {
-      throw new Error("Vision returned non-text response for room detection");
-    }
-
-    const parsed = parseAIJson<VisionRoomDetectionResponse>(textContent);
-
-    if (!Array.isArray(parsed.rooms) || parsed.rooms.length === 0) {
-      console.warn(
-        "[detectRooms] No rooms detected by vision, returning placeholder"
-      );
-      return [
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      max_output_tokens: 3000,
+      input: [
         {
-          id: "room1",
-          x: 100,
-          y: 100,
-          width: 400,
-          height: 300,
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: prompt,
+            },
+            {
+              type: "input_image",
+              image_url: `data:${mimeType};base64,${base64}`,
+              detail: "high",
+            },
+          ],
         },
-      ];
-    }
+      ],
+    });
 
-    const result: DetectedRoom[] = parsed.rooms.map((room, idx) => ({
-      id: room.id || `room${idx + 1}`,
-      x: room.bounds?.x ?? 0,
-      y: room.bounds?.y ?? 0,
-      width: room.bounds?.width ?? 300,
-      height: room.bounds?.height ?? 250,
-      polygon: room.polygon
-        ? (room.polygon as Point[])
-        : undefined,
-      openingWalls: room.openingWalls as any,
-    }));
-
-    console.log(`[detectRooms] Detected ${result.length} room(s) from vision`);
-    return result;
+    textContent = response.output_text;
   } catch (error: any) {
-    console.error(
-      `[detectRooms] Vision request failed: ${error?.message || error}`
-    );
-    console.warn("[detectRooms] Returning placeholder room");
-    return [
-      {
-        id: "room1",
-        x: 100,
-        y: 100,
-        width: 400,
-        height: 300,
-      },
-    ];
+    const reason = error?.name === "AbortError" || /timed out|timeout|aborted/i.test(String(error?.message))
+      ? "the room-detection vision request exceeded its time budget"
+      : String(error?.message || error);
+    throw new Error(`Room detection vision request failed: ${reason}`);
   }
+
+  if (typeof textContent !== "string" || !textContent.trim()) {
+    throw new Error("Room detection vision request returned an empty response.");
+  }
+
+  const parsed = parseAIJson<VisionRoomDetectionResponse>(textContent);
+
+  if (!Array.isArray(parsed.rooms) || parsed.rooms.length === 0) {
+    throw new Error(
+      "Room detection vision request did not identify any enclosed rooms in the uploaded floor plan."
+    );
+  }
+
+  const result: DetectedRoom[] = parsed.rooms.map((room, idx) => ({
+    id: room.id || `room${idx + 1}`,
+    x: room.bounds?.x ?? 0,
+    y: room.bounds?.y ?? 0,
+    width: room.bounds?.width ?? 300,
+    height: room.bounds?.height ?? 250,
+    polygon: room.polygon
+      ? (room.polygon as Point[])
+      : undefined,
+    openingWalls: room.openingWalls as any,
+  }));
+
+  console.log(`[detectRooms] Detected ${result.length} room(s) from vision`);
+  return result;
 }

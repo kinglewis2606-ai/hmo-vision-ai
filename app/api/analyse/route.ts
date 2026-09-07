@@ -91,7 +91,7 @@ export async function POST(req: Request) {
     const labelledDetectedRooms = await timed("room labels", () => labelDetectedRooms(filePath, detectedRooms));
     if (!labelledDetectedRooms.length) return NextResponse.json({ success: false, error: "Room detection failed: no enclosed rooms were detected in the uploaded floor plan." }, { status: 422 });
 
-    const original: any = buildOriginalFloorPlan(floors, labelledDetectedRooms);
+    const original: any = buildOriginalFloorPlan(floors, detectedRooms, labelledDetectedRooms);
     const metadata = await sharp(filePath).metadata();
     original.metadata = { imageWidth: metadata.width, imageHeight: metadata.height, imageDpi: metadata.density };
     normaliseRoomTypes(original);

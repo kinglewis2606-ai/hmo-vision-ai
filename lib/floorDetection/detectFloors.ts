@@ -1,6 +1,6 @@
 import fs from "fs";
 import { DetectedFloor } from "@/lib/types/floorPlan";
-import { openai, parseAIJson, OPENAI_REQUEST_TIMEOUT_MS } from "@/lib/openai";
+import { openai, parseAIJson } from "@/lib/openai";
 
 interface VisionFloorDetectionResponse {
   floors: Array<{
@@ -98,70 +98,60 @@ ${addressContext}${propertyContext}
   "notes": "Optional observations"
 }`;
 
+  let textContent: string;
   try {
-    const response = await openai.responses.create(
-      {
-        model: "gpt-4o-mini",
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: prompt,
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64}`,
-                  detail: "high",
-                },
-              },
-            ],
-          },
-        ],
-        max_tokens: 1000,
-      },
-      {
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-      }
-    );
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      max_output_tokens: 1000,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: prompt,
+            },
+            {
+              type: "input_image",
+              image_url: `data:${mimeType};base64,${base64}`,
+              detail: "high",
+            },
+          ],
+        },
+      ],
+    });
 
-    const textContent = response.choices[0]?.message?.content;
-    if (typeof textContent !== "string") {
-      throw new Error("Vision returned non-text response for floor detection");
-    }
-
-    const parsed = parseAIJson<VisionFloorDetectionResponse>(textContent);
-
-    if (!Array.isArray(parsed.floors) || parsed.floors.length === 0) {
-      console.warn(
-        "[detectFloors] No floors detected by vision, returning default"
-      );
-      return [{ name: "Ground Floor", level: 0, top: 0, bottom: 1200 }];
-    }
-
-    const result: DetectedFloor[] = parsed.floors.map((f) => ({
-      name: f.name || `Floor ${f.level}`,
-      level: Number.isInteger(f.level) ? f.level : 0,
-      top: f.boundaries?.top ?? 0,
-      bottom: f.boundaries?.bottom ?? 1200,
-      left: f.boundaries?.left,
-      right: f.boundaries?.right,
-    }));
-
-    console.log(
-      `[detectFloors] Detected ${result.length} floor(s) from vision`
-    );
-    return result;
+    textContent = response.output_text;
   } catch (error: any) {
-    console.error(
-      `[detectFloors] Vision request failed: ${error?.message || error}`
-    );
-    console.warn("[detectFloors] Returning fallback single-floor layout");
-    return [{ name: "Ground Floor", level: 0, top: 0, bottom: 1200 }];
+    const reason = error?.name === "AbortError" || /timed out|timeout|aborted/i.test(String(error?.message))
+      ? "the floor-detection vision request exceeded its time budget"
+      : String(error?.message || error);
+    throw new Error(`Floor detection vision request failed: ${reason}`);
   }
+
+  if (typeof textContent !== "string" || !textContent.trim()) {
+    throw new Error("Floor detection vision request returned an empty response.");
+  }
+
+  const parsed = parseAIJson<VisionFloorDetectionResponse>(textContent);
+
+  if (!Array.isArray(parsed.floors) || parsed.floors.length === 0) {
+    throw new Error("Floor detection vision request did not return any usable floors.");
+  }
+
+  const result: DetectedFloor[] = parsed.floors.map((f) => ({
+    name: f.name || `Floor ${f.level}`,
+    level: Number.isInteger(f.level) ? f.level : 0,
+    top: f.boundaries?.top ?? 0,
+    bottom: f.boundaries?.bottom ?? 1200,
+    left: f.boundaries?.left,
+    right: f.boundaries?.right,
+  }));
+
+  console.log(
+    `[detectFloors] Detected ${result.length} floor(s) from vision`
+  );
+  return result;
 }
 
 /**
