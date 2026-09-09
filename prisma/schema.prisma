@@ -33,8 +33,17 @@ model Player {
   @@index([teamId])
 }
 
-enum EventType { TRAINING MATCH }
-enum AvailabilityStatus { AVAILABLE UNAVAILABLE MAYBE PENDING }
+enum EventType {
+  TRAINING
+  MATCH
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+  MAYBE
+  PENDING
+}
 
 model Event {
   id           String         @id @default(cuid())
