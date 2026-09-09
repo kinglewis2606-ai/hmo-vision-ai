@@ -1,34 +1,45 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-const players = [
-  ["Jack Thompson","GK","available"],["Noah Williams","DEF","available"],["Oliver Smith","MID","pending"],["Harry Brown","MID","available"],["Charlie Jones","FWD","available"],["Leo Wilson","DEF","maybe"],["George Taylor","MID","available"],["Alfie Davies","FWD","unavailable"]
-];
+type Player = { id: string; firstName: string; lastName: string; position: string; availability: { eventId: string; status: string; reason?: string | null }[]; feedback: { needsWork?: string | null }[] };
+type Event = { id: string; type: "TRAINING" | "MATCH"; title: string; opponent?: string | null; startsAt: string; endsAt?: string | null; venue: string; availability: { playerId: string; status: string }[] };
+type Feedback = { id: string; player: Player; wentWell?: string | null; needsWork?: string | null; focusNext?: string | null; createdAt: string };
+
+function formatDate(value: string) { return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(value)); }
+function formatTime(value: string) { return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
+function initials(p: Player) { return `${p.firstName[0]}${p.lastName[0]}`; }
 
 export default function Dashboard() {
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
+  const [message, setMessage] = useState("");
   const [notice, setNotice] = useState("");
-  const send = () => { setNotice("Message sent to the squad"); setTimeout(() => setNotice(""), 2500); };
-  return <main className="min-h-screen bg-slate-950 text-white">
-    <header className="border-b border-white/10 bg-slate-900/80 px-5 py-4 sticky top-0 z-10 backdrop-blur">
-      <div className="mx-auto max-w-6xl flex items-center justify-between"><div><div className="text-xl font-black">⚽ CoachHub</div><div className="text-xs text-slate-400">Caversham Falcons U10s</div></div><button onClick={send} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold hover:bg-blue-500">Message squad</button></div>
-    </header>
-    <section className="mx-auto max-w-6xl p-5 md:p-8">
-      <div className="mb-7"><p className="text-sm text-blue-400 font-semibold">WEDNESDAY 9 SEPTEMBER</p><h1 className="text-3xl md:text-4xl font-black mt-1">Good morning, Coach 👋</h1><p className="text-slate-400 mt-2">Everything you need for the week, in one place.</p></div>
-      {notice && <div className="mb-5 rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-emerald-300">✓ {notice}</div>}
-      <div className="grid gap-4 md:grid-cols-3 mb-7">
-        <Link href="#match" className="rounded-2xl bg-blue-600 p-5 hover:bg-blue-500"><div className="text-sm opacity-80">NEXT MATCH · SAT 12 SEP</div><div className="text-2xl font-black mt-2">Caversham Falcons</div><div className="font-semibold">vs Reading United · 10:30</div><div className="mt-4 text-sm">12 available · 2 awaiting →</div></Link>
-        <Link href="#training" className="rounded-2xl bg-slate-900 border border-white/10 p-5 hover:border-white/20"><div className="text-sm text-slate-400">NEXT TRAINING · FRI 11 SEP</div><div className="text-2xl font-black mt-2">Finishing & movement</div><div className="text-slate-400">18:00–19:00 · Mapledurham</div><div className="mt-4 text-sm text-emerald-300">14 / 16 confirmed</div></Link>
-        <div className="rounded-2xl bg-slate-900 border border-white/10 p-5"><div className="text-sm text-slate-400">NEEDS ATTENTION</div><div className="text-2xl font-black mt-2">3 things</div><div className="mt-3 space-y-2 text-sm"><div>🔴 2 match replies missing</div><div>🔧 4 feedback notes due</div><div>📋 Squad selection not finished</div></div></div>
-      </div>
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <section className="rounded-2xl bg-slate-900 border border-white/10 overflow-hidden"><div className="p-5 border-b border-white/10 flex justify-between"><div><h2 className="font-black text-xl">Squad availability</h2><p className="text-sm text-slate-400">Saturday's match</p></div><span className="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">12 available</span></div><div>{players.map(([name,pos,status]) => <div key={name} className="px-5 py-3 border-b border-white/5 flex items-center justify-between"><div className="flex items-center gap-3"><div className="h-9 w-9 rounded-full bg-slate-800 grid place-items-center text-xs font-bold">{pos}</div><div><div className="font-semibold">{name}</div><div className="text-xs text-slate-500">{pos}</div></div></div><span className={`text-xs font-bold ${status === "available" ? "text-emerald-300" : status === "pending" ? "text-amber-300" : status === "maybe" ? "text-blue-300" : "text-rose-300"}`}>{status === "available" ? "✓ Available" : status === "pending" ? "⏳ Awaiting" : status === "maybe" ? "? Maybe" : "✕ Unavailable"}</span></div>)}</div></section>
-        <div className="space-y-6">
-          <section id="training" className="rounded-2xl bg-slate-900 border border-white/10 p-5"><h2 className="font-black text-xl">🔧 Things to work on</h2><div className="mt-4 space-y-3"><div className="rounded-xl bg-slate-800 p-4"><div className="font-bold">Team</div><div className="text-sm text-slate-400 mt-1">Playing out from the back under pressure</div></div><div className="rounded-xl bg-slate-800 p-4"><div className="font-bold">Oliver Smith</div><div className="text-sm text-slate-400 mt-1">Scan before receiving · next session focus</div></div><div className="rounded-xl bg-slate-800 p-4"><div className="font-bold">Leo Wilson</div><div className="text-sm text-slate-400 mt-1">Defensive positioning</div></div></div></section>
-          <section id="match" className="rounded-2xl bg-slate-900 border border-white/10 p-5"><h2 className="font-black text-xl">⭐ Recent feedback</h2><div className="mt-4 text-sm"><p className="text-slate-300">“Great energy and movement today. Lots of improvement in passing combinations.”</p><p className="text-slate-500 mt-2">Training · Tuesday</p></div></section>
-        </div>
-      </div>
+  const [loading, setLoading] = useState(true);
+  async function load() { setLoading(true); const res = await fetch("/api/coachhub", { cache: "no-store" }); if (res.ok) { const data = await res.json(); setPlayers(data.players); setEvents(data.events); setFeedback(data.feedback); } setLoading(false); }
+  useEffect(() => { load(); }, []);
+  const match = events.find((e) => e.type === "MATCH");
+  const training = events.find((e) => e.type === "TRAINING");
+  const matchCounts = useMemo(() => ({ available: match?.availability.filter((a) => a.status === "AVAILABLE").length ?? 0, pending: match?.availability.filter((a) => a.status === "PENDING").length ?? 0 }), [match]);
+  async function sendMessage() { if (!message.trim()) return; const res = await fetch("/api/coachhub", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "message", message }) }); if (res.ok) { setMessage(""); setNotice("Message sent to the squad"); setTimeout(() => setNotice(""), 2500); } }
+  if (loading) return <main className="shell"><div className="loading">Loading your squad…</div></main>;
+  return <main className="shell">
+    <header className="topbar"><div><div className="brand">CoachHub</div><div className="muted">The football operating system for grassroots coaches.</div></div><div className="coach-chip"><span className="avatar">C</span><span>Coach</span></div></header>
+    <section className="hero"><div><div className="eyebrow">COACH DASHBOARD</div><h1>Caversham Falcons U10s</h1><p>Plan, communicate, train, match and develop — all in one place.</p></div><button className="primary" onClick={() => document.getElementById("message-box")?.scrollIntoView({ behavior: "smooth" })}>Message squad</button></section>
+    <section className="stats-grid">
+      <article className="card"><div className="label">NEXT MATCH</div><h2>{match ? `${formatDate(match.startsAt)} · ${match.opponent}` : "No match scheduled"}</h2><div className="big-number">{matchCounts.available} <span>available</span></div><div className="muted">{matchCounts.pending} awaiting a response</div></article>
+      <article className="card"><div className="label">NEXT TRAINING</div><h2>{training ? formatDate(training.startsAt) : "No training scheduled"}</h2><div className="big-number">{training ? formatTime(training.startsAt) : "—"} <span>{training?.title}</span></div><div className="muted">{training?.venue}</div></article>
+      <article className="card attention"><div className="label">NEEDS ATTENTION</div><ul><li>{matchCounts.pending} match replies missing</li><li>{feedback.filter((f) => f.needsWork).length} development notes to review</li><li>Squad selection not finished</li></ul></article>
     </section>
+    <section className="content-grid">
+      <article className="card"><div className="section-head"><div><div className="label">AVAILABILITY</div><h2>Squad for the next match</h2></div><span className="pill">{matchCounts.available} available</span></div><div className="players">{players.map((p) => { const a = match?.availability.find((x) => x.playerId === p.id)?.status ?? "PENDING"; return <div className="player" key={p.id}><span className="avatar">{initials(p)}</span><div className="player-name"><strong>{p.firstName} {p.lastName}</strong><span>{p.position}</span></div><span className={`status ${a.toLowerCase()}`}>{a === "AVAILABLE" ? "Available" : a === "UNAVAILABLE" ? "Unavailable" : a === "MAYBE" ? "Maybe" : "Awaiting"}</span></div>; })}</div></article>
+      <article className="card"><div className="label">THINGS TO WORK ON</div><h2>Development focus</h2><div className="focus-list">{feedback.slice(0, 3).map((f) => <div className="focus" key={f.id}><strong>{f.player.firstName} {f.player.lastName}</strong><span>{f.needsWork || "Keep building consistency"}</span></div>)}<div className="focus"><strong>Team</strong><span>Playing out from the back under pressure</span></div></div></article>
+    </section>
+    <section className="content-grid lower">
+      <article className="card"><div className="section-head"><div><div className="label">RECENT FEEDBACK</div><h2>Keep the conversation going</h2></div></div>{feedback.slice(0, 3).map((f) => <div className="feedback" key={f.id}><div className="feedback-top"><strong>{f.player.firstName} {f.player.lastName}</strong><span>{formatDate(f.createdAt)}</span></div><div><b>Went well:</b> {f.wentWell || "—"}</div><div><b>Next:</b> {f.focusNext || f.needsWork || "—"}</div></div>)}</article>
+      <article className="card" id="message-box"><div className="label">COMMUNICATION</div><h2>Message the squad</h2><textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="e.g. Please arrive 15 minutes early on Saturday…" /><button className="primary full" onClick={sendMessage}>Send to all parents & players</button>{notice && <div className="success">{notice}</div>}</article>
+    </section>
+    <footer className="footer">CoachHub · Plan → Communicate → Availability → Train → Match → Feedback → Develop</footer>
   </main>;
 }

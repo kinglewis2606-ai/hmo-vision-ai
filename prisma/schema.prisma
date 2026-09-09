@@ -4,13 +4,92 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
-model Project {
-  id            Int      @id @default(autoincrement())
-  address       String
-  propertyType  String
-  status        String   @default("New")
-  createdAt     DateTime @default(now())
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  ageGroup  String
+  club      String
+  createdAt DateTime @default(now())
+  players   Player[]
+  events    Event[]
+  messages  Message[]
+}
+
+model Player {
+  id           String         @id @default(cuid())
+  teamId       String
+  firstName    String
+  lastName     String
+  position     String
+  parentName   String?
+  parentEmail  String?
+  team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  availability Availability[]
+  feedback     Feedback[]
+  createdAt    DateTime       @default(now())
+  @@index([teamId])
+}
+
+enum EventType { TRAINING MATCH }
+enum AvailabilityStatus { AVAILABLE UNAVAILABLE MAYBE PENDING }
+
+model Event {
+  id           String         @id @default(cuid())
+  teamId       String
+  type         EventType
+  title        String
+  opponent     String?
+  startsAt     DateTime
+  endsAt       DateTime?
+  venue        String
+  arrivalTime  DateTime?
+  team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  availability Availability[]
+  feedback     Feedback[]
+  createdAt    DateTime       @default(now())
+  @@index([teamId, startsAt])
+}
+
+model Availability {
+  id          String             @id @default(cuid())
+  eventId     String
+  playerId    String
+  status      AvailabilityStatus @default(PENDING)
+  reason      String?
+  respondedAt DateTime?
+  event       Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  player      Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  @@unique([eventId, playerId])
+  @@index([eventId, status])
+}
+
+model Feedback {
+  id          String   @id @default(cuid())
+  playerId    String
+  eventId     String?
+  coachName   String
+  wentWell    String?
+  needsWork   String?
+  focusNext   String?
+  passing     Int?
+  firstTouch  Int?
+  positioning Int?
+  confidence  Int?
+  createdAt   DateTime @default(now())
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  event       Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  @@index([playerId, createdAt])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  teamId    String
+  sender    String
+  body      String
+  createdAt DateTime @default(now())
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  @@index([teamId, createdAt])
 }
