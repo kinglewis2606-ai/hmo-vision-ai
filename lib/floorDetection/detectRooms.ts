@@ -7,12 +7,7 @@ interface VisionRoomDetectionResponse {
   rooms: Array<{
     id: string;
     name?: string;
-    bounds: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
+    bounds: { x: number; y: number; width: number; height: number };
     polygon?: Array<{ x: number; y: number }>;
     openingWalls?: string[];
   }>;
@@ -21,37 +16,15 @@ interface VisionRoomDetectionResponse {
   notes?: string;
 }
 
-/**
- * Detect individual rooms/spaces within each floor using vision analysis.
- * Returns DetectedRoom objects with bounding boxes and optional polygons.
- */
-export async function detectRooms(
-  filePath: string,
-  floors: DetectedFloor[]
-): Promise<DetectedRoom[]> {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Floor plan file not found: ${filePath}`);
-  }
-
-  if (!floors || floors.length === 0) {
-    throw new Error("No floors provided for room detection");
-  }
+export async function detectRooms(filePath: string, floors: DetectedFloor[]): Promise<DetectedRoom[]> {
+  if (!fs.existsSync(filePath)) throw new Error(`Floor plan file not found: ${filePath}`);
+  if (!floors || floors.length === 0) throw new Error("No floors provided for room detection");
 
   const image = fs.readFileSync(filePath);
   const base64 = image.toString("base64");
-
-  const metadata = await sharp(filePath).metadata();
-  const imageHeight = metadata.height || 1200;
-  const mimeType = filePath.toLowerCase().endsWith(".png")
-    ? "image/png"
-    : filePath.toLowerCase().endsWith(".webp")
-      ? "image/webp"
-      : "image/jpeg";
-
-  const floorsList = floors
-    .map((f) => `- ${f.name} (level ${f.level}): pixels ${f.top} to ${f.bottom}`)
-    .join("\n");
-
+  await sharp(filePath).metadata();
+  const mimeType = filePath.toLowerCase().endsWith(".png") ? "image/png" : filePath.toLowerCase().endsWith(".webp") ? "image/webp" : "image/jpeg";
+  const floorsList = floors.map((f) => `- ${f.name} (level ${f.level}): pixels ${f.top} to ${f.bottom}`).join("\n");
   const prompt = `You are a professional architectural plan analyst.
 
 Analyse this floor plan and identify all distinct rooms, spaces, and enclosed areas.
@@ -68,25 +41,13 @@ ${floorsList}
 Return ONLY valid JSON with no markdown, explanation, or additional text.
 
 {
-  "rooms": [
-    {
-      "id": "room1",
-      "name": "Bedroom",
-      "bounds": {
-        "x": 100,
-        "y": 50,
-        "width": 400,
-        "height": 350
-      },
-      "polygon": [
-        {"x": 100, "y": 50},
-        {"x": 500, "y": 50},
-        {"x": 500, "y": 400},
-        {"x": 100, "y": 400}
-      ],
-      "openingWalls": ["left", "top"]
-    }
-  ],
+  "rooms": [{
+    "id": "room1",
+    "name": "Bedroom",
+    "bounds": { "x": 100, "y": 50, "width": 400, "height": 350 },
+    "polygon": [{"x":100,"y":50},{"x":500,"y":50},{"x":500,"y":400},{"x":100,"y":400}],
+    "openingWalls": ["left", "top"]
+  }],
   "totalRoomsDetected": 1,
   "confidence": "High",
   "notes": "Optional observations"
@@ -96,52 +57,25 @@ Return ONLY valid JSON with no markdown, explanation, or additional text.
     const response = await openai.responses.create(
       {
         model: "gpt-4o-mini",
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: prompt,
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64}`,
-                  detail: "high",
-                },
-              },
-            ],
-          },
-        ],
-        max_tokens: 3000,
+        input: [{
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            { type: "input_image", image_url: `data:${mimeType};base64,${base64}`, detail: "high" },
+          ],
+        }],
+        max_output_tokens: 3000,
       },
-      {
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-      }
+      { timeout: OPENAI_REQUEST_TIMEOUT_MS }
     );
 
-    const textContent = response.choices[0]?.message?.content;
-    if (typeof textContent !== "string") {
-      throw new Error("Vision returned non-text response for room detection");
-    }
-
+    const textContent = response.output_text;
+    if (typeof textContent !== "string" || !textContent.trim()) throw new Error("Vision returned non-text response for room detection");
     const parsed = parseAIJson<VisionRoomDetectionResponse>(textContent);
 
     if (!Array.isArray(parsed.rooms) || parsed.rooms.length === 0) {
-      console.warn(
-        "[detectRooms] No rooms detected by vision, returning placeholder"
-      );
-      return [
-        {
-          id: "room1",
-          x: 100,
-          y: 100,
-          width: 400,
-          height: 300,
-        },
-      ];
+      console.warn("[detectRooms] No rooms detected by vision, returning placeholder");
+      return [{ id: "room1", x: 100, y: 100, width: 400, height: 300 }];
     }
 
     const result: DetectedRoom[] = parsed.rooms.map((room, idx) => ({
@@ -150,27 +84,14 @@ Return ONLY valid JSON with no markdown, explanation, or additional text.
       y: room.bounds?.y ?? 0,
       width: room.bounds?.width ?? 300,
       height: room.bounds?.height ?? 250,
-      polygon: room.polygon
-        ? (room.polygon as Point[])
-        : undefined,
+      polygon: room.polygon ? (room.polygon as Point[]) : undefined,
       openingWalls: room.openingWalls as any,
     }));
-
     console.log(`[detectRooms] Detected ${result.length} room(s) from vision`);
     return result;
   } catch (error: any) {
-    console.error(
-      `[detectRooms] Vision request failed: ${error?.message || error}`
-    );
+    console.error(`[detectRooms] Vision request failed: ${error?.message || error}`);
     console.warn("[detectRooms] Returning placeholder room");
-    return [
-      {
-        id: "room1",
-        x: 100,
-        y: 100,
-        width: 400,
-        height: 300,
-      },
-    ];
+    return [{ id: "room1", x: 100, y: 100, width: 400, height: 300 }];
   }
 }
