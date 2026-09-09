@@ -59,12 +59,8 @@ export async function detectFloors(
       ? "image/webp"
       : "image/jpeg";
 
-  const addressContext = context?.address
-    ? `\nProperty address: ${context.address}`
-    : "";
-  const propertyContext = context?.propertyType
-    ? `\nProperty type: ${context.propertyType}`
-    : "";
+  const addressContext = context?.address ? `\nProperty address: ${context.address}` : "";
+  const propertyContext = context?.propertyType ? `\nProperty type: ${context.propertyType}` : "";
 
   const prompt = `You are a professional architectural plan reader.
 
@@ -98,33 +94,26 @@ ${addressContext}${propertyContext}
     const response = await openai.responses.create(
       {
         model: "gpt-4o-mini",
-        messages: [
+        input: [
           {
             role: "user",
             content: [
+              { type: "input_text", text: prompt },
               {
-                type: "text",
-                text: prompt,
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64}`,
-                  detail: "high",
-                },
+                type: "input_image",
+                image_url: `data:${mimeType};base64,${base64}`,
+                detail: "high",
               },
             ],
           },
         ],
-        max_tokens: 1000,
+        max_output_tokens: 1000,
       },
-      {
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
-      }
+      { timeout: OPENAI_REQUEST_TIMEOUT_MS }
     );
 
-    const textContent = response.choices[0]?.message?.content;
-    if (typeof textContent !== "string") {
+    const textContent = response.output_text;
+    if (typeof textContent !== "string" || !textContent.trim()) {
       throw new Error("Vision returned non-text response for floor detection");
     }
 
