@@ -43,10 +43,6 @@ interface VisionStrategyResponse {
 
 let cachedVisionStrategy: VisionStrategyResponse | null = null;
 
-/**
- * Detect floors in a floor plan image using vision analysis.
- * Returns the list of detected floors with boundaries.
- */
 export async function detectFloors(
   filePath: string,
   context?: { address?: string; propertyType?: string }
@@ -102,7 +98,6 @@ ${addressContext}${propertyContext}
     const response = await openai.responses.create(
       {
         model: "gpt-4o-mini",
-        timeout: OPENAI_REQUEST_TIMEOUT_MS,
         messages: [
           {
             role: "user",
@@ -136,9 +131,7 @@ ${addressContext}${propertyContext}
     const parsed = parseAIJson<VisionFloorDetectionResponse>(textContent);
 
     if (!Array.isArray(parsed.floors) || parsed.floors.length === 0) {
-      console.warn(
-        "[detectFloors] No floors detected by vision, returning default"
-      );
+      console.warn("[detectFloors] No floors detected by vision, returning default");
       return [{ name: "Ground Floor", level: 0, top: 0, bottom: 1200 }];
     }
 
@@ -151,36 +144,19 @@ ${addressContext}${propertyContext}
       right: f.boundaries?.right,
     }));
 
-    console.log(
-      `[detectFloors] Detected ${result.length} floor(s) from vision`
-    );
+    console.log(`[detectFloors] Detected ${result.length} floor(s) from vision`);
     return result;
   } catch (error: any) {
-    console.error(
-      `[detectFloors] Vision request failed: ${error?.message || error}`
-    );
+    console.error(`[detectFloors] Vision request failed: ${error?.message || error}`);
     console.warn("[detectFloors] Returning fallback single-floor layout");
     return [{ name: "Ground Floor", level: 0, top: 0, bottom: 1200 }];
   }
 }
 
-/**
- * Get the vision strategy that was cached during floor detection.
- * This is called later during the analysis pipeline.
- */
 export function getVisionStrategy(): VisionStrategyResponse {
-  return (
-    cachedVisionStrategy || {
-      strategy: {},
-      changes: [],
-    }
-  );
+  return cachedVisionStrategy || { strategy: {}, changes: [] };
 }
 
-/**
- * Cache the vision strategy for later use in the pipeline.
- * (Internal; called by the analysis orchestrator)
- */
 export function setVisionStrategy(strategy: VisionStrategyResponse): void {
   cachedVisionStrategy = strategy;
 }
