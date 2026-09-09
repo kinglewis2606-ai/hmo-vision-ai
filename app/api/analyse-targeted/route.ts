@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     const floors = await detectFloors(filePath);
     const detectedRooms = await detectRooms(filePath, floors);
     const labelledDetectedRooms = await labelDetectedRooms(filePath, detectedRooms);
-    const original: any = buildOriginalFloorPlan(floors, labelledDetectedRooms);
+    const original: any = buildOriginalFloorPlan(floors, detectedRooms, labelledDetectedRooms);
     const meta = await sharp(filePath).metadata();
     original.metadata = { imageWidth: meta.width, imageHeight: meta.height, imageDpi: meta.density };
     if (!original.floors.some((f: any) => f.rooms.length)) return NextResponse.json({ success: false, error: "No rooms were detected in the uploaded floor plan." }, { status: 422 });
