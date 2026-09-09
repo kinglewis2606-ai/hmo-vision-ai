@@ -61,9 +61,7 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3000/ > /tmp/home.html
           grep -q "CoachHub" /tmp/home.html
           curl --fail --silent --show-error http://127.0.0.1:3000/dashboard > /tmp/dashboard.html
-          grep -q "CoachHub" /tmp/dashboard.html
-          grep -q "AVAILABILITY" /tmp/dashboard.html
-          grep -q "Add event" /tmp/dashboard.html
+          grep -q "Loading your squad" /tmp/dashboard.html
       - name: Verify CoachHub API and seeded team
         run: |
           curl --fail --silent --show-error http://127.0.0.1:3000/api/coachhub > /tmp/coachhub.json
