@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f5f7fb;
+  --foreground: #0f172a;
 }
 
 @theme inline {
@@ -12,47 +12,16 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #000418;
-    --foreground: #ededed;
-  }
-}
-
 html,
 body {
-  background: #000418 !important;
+  min-height: 100%;
+  background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Approved HMO Vision visual palette: near-black surfaces with electric blue actions. */
-main[class*="bg-[#07101a]"],
-section[class*="bg-[#07131d]"],
-[class*="bg-[#07101a]"],
-[class*="bg-[#07131d]"] {
-  background-color: #000418 !important;
-}
+* { box-sizing: border-box; }
 
-[class*="bg-[#0a1520]"],
-[class*="bg-[#101d29]"],
-[class*="bg-[#0d1924]"],
-[class*="bg-[#0c1924]"] {
-  background-color: #000000 !important;
-}
+button, select, textarea, input { font: inherit; }
 
-.bg-cyan-600,
-button.bg-cyan-600 {
-  background-color: #003cff !important;
-}
-
-.hover\:bg-cyan-500:hover {
-  background-color: #003cff !important;
-}
-
-/* Keep the approved original/proposed comparison side-by-side on phones as well as desktop. */
-@media (max-width: 1023px) {
-  .lg\:grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-}
+button { cursor: pointer; }
