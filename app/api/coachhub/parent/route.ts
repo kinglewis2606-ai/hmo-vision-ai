@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   const child = await prisma.player.findFirst({ where: { teamId: team.id }, orderBy: { lastName: "asc" } });
   const eventId = String(body.eventId || "");
   const status = body.status;
-  if (!child || !eventId || !["AVAILABLE", "UNAVAILABLE", "MAYBE"].includes(status)) return NextResponse.json({ error: "Invalid availability request" }, { status: 400 });
+  if (!child || !eventId || !["AVAILABLE", "UNAVAILABLE"].includes(status)) return NextResponse.json({ error: "Invalid availability request" }, { status: 400 });
 
   const event = await prisma.event.findFirst({ where: { id: eventId, teamId: team.id } });
   if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
