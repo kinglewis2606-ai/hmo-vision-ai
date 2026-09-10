@@ -29,6 +29,7 @@ export async function POST(request: Request) {
     const type = body.type === "MATCH" ? "MATCH" : body.type === "TRAINING" ? "TRAINING" : null;
     const title = String(body.title || "").trim();
     const venue = String(body.venue || "").trim();
+    const instructions = String(body.instructions || "").trim() || null;
     const startsAt = new Date(String(body.startsAt || ""));
     if (!type || !title || !venue || Number.isNaN(startsAt.getTime())) return NextResponse.json({ error: "Type, title, venue and a valid start time are required" }, { status: 400 });
     const endsAt = body.endsAt ? new Date(String(body.endsAt)) : null;
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     if ((endsAt && Number.isNaN(endsAt.getTime())) || (arrivalTime && Number.isNaN(arrivalTime.getTime()))) return NextResponse.json({ error: "Invalid event time" }, { status: 400 });
     if (endsAt && endsAt <= startsAt) return NextResponse.json({ error: "End time must be after the start time" }, { status: 400 });
     if (arrivalTime && arrivalTime > startsAt) return NextResponse.json({ error: "Player arrival must be at or before the start time" }, { status: 400 });
-    const event = await prisma.event.create({ data: { teamId: team.id, type, title, opponent: type === "MATCH" ? String(body.opponent || "").trim() || null : null, startsAt, endsAt, venue, arrivalTime } });
+    const event = await prisma.event.create({ data: { teamId: team.id, type, title, opponent: type === "MATCH" ? String(body.opponent || "").trim() || null : null, startsAt, endsAt, venue, arrivalTime, instructions } });
     await prisma.availability.createMany({ data: team.players.map((player) => ({ eventId: event.id, playerId: player.id, status: "PENDING" })) });
     return NextResponse.json(event, { status: 201 });
   }
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
     if (eventId && !(await prisma.event.findFirst({ where: { id: eventId, teamId: team.id } }))) return NextResponse.json({ error: "Event not found" }, { status: 404 });
     if (eventId) return NextResponse.json(await prisma.eventMessage.create({ data: { eventId, sender: "Coach", body: message } }));
     return NextResponse.json(await prisma.message.create({ data: { teamId: team.id, sender: "Coach", body: message } }));
-  }
+    }
 
   if (body.action === "squad") {
     const eventId = String(body.eventId || "");
