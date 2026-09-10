@@ -29,6 +29,7 @@ model Player {
   team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
   availability Availability[]
   feedback     Feedback[]
+  selections   MatchSelection[]
   createdAt    DateTime       @default(now())
   @@index([teamId])
 }
@@ -45,20 +46,34 @@ enum AvailabilityStatus {
   PENDING
 }
 
+enum SquadRole {
+  STARTING
+  SUBSTITUTE
+  NOT_SELECTED
+}
+
 model Event {
-  id           String         @id @default(cuid())
-  teamId       String
-  type         EventType
-  title        String
-  opponent     String?
-  startsAt     DateTime
-  endsAt       DateTime?
-  venue        String
-  arrivalTime  DateTime?
-  team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  availability Availability[]
-  feedback     Feedback[]
-  createdAt    DateTime       @default(now())
+  id              String         @id @default(cuid())
+  teamId          String
+  type            EventType
+  title           String
+  opponent        String?
+  startsAt        DateTime
+  endsAt          DateTime?
+  venue           String
+  arrivalTime     DateTime?
+  matchFormation  String?
+  matchKit        String?
+  matchResult     String?
+  matchScoreFor   Int?
+  matchScoreAgainst Int?
+  matchNotes      String?
+  team            Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  availability   Availability[]
+  feedback       Feedback[]
+  selections     MatchSelection[]
+  eventMessages  EventMessage[]
+  createdAt      DateTime       @default(now())
   @@index([teamId, startsAt])
 }
 
@@ -73,6 +88,20 @@ model Availability {
   player      Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
   @@unique([eventId, playerId])
   @@index([eventId, status])
+}
+
+model MatchSelection {
+  id         String    @id @default(cuid())
+  eventId    String
+  playerId   String
+  role       SquadRole @default(NOT_SELECTED)
+  position   String?
+  isCaptain  Boolean   @default(false)
+  event      Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  player     Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  @@unique([eventId, playerId])
+  @@index([eventId, role])
 }
 
 model Feedback {
@@ -101,4 +130,14 @@ model Message {
   createdAt DateTime @default(now())
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   @@index([teamId, createdAt])
+}
+
+model EventMessage {
+  id        String   @id @default(cuid())
+  eventId   String
+  sender    String
+  body      String
+  createdAt DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  @@index([eventId, createdAt])
 }
