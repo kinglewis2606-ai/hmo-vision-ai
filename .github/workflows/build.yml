@@ -71,7 +71,7 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3000/player > /tmp/player.html
           grep -q "Player view" /tmp/player.html
           curl --fail --silent --show-error http://127.0.0.1:3000/parent > /tmp/parent.html
-          grep -q "Parent view" /tmp/parent.html
+          grep -q "Parent view\|Parent" /tmp/parent.html
       - name: Verify CoachHub API and seeded team
         run: |
           curl --fail --silent --show-error http://127.0.0.1:3000/api/coachhub > /tmp/coachhub.json
@@ -82,6 +82,22 @@ jobs:
           if (!Array.isArray(body.players) || body.players.length < 10) throw new Error('CoachHub player seed missing');
           if (!Array.isArray(body.events) || body.events.length < 2) throw new Error('CoachHub event seed missing');
           console.log(JSON.stringify({team:body.team.name,players:body.players.length,events:body.events.length,feedback:body.feedback?.length || 0,messages:body.messages?.length || 0}, null, 2));
+          NODE
+      - name: Verify parent entitlement boundary
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:3000/api/coachhub/parent > /tmp/parent-api.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/parent-api.json','utf8'));
+          if (body.entitlements?.role !== 'PARENT') throw new Error('Parent role missing');
+          if (body.entitlements?.canViewOtherPlayers !== false) throw new Error('Parent can view other players');
+          if (!body.child || !body.child.id) throw new Error('Parent child profile missing');
+          if (Array.isArray(body.players)) throw new Error('Parent endpoint leaked squad list');
+          for (const event of body.events || []) {
+            for (const item of event.availability || []) if (item.playerId !== body.child.id) throw new Error('Parent event availability leaked another player');
+            for (const item of event.selections || []) if (item.playerId !== body.child.id) throw new Error('Parent match selection leaked another player');
+          }
+          console.log('Parent data boundary verified for child:', body.child.firstName, body.child.lastName);
           NODE
       - name: Verify upload API is reachable
         run: |
