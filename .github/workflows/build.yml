@@ -58,7 +58,7 @@ jobs:
           exit 1
       - name: Verify CoachHub pages render
         run: |
-          for path in / /dashboard /matches /communication /players /player /parent; do
+          for path in / /dashboard /matches /communication /players /player /parent /parent/request; do
             curl --fail --silent --show-error "http://127.0.0.1:3000${path}" > /tmp/page.html
             grep -q "<body" /tmp/page.html
           done
@@ -88,6 +88,19 @@ jobs:
             for (const item of event.selections || []) if (item.playerId !== body.child.id) throw new Error('Parent match selection leaked another player');
           }
           console.log('Parent data boundary verified for child:', body.child.firstName, body.child.lastName);
+          NODE
+      - name: Verify parent access request lifecycle
+        run: |
+          curl --fail --silent --show-error -X POST -H 'Content-Type: application/json' -d '{"action":"request","parentName":"Smoke Test Parent","parentEmail":"smoke-parent@example.com","childFirstName":"Jack","childLastName":"Thompson"}' http://127.0.0.1:3000/api/coachhub/access-requests > /tmp/access-request.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const created = JSON.parse(fs.readFileSync('/tmp/access-request.json','utf8')).request;
+          if (!created || created.status !== 'PENDING') throw new Error('Parent access request was not created as pending');
+          const id = created.id;
+          const http = require('http');
+          const payload = JSON.stringify({ id, status: 'APPROVED' });
+          const req = http.request({ hostname:'127.0.0.1', port:3000, path:'/api/coachhub/access-requests', method:'POST', headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)} }, res => { let data=''; res.on('data', c => data += c); res.on('end', () => { if (res.statusCode !== 200) { console.error(data); process.exit(1); } const body=JSON.parse(data); if (body.status !== 'APPROVED') throw new Error('Parent access request was not approved'); console.log('Parent access request approval lifecycle verified'); }); });
+          req.on('error', err => { console.error(err); process.exit(1); }); req.write(payload); req.end();
           NODE
       - name: Verify upload API is reachable
         run: |
