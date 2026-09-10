@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && NEXT_DEPLOYMENT_ID=${VERCEL_GIT_COMMIT_SHA:-local} next build",
-    "start": "NEXT_DEPLOYMENT_ID=${NEXT_DEPLOYMENT_ID:-${VERCEL_GIT_COMMIT_SHA:-local}} next start",
+    "build": "prisma generate && NEXT_DEPLOYMENT_ID=$(node -e \"process.stdout.write((process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0,20))\") next build",
+    "start": "NEXT_DEPLOYMENT_ID=$(node -e \"process.stdout.write((process.env.NEXT_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0,20))\") next start",
     "lint": "eslint",
     "test:geometry": "rm -rf .geometry-test && tsc tests/geometry.test.ts tests/deterministicGeometry.test.ts tests/hmoPlanner.test.ts lib/geometryValidation.ts lib/deterministicGeometryEngine.ts lib/hmoPlanner.ts lib/types/floorPlan.ts --outDir .geometry-test --rootDir . --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node --test .geometry-test/tests/*.test.js"
   },
