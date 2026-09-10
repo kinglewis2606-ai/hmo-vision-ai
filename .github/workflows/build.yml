@@ -73,6 +73,32 @@ jobs:
           if (!Array.isArray(body.events) || body.events.length < 2) throw new Error('CoachHub event seed missing');
           console.log(JSON.stringify({team:body.team.name,players:body.players.length,events:body.events.length,feedback:body.feedback?.length || 0,messages:body.messages?.length || 0}, null, 2));
           NODE
+      - name: Verify availability is a yes or no poll
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync('/tmp/coachhub.json','utf8'));
+          const event = body.events.find(e => e.availability?.some(a => a.status === 'PENDING')) || body.events[0];
+          const player = body.players[0];
+          if (!event || !player) throw new Error('Availability test data missing');
+          const http = require('http');
+          const post = (payload) => new Promise((resolve, reject) => {
+            const data = JSON.stringify(payload);
+            const req = http.request({hostname:'127.0.0.1',port:3000,path:'/api/coachhub',method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(data)}}, res => {
+              let text=''; res.on('data', c => text += c); res.on('end', () => resolve({status:res.statusCode,body:text}));
+            });
+            req.on('error', reject); req.write(data); req.end();
+          });
+          (async () => {
+            for (const status of ['AVAILABLE','UNAVAILABLE']) {
+              const result = await post({action:'availability',eventId:event.id,playerId:player.id,status});
+              if (result.status !== 200) throw new Error(`Expected ${status} to be accepted: ${result.body}`);
+            }
+            const maybe = await post({action:'availability',eventId:event.id,playerId:player.id,status:'MAYBE'});
+            if (maybe.status !== 400) throw new Error('MAYBE availability was accepted');
+            console.log('Availability poll verified: AVAILABLE / UNAVAILABLE only');
+          })().catch(err => { console.error(err); process.exit(1); });
+          NODE
       - name: Verify parent entitlement boundary
         run: |
           curl --fail --silent --show-error http://127.0.0.1:3000/api/coachhub/parent > /tmp/parent-api.json
