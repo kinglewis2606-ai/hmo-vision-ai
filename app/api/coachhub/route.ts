@@ -33,6 +33,8 @@ export async function POST(request: Request) {
     if ((endsAt && Number.isNaN(endsAt.getTime())) || (arrivalTime && Number.isNaN(arrivalTime.getTime()))) {
       return NextResponse.json({ error: "Invalid event time" }, { status: 400 });
     }
+    if (endsAt && endsAt <= startsAt) return NextResponse.json({ error: "End time must be after the start time" }, { status: 400 });
+    if (arrivalTime && arrivalTime > startsAt) return NextResponse.json({ error: "Player arrival must be at or before the start time" }, { status: 400 });
     const event = await prisma.event.create({
       data: {
         teamId: team.id,
