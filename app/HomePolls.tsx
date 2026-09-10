@@ -11,6 +11,7 @@ type Event = {
   startsAt: string;
   arrivalTime?: string | null;
   venue: string;
+  instructions?: string | null;
   availability: { status: string }[];
 };
 
@@ -43,6 +44,7 @@ export default function HomePolls() {
         <h3 className="mt-2 text-xl font-black">{event.title}{event.opponent ? ` vs ${event.opponent}` : ""}</h3>
         <p className="mt-2 text-sm text-slate-400">{fmt(event.startsAt)} · {event.venue}</p>
         {event.arrivalTime && <p className="mt-1 text-xs text-slate-500">Arrival: {fmt(event.arrivalTime)}</p>}
+        {event.instructions && <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-4"><p className="text-xs font-black uppercase tracking-widest text-slate-500">Team information</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">{event.instructions}</p></div>}
         <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-bold"><div className="rounded-xl bg-emerald-950 p-3 text-emerald-300"><b className="block text-lg">{available}</b>Available</div><div className="rounded-xl bg-rose-950 p-3 text-rose-300"><b className="block text-lg">{unavailable}</b>Not available</div><div className="rounded-xl bg-slate-950 p-3 text-slate-400"><b className="block text-lg">{pending}</b>Awaiting</div></div>
         <div className="mt-4 grid grid-cols-2 gap-2"><Link href="/player" className="rounded-xl bg-blue-600 px-3 py-3 text-center text-sm font-black hover:bg-blue-500">Player response</Link><Link href="/parent" className="rounded-xl border border-slate-700 px-3 py-3 text-center text-sm font-black hover:border-blue-600">Parent response</Link></div>
       </article>;
