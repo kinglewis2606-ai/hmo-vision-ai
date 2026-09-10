@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureCoachHubData } from "@/lib/coachhub";
 
-const statuses = ["AVAILABLE", "UNAVAILABLE", "MAYBE"] as const;
+const statuses = ["AVAILABLE", "UNAVAILABLE"] as const;
 const squadRoles = ["STARTING", "SUBSTITUTE", "NOT_SELECTED"] as const;
 
 export async function GET() {
