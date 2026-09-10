@@ -16,6 +16,7 @@ model Team {
   players   Player[]
   events    Event[]
   messages  Message[]
+  accessRequests ParentAccessRequest[]
 }
 
 model Player {
@@ -30,6 +31,7 @@ model Player {
   availability Availability[]
   feedback     Feedback[]
   selections   MatchSelection[]
+  accessRequests ParentAccessRequest[]
   createdAt    DateTime       @default(now())
   @@index([teamId])
 }
@@ -52,6 +54,29 @@ enum SquadRole {
   NOT_SELECTED
 }
 
+enum ParentAccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+model ParentAccessRequest {
+  id          String                     @id @default(cuid())
+  teamId      String
+  playerId    String
+  parentName  String
+  parentEmail String
+  status      ParentAccessRequestStatus  @default(PENDING)
+  reviewNote  String?
+  createdAt   DateTime                   @default(now())
+  reviewedAt DateTime?
+  team        Team                       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player      Player                     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  @@index([teamId, status, createdAt])
+  @@index([playerId, status])
+}
+
 model Event {
   id              String         @id @default(cuid())
   teamId          String
@@ -63,7 +88,7 @@ model Event {
   venue           String
   arrivalTime     DateTime?
   matchFormation  String?
-  matchKit        String?
+  matchKit         String?
   matchResult     String?
   matchScoreFor   Int?
   matchScoreAgainst Int?
@@ -92,8 +117,8 @@ model Availability {
 
 model MatchSelection {
   id         String    @id @default(cuid())
-  eventId    String
-  playerId   String
+  eventId   String
+  playerId  String
   role       SquadRole @default(NOT_SELECTED)
   position   String?
   isCaptain  Boolean   @default(false)
@@ -136,7 +161,7 @@ model EventMessage {
   id        String   @id @default(cuid())
   eventId   String
   sender    String
-  body      String
+  body       String
   createdAt DateTime @default(now())
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   @@index([eventId, createdAt])
