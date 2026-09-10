@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import AccessRequests from "@/app/dashboard/AccessRequests";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Player = { id: string; firstName: string; lastName: string; position: string; availability: { eventId: string; status: string }[] };
@@ -100,6 +101,8 @@ export default function Dashboard() {
             <Link href="/players" className="rounded-lg px-3 py-2 text-slate-400 hover:bg-slate-900 hover:text-white">Players</Link>
           </nav>
         </header>
+
+        <AccessRequests />
 
         <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div><div className="text-xs font-black tracking-widest text-blue-400">HOME</div><h1 className="mt-1 text-3xl font-black sm:text-4xl">What needs doing?</h1><p className="mt-1 text-slate-400">Your team at a glance.</p></div>
