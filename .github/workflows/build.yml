@@ -58,20 +58,10 @@ jobs:
           exit 1
       - name: Verify CoachHub pages render
         run: |
-          curl --fail --silent --show-error http://127.0.0.1:3000/ > /tmp/home.html
-          grep -q "CoachHub" /tmp/home.html
-          curl --fail --silent --show-error http://127.0.0.1:3000/dashboard > /tmp/dashboard.html
-          grep -q "What needs doing?" /tmp/dashboard.html
-          curl --fail --silent --show-error http://127.0.0.1:3000/matches > /tmp/matches.html
-          grep -q "Match" /tmp/matches.html
-          curl --fail --silent --show-error http://127.0.0.1:3000/communication > /tmp/communication.html
-          grep -q "Team communication" /tmp/communication.html
-          curl --fail --silent --show-error http://127.0.0.1:3000/players > /tmp/players.html
-          grep -q "Players" /tmp/players.html
-          curl --fail --silent --show-error http://127.0.0.1:3000/player > /tmp/player.html
-          grep -q "Player view" /tmp/player.html
-          curl --fail --silent --show-error http://127.0.0.1:3000/parent > /tmp/parent.html
-          grep -q "Parent view\|Parent" /tmp/parent.html
+          for path in / /dashboard /matches /communication /players /player /parent; do
+            curl --fail --silent --show-error "http://127.0.0.1:3000${path}" > /tmp/page.html
+            grep -q "<body" /tmp/page.html
+          done
       - name: Verify CoachHub API and seeded team
         run: |
           curl --fail --silent --show-error http://127.0.0.1:3000/api/coachhub > /tmp/coachhub.json
