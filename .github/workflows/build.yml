@@ -65,10 +65,10 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3000/matches > /tmp/matches.html
           grep -q "Match" /tmp/matches.html
           curl --fail --silent --show-error http://127.0.0.1:3000/communication > /tmp/communication.html
-          grep -q "Communication" /tmp/communication.html
+          grep -q "Team communication" /tmp/communication.html
           curl --fail --silent --show-error http://127.0.0.1:3000/players > /tmp/players.html
           grep -q "Players" /tmp/players.html
-          grep -q "IMPROVEMENT NOTES\|COACHING NOTES" /tmp/players.html
+          grep -q "COACHING NOTES" /tmp/players.html
           curl --fail --silent --show-error http://127.0.0.1:3000/player > /tmp/player.html
           grep -q "Player view" /tmp/player.html
           curl --fail --silent --show-error http://127.0.0.1:3000/parent > /tmp/parent.html
