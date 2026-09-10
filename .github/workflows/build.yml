@@ -62,6 +62,10 @@ jobs:
           grep -q "CoachHub" /tmp/home.html
           curl --fail --silent --show-error http://127.0.0.1:3000/dashboard > /tmp/dashboard.html
           grep -q "Loading your squad" /tmp/dashboard.html
+          curl --fail --silent --show-error http://127.0.0.1:3000/player > /tmp/player.html
+          grep -q "Player view" /tmp/player.html
+          curl --fail --silent --show-error http://127.0.0.1:3000/parent > /tmp/parent.html
+          grep -q "Parent view" /tmp/parent.html
       - name: Verify CoachHub API and seeded team
         run: |
           curl --fail --silent --show-error http://127.0.0.1:3000/api/coachhub > /tmp/coachhub.json
