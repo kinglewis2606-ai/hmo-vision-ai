@@ -87,6 +87,7 @@ model Event {
   endsAt          DateTime?
   venue           String
   arrivalTime     DateTime?
+  instructions    String?
   matchFormation  String?
   matchKit         String?
   matchResult     String?
@@ -158,11 +159,11 @@ model Message {
 }
 
 model EventMessage {
-  id        String   @id @default(cuid())
-  eventId   String
-  sender    String
+  id         String   @id @default(cuid())
+  eventId    String
+  sender     String
   body       String
-  createdAt DateTime @default(now())
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   @@index([eventId, createdAt])
 }
