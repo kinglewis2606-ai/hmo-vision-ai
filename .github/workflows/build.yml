@@ -49,7 +49,7 @@ jobs:
           exit 1
       - name: Verify pages and API boundaries
         run: |
-          for path in / /login /dashboard /matches /communication /players /player /parent /parent/request; do curl --fail --silent http://127.0.0.1:3000${path} >/tmp/page.html; grep -q '<body' /tmp/page.html; done
+          for path in / /login /dashboard /matches /communication /players /player /player/register /parent /parent/request; do curl --fail --silent http://127.0.0.1:3000${path} >/tmp/page.html; grep -q '<body' /tmp/page.html; done
           curl --fail --silent http://127.0.0.1:3000/api/coachhub/public >/tmp/public.json
           test "$(curl --silent --output /tmp/a --write-out '%{http_code}' http://127.0.0.1:3000/api/coachhub)" = 403
           test "$(curl --silent --output /tmp/a --write-out '%{http_code}' http://127.0.0.1:3000/api/coachhub/parent)" = 403
@@ -73,6 +73,29 @@ jobs:
           if(p.child?.firstName!=='Jack'||p.child?.lastName!=='Thompson'||Array.isArray(p.players))throw Error('Parent child boundary failed');
           console.log('Authenticated Coach/Parent flow and child boundary verified');
           NODE
+      - name: Verify secure player invite and player isolation
+        run: |
+          player_id=$(node -e "const fs=require('fs');const b=JSON.parse(fs.readFileSync('/tmp/coachhub.json'));process.stdout.write(b.players[0].id)")
+          curl --fail --silent --show-error -b /tmp/coach.cookies -X POST -H 'Content-Type: application/json' -d "{\"playerId\":\"$player_id\"}" http://127.0.0.1:3000/api/coachhub/player-invites >/tmp/player-invite.json
+          code=$(node -p "require('/tmp/player-invite.json').inviteCode")
+          curl --fail --silent --show-error -c /tmp/player.cookies -X POST -H 'Content-Type: application/json' -d "{\"code\":\"$code\",\"email\":\"player-$(date +%s)-$RANDOM@example.com\",\"password\":\"SmokePlayer123!\"}" http://127.0.0.1:3000/api/auth/player-register >/tmp/player-register.json
+          curl --fail --silent --show-error -b /tmp/player.cookies http://127.0.0.1:3000/api/coachhub/player >/tmp/player-api.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/player-api.json','utf8'));
+          const c=JSON.parse(fs.readFileSync('/tmp/coachhub.json','utf8'));
+          if(!p.player?.id||p.player.id!==c.players[0].id)throw Error('Player invite did not bind the correct player');
+          if(Array.isArray(p.players))throw Error('Player API leaked squad list');
+          const other=c.players.find(x=>x.id!==p.player.id);
+          if(!other)throw Error('Second player missing');
+          fs.writeFileSync('/tmp/other-player-id',other.id);
+          fs.writeFileSync('/tmp/player-event-id',p.events[0].id);
+          console.log('Player account and isolation verified');
+          NODE
+          status=$(curl --silent --output /tmp/player-cross.json --write-out '%{http_code}' -b /tmp/player.cookies -X POST -H 'Content-Type: application/json' -d "{\"action\":\"availability\",\"eventId\":\"$(cat /tmp/player-event-id)\",\"status\":\"AVAILABLE\"}" http://127.0.0.1:3000/api/coachhub/player)
+          test "$status" = 200
+          status=$(curl --silent --output /tmp/player-cross.json --write-out '%{http_code}' -b /tmp/player.cookies -X POST -H 'Content-Type: application/json' -d "{\"action\":\"availability\",\"eventId\":\"$(cat /tmp/player-event-id)\",\"playerId\":\"$(cat /tmp/other-player-id)\",\"status\":\"AVAILABLE\"}" http://127.0.0.1:3000/api/coachhub)
+          test "$status" = 403
       - name: Verify availability poll
         run: |
           node - <<'NODE'
@@ -82,6 +105,17 @@ jobs:
           const post=s=>new Promise((ok,no)=>{const d=JSON.stringify({action:'availability',eventId:e.id,playerId:p.id,status:s});const q=http.request({hostname:'127.0.0.1',port:3000,path:'/api/coachhub',method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(d),Cookie:'coachhub_session='+cookie}},r=>{r.resume();r.on('end',()=>ok(r.statusCode))});q.on('error',no);q.write(d);q.end()});
           (async()=>{if(await post('AVAILABLE')!==200||await post('UNAVAILABLE')!==200||await post('MAYBE')!==400)throw Error('Availability poll failed');console.log('Availability poll verified: YES/NO only')})().catch(e=>{console.error(e);process.exit(1)});
           NODE
+      - name: Verify upload API is reachable
+        run: |
+          printf 'x' > /tmp/smoke.txt
+          status=$(curl --silent --output /tmp/upload.json --write-out '%{http_code}' -X POST -F 'file=@/tmp/smoke.txt;type=text/plain' http://127.0.0.1:3000/api/upload)
+          test "$status" = 400
+          grep -Eq 'Unsupported file type|No file uploaded' /tmp/upload.json
+      - name: Verify analysis API initializes
+        run: |
+          status=$(curl --silent --output /tmp/analyse.json --write-out '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse)
+          test "$status" = 400
+          grep -Eq 'No uploaded file|Invalid uploaded filename|Missing' /tmp/analyse.json
       - name: Verify server remains alive
         run: kill -0 $(cat /tmp/hmo-next.pid)
       - name: Show server log on failure
