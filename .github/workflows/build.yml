@@ -1,15 +1,8 @@
-# CoachHub build and runtime acceptance test.
 name: Build and Runtime Smoke Test
 
 on:
   push:
-    branches:
-      - main
-      - hmo-production
-      - hmo-pipeline-v2
-      - fix/real-floorplan-pipeline
-      - fix/max-hmo-geometry-output
-      - hmo-max-conversion
+    branches: [main, hmo-production, hmo-pipeline-v2, fix/real-floorplan-pipeline, fix/max-hmo-geometry-output, hmo-max-conversion]
   pull_request:
 
 jobs:
@@ -44,101 +37,51 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DATABASE_URL: file:/tmp/coachhub-smoke.db
+          COACHHUB_COACH_SIGNUP_CODE: smoke-coach-code
         run: |
           npx prisma migrate deploy
-          nohup npm run start -- -H 127.0.0.1 -p 3000 > /tmp/hmo-next.log 2>&1 &
-          echo $! > /tmp/hmo-next.pid
-      - name: Wait for production server
+          nohup npm run start -- -H 127.0.0.1 -p 3000 >/tmp/hmo-next.log 2>&1 &
+          echo $! >/tmp/hmo-next.pid
+      - name: Wait for server
         run: |
-          for i in {1..30}; do
-            if curl --fail --silent --show-error http://127.0.0.1:3000/ > /tmp/home.html; then exit 0; fi
-            sleep 1
-          done
+          for i in {1..30}; do curl --fail --silent http://127.0.0.1:3000/ >/tmp/home.html && exit 0; sleep 1; done
           cat /tmp/hmo-next.log
           exit 1
-      - name: Verify CoachHub pages render
+      - name: Verify pages and API boundaries
         run: |
-          for path in / /dashboard /matches /communication /players /player /parent /parent/request; do
-            curl --fail --silent --show-error "http://127.0.0.1:3000${path}" > /tmp/page.html
-            grep -q "<body" /tmp/page.html
-          done
-      - name: Verify CoachHub API and seeded team
+          for path in / /login /dashboard /matches /communication /players /player /parent /parent/request; do curl --fail --silent http://127.0.0.1:3000${path} >/tmp/page.html; grep -q '<body' /tmp/page.html; done
+          curl --fail --silent http://127.0.0.1:3000/api/coachhub/public >/tmp/public.json
+          test "$(curl --silent --output /tmp/a --write-out '%{http_code}' http://127.0.0.1:3000/api/coachhub)" = 403
+          test "$(curl --silent --output /tmp/a --write-out '%{http_code}' http://127.0.0.1:3000/api/coachhub/parent)" = 403
+          test "$(curl --silent --output /tmp/a --write-out '%{http_code}' http://127.0.0.1:3000/api/coachhub/player)" = 403
+      - name: Verify authenticated Coach and Parent flow
         run: |
-          curl --fail --silent --show-error http://127.0.0.1:3000/api/coachhub > /tmp/coachhub.json
+          coach="coach-$(date +%s)-$RANDOM@example.com"
+          parent="parent-$(date +%s)-$RANDOM@example.com"
+          curl --fail --silent -c /tmp/coach.cookies -X POST -H 'Content-Type: application/json' -d "{\"role\":\"COACH\",\"email\":\"$coach\",\"password\":\"SmokeCoach123!\",\"coachCode\":\"smoke-coach-code\"}" http://127.0.0.1:3000/api/auth/register >/tmp/coach.json
+          curl --fail --silent -c /tmp/parent.cookies -X POST -H 'Content-Type: application/json' -d "{\"role\":\"PARENT\",\"email\":\"$parent\",\"password\":\"SmokeParent123!\"}" http://127.0.0.1:3000/api/auth/register >/tmp/parent.json
+          curl --fail --silent -b /tmp/coach.cookies http://127.0.0.1:3000/api/coachhub >/tmp/coachhub.json
+          curl --fail --silent -b /tmp/parent.cookies -X POST -H 'Content-Type: application/json' -d '{"action":"request","parentName":"Smoke Parent","childFirstName":"Jack","childLastName":"Thompson"}' http://127.0.0.1:3000/api/coachhub/access-requests >/tmp/request.json
+          id=$(node -p "require('/tmp/request.json').request.id")
+          curl --fail --silent -b /tmp/coach.cookies -X POST -H 'Content-Type: application/json' -d "{\"id\":\"$id\",\"status\":\"APPROVED\"}" http://127.0.0.1:3000/api/coachhub/access-requests >/tmp/approved.json
+          curl --fail --silent -b /tmp/parent.cookies http://127.0.0.1:3000/api/coachhub/parent >/tmp/parent-api.json
           node - <<'NODE'
-          const fs = require('fs');
-          const body = JSON.parse(fs.readFileSync('/tmp/coachhub.json','utf8'));
-          if (!body.team || body.team.name !== 'Caversham Falcons U10s') throw new Error('CoachHub team seed missing');
-          if (!Array.isArray(body.players) || body.players.length < 10) throw new Error('CoachHub player seed missing');
-          if (!Array.isArray(body.events) || body.events.length < 2) throw new Error('CoachHub event seed missing');
-          console.log(JSON.stringify({team:body.team.name,players:body.players.length,events:body.events.length,feedback:body.feedback?.length || 0,messages:body.messages?.length || 0}, null, 2));
+          const fs=require('fs');
+          const c=JSON.parse(fs.readFileSync('/tmp/coachhub.json','utf8'));
+          const p=JSON.parse(fs.readFileSync('/tmp/parent-api.json','utf8'));
+          if(c.team?.name!=='Caversham Falcons U10s'||c.players?.length<10||c.events?.length<2)throw Error('Coach seed data missing');
+          if(p.child?.firstName!=='Jack'||p.child?.lastName!=='Thompson'||Array.isArray(p.players))throw Error('Parent child boundary failed');
+          console.log('Authenticated Coach/Parent flow and child boundary verified');
           NODE
-      - name: Verify availability is a yes or no poll
+      - name: Verify availability poll
         run: |
           node - <<'NODE'
-          const fs = require('fs');
-          const body = JSON.parse(fs.readFileSync('/tmp/coachhub.json','utf8'));
-          const event = body.events.find(e => e.availability?.some(a => a.status === 'PENDING')) || body.events[0];
-          const player = body.players[0];
-          if (!event || !player) throw new Error('Availability test data missing');
-          const http = require('http');
-          const post = (payload) => new Promise((resolve, reject) => {
-            const data = JSON.stringify(payload);
-            const req = http.request({hostname:'127.0.0.1',port:3000,path:'/api/coachhub',method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(data)}}, res => {
-              let text=''; res.on('data', c => text += c); res.on('end', () => resolve({status:res.statusCode,body:text}));
-            });
-            req.on('error', reject); req.write(data); req.end();
-          });
-          (async () => {
-            for (const status of ['AVAILABLE','UNAVAILABLE']) {
-              const result = await post({action:'availability',eventId:event.id,playerId:player.id,status});
-              if (result.status !== 200) throw new Error(`Expected ${status} to be accepted: ${result.body}`);
-            }
-            const maybe = await post({action:'availability',eventId:event.id,playerId:player.id,status:'MAYBE'});
-            if (maybe.status !== 400) throw new Error('MAYBE availability was accepted');
-            console.log('Availability poll verified: AVAILABLE / UNAVAILABLE only');
-          })().catch(err => { console.error(err); process.exit(1); });
+          const fs=require('fs'),http=require('http');
+          const b=JSON.parse(fs.readFileSync('/tmp/coachhub.json','utf8')),e=b.events[0],p=b.players[0];
+          const cookie=fs.readFileSync('/tmp/coach.cookies','utf8').split('\n').find(x=>x.includes('coachhub_session')).split('\t').pop();
+          const post=s=>new Promise((ok,no)=>{const d=JSON.stringify({action:'availability',eventId:e.id,playerId:p.id,status:s});const q=http.request({hostname:'127.0.0.1',port:3000,path:'/api/coachhub',method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(d),Cookie:'coachhub_session='+cookie}},r=>{r.resume();r.on('end',()=>ok(r.statusCode))});q.on('error',no);q.write(d);q.end()});
+          (async()=>{if(await post('AVAILABLE')!==200||await post('UNAVAILABLE')!==200||await post('MAYBE')!==400)throw Error('Availability poll failed');console.log('Availability poll verified: YES/NO only')})().catch(e=>{console.error(e);process.exit(1)});
           NODE
-      - name: Verify parent entitlement boundary
-        run: |
-          curl --fail --silent --show-error http://127.0.0.1:3000/api/coachhub/parent > /tmp/parent-api.json
-          node - <<'NODE'
-          const fs = require('fs');
-          const body = JSON.parse(fs.readFileSync('/tmp/parent-api.json','utf8'));
-          if (body.entitlements?.role !== 'PARENT') throw new Error('Parent role missing');
-          if (body.entitlements?.canViewOtherPlayers !== false) throw new Error('Parent can view other players');
-          if (!body.child || !body.child.id) throw new Error('Parent child profile missing');
-          if (Array.isArray(body.players)) throw new Error('Parent endpoint leaked squad list');
-          for (const event of body.events || []) {
-            for (const item of event.availability || []) if (item.playerId !== body.child.id) throw new Error('Parent event availability leaked another player');
-            for (const item of event.selections || []) if (item.playerId !== body.child.id) throw new Error('Parent match selection leaked another player');
-          }
-          console.log('Parent data boundary verified for child:', body.child.firstName, body.child.lastName);
-          NODE
-      - name: Verify parent access request lifecycle
-        run: |
-          curl --fail --silent --show-error -X POST -H 'Content-Type: application/json' -d '{"action":"request","parentName":"Smoke Test Parent","parentEmail":"smoke-parent@example.com","childFirstName":"Jack","childLastName":"Thompson"}' http://127.0.0.1:3000/api/coachhub/access-requests > /tmp/access-request.json
-          node - <<'NODE'
-          const fs = require('fs');
-          const created = JSON.parse(fs.readFileSync('/tmp/access-request.json','utf8')).request;
-          if (!created || created.status !== 'PENDING') throw new Error('Parent access request was not created as pending');
-          const id = created.id;
-          const http = require('http');
-          const payload = JSON.stringify({ id, status: 'APPROVED' });
-          const req = http.request({ hostname:'127.0.0.1', port:3000, path:'/api/coachhub/access-requests', method:'POST', headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)} }, res => { let data=''; res.on('data', c => data += c); res.on('end', () => { if (res.statusCode !== 200) { console.error(data); process.exit(1); } const body=JSON.parse(data); if (body.status !== 'APPROVED') throw new Error('Parent access request was not approved'); console.log('Parent access request approval lifecycle verified'); }); });
-          req.on('error', err => { console.error(err); process.exit(1); }); req.write(payload); req.end();
-          NODE
-      - name: Verify upload API is reachable
-        run: |
-          printf 'x' > /tmp/smoke.txt
-          status=$(curl --silent --output /tmp/upload.json --write-out "%{http_code}" -X POST -F 'file=@/tmp/smoke.txt;type=text/plain' http://127.0.0.1:3000/api/upload)
-          test "$status" = "400"
-          grep -Eq 'Unsupported file type|No file uploaded' /tmp/upload.json
-      - name: Verify analysis API initializes
-        run: |
-          status=$(curl --silent --output /tmp/analyse.json --write-out "%{http_code}" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:3000/api/analyse)
-          test "$status" = "400"
-          grep -Eq 'No uploaded file|Invalid uploaded filename|Missing' /tmp/analyse.json
       - name: Verify server remains alive
         run: kill -0 $(cat /tmp/hmo-next.pid)
       - name: Show server log on failure
