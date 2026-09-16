@@ -70,16 +70,16 @@ enum ParentAccessRequestStatus {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  role         UserRole
-  teamId       String?
-  playerId     String?   @unique
-  createdAt    DateTime  @default(now())
-  team         Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  player       Player?   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  sessions     Session[]
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String
+  role           UserRole
+  teamId         String?
+  playerId       String?   @unique
+  createdAt      DateTime  @default(now())
+  team           Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player         Player?   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  sessions       Session[]
   accessRequests ParentAccessRequest[]
   @@index([teamId, role])
 }
@@ -104,7 +104,7 @@ model ParentAccessRequest {
   status      ParentAccessRequestStatus  @default(PENDING)
   reviewNote  String?
   createdAt   DateTime                   @default(now())
-  reviewedAt DateTime?
+  reviewedAt  DateTime?
   team        Team                       @relation(fields: [teamId], references: [id], onDelete: Cascade)
   player      Player                     @relation(fields: [playerId], references: [id], onDelete: Cascade)
   user        User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -147,7 +147,7 @@ model Availability {
   reason      String?
   respondedAt DateTime?
   event       Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  player      Player             @relation(fields: [eventId], references: [playerId], onDelete: Cascade)
+  player      Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
   @@unique([eventId, playerId])
   @@index([eventId, status])
 }
