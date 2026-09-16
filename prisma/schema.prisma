@@ -17,6 +17,7 @@ model Team {
   events    Event[]
   messages  Message[]
   accessRequests ParentAccessRequest[]
+  users     User[]
 }
 
 model Player {
@@ -32,8 +33,15 @@ model Player {
   feedback     Feedback[]
   selections   MatchSelection[]
   accessRequests ParentAccessRequest[]
+  user         User?
   createdAt    DateTime       @default(now())
   @@index([teamId])
+}
+
+enum UserRole {
+  COACH
+  PARENT
+  PLAYER
 }
 
 enum EventType {
@@ -61,10 +69,36 @@ enum ParentAccessRequestStatus {
   REVOKED
 }
 
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  role         UserRole
+  teamId       String?
+  playerId     String?   @unique
+  createdAt    DateTime  @default(now())
+  team         Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player       Player?   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  sessions     Session[]
+  accessRequests ParentAccessRequest[]
+  @@index([teamId, role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
+
 model ParentAccessRequest {
   id          String                     @id @default(cuid())
   teamId      String
   playerId    String
+  userId      String?
   parentName  String
   parentEmail String
   status      ParentAccessRequestStatus  @default(PENDING)
@@ -73,8 +107,10 @@ model ParentAccessRequest {
   reviewedAt DateTime?
   team        Team                       @relation(fields: [teamId], references: [id], onDelete: Cascade)
   player      Player                     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  user        User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
   @@index([teamId, status, createdAt])
   @@index([playerId, status])
+  @@index([userId, status])
 }
 
 model Event {
@@ -111,7 +147,7 @@ model Availability {
   reason      String?
   respondedAt DateTime?
   event       Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  player      Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  player      Player             @relation(fields: [eventId], references: [playerId], onDelete: Cascade)
   @@unique([eventId, playerId])
   @@index([eventId, status])
 }
