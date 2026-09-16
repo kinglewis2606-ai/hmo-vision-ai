@@ -28,6 +28,7 @@ model Player {
   position     String
   parentName   String?
   parentEmail  String?
+  inviteCode   String?        @unique
   team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
   availability Availability[]
   feedback     Feedback[]
